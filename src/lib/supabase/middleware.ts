@@ -30,11 +30,17 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: do not add logic between createServerClient and getUser() —
-  // it can cause hard-to-debug session refresh issues.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    user = authUser;
+  } catch (error) {
+    // If Supabase auth fails, continue without user
+    // This allows the app to load even with invalid/missing credentials
+  }
 
   const { pathname } = request.nextUrl;
 
