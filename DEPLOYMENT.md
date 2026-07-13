@@ -4,11 +4,12 @@
 
 LinkedBoost AI'ı herkese açık yapabilmek için şu adımları takip et:
 
-### 1️⃣ Vercel'e Bağlan (Önerilir)
+### 1️⃣ Vercel'e Bağlan + Kendi Domain'i Ekle 🎯
 
-**En kolay yol - Vercel üzerinden otomatik deploy:**
+**Vercel üzerinden otomatik deploy + ekkod.com domain:**
 
-1. https://vercel.com'a git
+#### Step 1: Vercel Setup
+1. https://vercel.com'a git ve hesap oluştur
 2. GitHub'ını bağla
 3. `erkan-kiyik/coseade` repo'sunu seç
 4. Environment variables ekle:
@@ -26,7 +27,18 @@ LinkedBoost AI'ı herkese açık yapabilmek için şu adımları takip et:
    ```
 5. Deploy butonuna tıkla ✅
 
-**Sonuç:** Public URL (örn: `https://linkedboost-ai.vercel.app`) alırsın!
+#### Step 2: Custom Domain Ekle
+1. Vercel Project Settings → Domains
+2. `ekkod.com` ve `www.ekkod.com` ekle
+3. DNS settings'inde verilen CNAME records'ları ekle:
+   ```
+   CNAME: ekkod.com → cname.vercel-dns.com
+   CNAME: www.ekkod.com → cname.vercel-dns.com
+   ```
+4. DNS sağlayıcında (GoDaddy, Namecheap, vb.) bu records'ları ekle
+5. Vercel verify ettikten sonra otomatik SSL/HTTPS aktif olur
+
+**Sonuç:** `https://ekkod.com` tarayıcıda açılacak! 🚀
 
 ---
 
@@ -78,8 +90,42 @@ Tüm gerekli env variables `.env.example`'de var.
 | Ortam | URL | Status |
 |-------|-----|--------|
 | Local Dev | localhost:5500 | ✅ Running |
-| Vercel | TBD | ⏳ Setup needed |
+| Vercel Production | ekkod.com | ⏳ Setup needed |
+| Custom Domain | https://ekkod.com | ⏳ DNS config needed |
 | GitHub Actions | Configured | ✅ Ready |
+
+---
+
+## DNS Configuration (ekkod.com için)
+
+### Adım 1: Domain Registrar'da (GoDaddy, Namecheap, vb.)
+
+1. Hosting provider panelinde DNS records bölümüne git
+2. Şu CNAME record'ları ekle:
+
+```
+Host: ekkod.com
+Type: CNAME
+Value: cname.vercel-dns.com
+
+Host: www.ekkod.com
+Type: CNAME
+Value: cname.vercel-dns.com
+```
+
+### Adım 2: DNS Propagation
+
+- DNS değişiklikleri **24-48 saat** sürebilir
+- Vercel panel'de "Verifying" yazarsa beklemeye devam et
+- DNS Checker (dnschecker.org) ile kontrol et
+
+### Adım 3: Vercel'de Domain Verify
+
+1. Vercel Project Settings → Domains
+2. `ekkod.com` status'u "Valid Configuration" olana dek bekle
+3. Otomatik HTTPS certificate yaratılacak (Let's Encrypt)
+
+**Sonuç:** `https://ekkod.com` → LinkedBoost AI! 🎉
 
 ---
 
