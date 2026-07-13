@@ -43,13 +43,18 @@ export function Navbar() {
             scrolled ? "glass-strong shadow-lg shadow-black/5" : "bg-transparent"
           )}
         >
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white">
-              <Rocket className="h-4 w-4" />
+          <Link href="/" className="flex items-center gap-2.5 font-semibold">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-lg shadow-purple-500/30">
+              <span className="text-lg font-bold">⚡</span>
             </span>
-            <span className="text-lg tracking-tight">
-              LinkedBoost <span className="gradient-text">AI</span>
-            </span>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold tracking-tight leading-tight">
+                LinkedBoost
+              </span>
+              <span className="text-xs font-semibold bg-gradient-to-r from-indigo-500 to-fuchsia-500 bg-clip-text text-transparent">
+                AI
+              </span>
+            </div>
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
