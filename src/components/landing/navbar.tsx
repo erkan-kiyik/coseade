@@ -43,16 +43,16 @@ export function Navbar() {
             scrolled ? "glass-strong shadow-lg shadow-black/5" : "bg-transparent"
           )}
         >
-          <Link href="/" className="flex items-center gap-2.5 font-semibold">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-lg shadow-purple-500/30">
-              <span className="text-lg font-bold">⚡</span>
+          <Link href="/" className="flex items-center gap-3 font-semibold">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-xl shadow-blue-500/40 backdrop-blur-sm border border-white/20">
+              <span className="text-lg font-bold">📈</span>
             </span>
             <div className="flex flex-col">
-              <span className="text-sm font-bold tracking-tight leading-tight">
+              <span className="text-base font-bold tracking-tight leading-tight text-blue-900 dark:text-blue-100">
                 LinkedBoost
               </span>
-              <span className="text-xs font-semibold bg-gradient-to-r from-indigo-500 to-fuchsia-500 bg-clip-text text-transparent">
-                AI
+              <span className="text-xs font-semibold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">
+                Stock AI
               </span>
             </div>
           </Link>
@@ -69,9 +69,9 @@ export function Navbar() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="hidden items-center gap-3 md:flex">
             <ThemeToggle />
-            <Button variant="ghost" asChild>
+            <Button variant="glass" asChild>
               <Link href="/login">Log in</Link>
             </Button>
             <Button variant="gradient" asChild>
@@ -108,8 +108,8 @@ export function Navbar() {
                 {link.label}
               </a>
             ))}
-            <div className="mt-1 flex gap-2 border-t pt-3">
-              <Button variant="outline" className="flex-1" asChild>
+            <div className="mt-1 flex gap-2 border-t border-blue-200/30 dark:border-blue-700/30 pt-3">
+              <Button variant="glass" className="flex-1" asChild>
                 <Link href="/login">Log in</Link>
               </Button>
               <Button variant="gradient" className="flex-1" asChild>
