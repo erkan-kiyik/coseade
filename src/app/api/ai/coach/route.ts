@@ -4,7 +4,7 @@ import { getApiUser } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { checkUsage, incrementUsage } from "@/lib/usage";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { streamChat } from "@/lib/ai/openai";
+import { streamChat } from "@/lib/ai/gemini";
 import { COACH_SYSTEM } from "@/lib/ai/prompts";
 import { prisma } from "@/lib/prisma";
 import { sanitizeText } from "@/lib/utils";
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content;
+            const delta = chunk.text;
             if (delta) controller.enqueue(encoder.encode(delta));
           }
         } catch (err) {

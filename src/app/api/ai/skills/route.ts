@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiRoute } from "@/lib/ai/handler";
-import { generateJSON } from "@/lib/ai/openai";
+import { generateJSON } from "@/lib/ai/gemini";
 import { SKILLS_SYSTEM, skillsUser } from "@/lib/ai/prompts";
 import { skillsSchema, type SkillsResult } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";

@@ -25,7 +25,7 @@ A production-ready SaaS application that analyzes LinkedIn profiles, scores them
 - **Styling:** Tailwind CSS, shadcn/ui-style components, Framer Motion
 - **Auth & DB:** Supabase (Google OAuth + email/password + password reset) with Prisma ORM on Supabase Postgres
 - **Payments:** Stripe subscriptions with webhooks
-- **AI:** OpenAI (latest GPT model, configurable, with automatic fallbacks), structured JSON outputs validated with Zod
+- **AI:** Google Gemini (latest model, configurable, with automatic fallbacks), structured JSON outputs validated with Zod
 - **Forms:** React Hook Form + Zod
 - **Charts:** Recharts (CVD-validated palette)
 - **Deployment:** Vercel-ready
@@ -110,7 +110,7 @@ src/
 │   ├── features/                 # One client component per AI feature
 │   └── auth/                     # Auth forms
 ├── lib/
-│   ├── ai/                       # OpenAI client, prompts, zod schemas, route factory
+│   ├── ai/                       # Gemini client, prompts, zod schemas, route factory
 │   ├── supabase/                 # Browser/server/middleware clients
 │   ├── prisma.ts · stripe.ts     # Singletons
 │   ├── plans.ts · usage.ts       # Plan limits + daily usage enforcement
@@ -118,7 +118,7 @@ src/
 └── middleware.ts                 # Session refresh + route protection
 ```
 
-**AI pipeline:** every feature route is built with a shared factory (`lib/ai/handler.ts`) that runs: auth → burst rate-limit → Zod input validation → daily plan-limit check → prompt → JSON-mode completion → Zod output validation → usage increment + history record. Prompts live in `lib/ai/prompts.ts`; the model is configurable via `OPENAI_MODEL` and falls back automatically if unavailable.
+**AI pipeline:** every feature route is built with a shared factory (`lib/ai/handler.ts`) that runs: auth → burst rate-limit → Zod input validation → daily plan-limit check → prompt → JSON-mode completion → Zod output validation → usage increment + history record. Prompts live in `lib/ai/prompts.ts`; the model is configurable via `GEMINI_MODEL` and falls back automatically if unavailable.
 
 **Billing:** Stripe Checkout creates the subscription; webhooks keep `Subscription`/`Payment` rows and the user's plan in sync; the Stripe billing portal handles cancel/upgrade/payment method.
 

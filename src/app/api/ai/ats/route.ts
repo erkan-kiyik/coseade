@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiRoute, ApiError } from "@/lib/ai/handler";
-import { generateJSON } from "@/lib/ai/openai";
+import { generateJSON } from "@/lib/ai/gemini";
 import { ATS_SYSTEM, atsUser } from "@/lib/ai/prompts";
 import { atsCheckSchema, type AtsCheckResult } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";

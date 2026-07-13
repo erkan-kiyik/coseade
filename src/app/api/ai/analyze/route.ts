@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiRoute } from "@/lib/ai/handler";
-import { generateJSON } from "@/lib/ai/openai";
+import { generateJSON } from "@/lib/ai/gemini";
 import { PROFILE_ANALYZER_SYSTEM, profileAnalyzerUser } from "@/lib/ai/prompts";
 import { profileAnalysisSchema, type ProfileAnalysis } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";

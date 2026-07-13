@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiRoute } from "@/lib/ai/handler";
-import { generateJSON } from "@/lib/ai/openai";
+import { generateJSON } from "@/lib/ai/gemini";
 import { HEADLINE_SYSTEM, headlineUser } from "@/lib/ai/prompts";
 import { headlinesSchema, HEADLINE_STYLES, type HeadlinesResult } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";
