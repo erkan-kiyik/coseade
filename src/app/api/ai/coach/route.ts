@@ -4,7 +4,7 @@ import { getApiUser } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { checkUsage, incrementUsage } from "@/lib/usage";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { streamChat } from "@/lib/ai/gemini";
+import { streamChat } from "@/lib/ai/openrouter";
 import { COACH_SYSTEM } from "@/lib/ai/prompts";
 import { prisma } from "@/lib/prisma";
 import { sanitizeText } from "@/lib/utils";

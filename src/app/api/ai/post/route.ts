@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiRoute } from "@/lib/ai/handler";
-import { generateJSON } from "@/lib/ai/gemini";
+import { generateJSON } from "@/lib/ai/openrouter";
 import { POST_SYSTEM, postUser } from "@/lib/ai/prompts";
 import { postSchema, type PostResult } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";
