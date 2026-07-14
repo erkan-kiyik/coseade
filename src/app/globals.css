@@ -134,3 +134,20 @@
     background: white !important;
   }
 }
+
+/* PDF report export: when printing, show only the #print-report subtree */
+@media print {
+  body.printing-report * {
+    visibility: hidden;
+  }
+  body.printing-report #print-report,
+  body.printing-report #print-report * {
+    visibility: visible;
+  }
+  body.printing-report #print-report {
+    position: absolute;
+    inset: 0;
+    display: block !important;
+    padding: 24px;
+  }
+}

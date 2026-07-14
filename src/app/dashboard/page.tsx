@@ -65,7 +65,23 @@ export default async function DashboardPage() {
   // ── Stat tiles ────────────────────────────────────────────────────
   const latest = profileAnalyses.at(-1);
   const previous = profileAnalyses.at(-2);
-  const latestScores = (latest?.scores ?? null) as Record<string, number> | null;
+  const latestScores = (latest?.scores ?? null) as Record<
+    string,
+    number | { score: number }
+  > | null;
+
+  // Stored analyses may be the legacy flat shape ({ recruiterScore: 80 }) or
+  // the current dimension shape ({ recruiter: { score: 80, ... } }).
+  const dimensionScore = (...keys: string[]): number | null => {
+    for (const key of keys) {
+      const value = latestScores?.[key];
+      if (typeof value === "number") return value;
+      if (value && typeof value === "object" && typeof value.score === "number") {
+        return value.score;
+      }
+    }
+    return null;
+  };
 
   const currentScore = latest?.overallScore ?? null;
   const scoreDelta =
@@ -73,8 +89,8 @@ export default async function DashboardPage() {
       ? latest.overallScore - previous.overallScore
       : null;
 
-  const recruiterVisibility = latestScores?.recruiterScore ?? null;
-  const keywordScore = latestScores?.keywordOptimization ?? null;
+  const recruiterVisibility = dimensionScore("recruiter", "recruiterScore");
+  const keywordScore = dimensionScore("keywordOptimization");
   const avgEngagement = recentPosts.length
     ? Math.round(
         recentPosts.reduce((sum, p) => sum + (p.engagementScore ?? 0), 0) / recentPosts.length

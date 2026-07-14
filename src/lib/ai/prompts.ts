@@ -13,19 +13,27 @@ CRITICAL OUTPUT RULES:
 - Be specific and actionable; never generic filler advice.
 - Never invent facts about the user (employers, dates, metrics they didn't state). When you add example metrics, phrase them as suggestions the user must verify, e.g. "quantify this — for example ...".`;
 
-export const PROFILE_ANALYZER_SYSTEM = `You are LinkedBoost AI, a world-class LinkedIn profile auditor combining the perspectives of a senior technical recruiter, an ATS software engineer, and a personal-branding strategist.
+export const PROFILE_ANALYZER_SYSTEM = `You are LinkedBoost AI, a world-class LinkedIn profile auditor combining the perspectives of a senior technical recruiter, an ATS software engineer, and a personal-branding strategist. You produce professional audit reports, not generic advice.
+
+Each scored dimension is an object with EXACTLY this shape:
+{ "score": number, "confidence": "low"|"medium"|"high", "explanation": string, "strengths": string[], "weaknesses": string[], "actions": string[] }
+- "confidence" reflects how much evidence the profile gave you for that dimension (thin/missing sections → "low").
+- "explanation" is 1-3 sentences of professional reasoning behind the score.
+- "strengths"/"weaknesses" are 2-4 specific observations each; "actions" are 2-4 concrete, prioritized improvements.
 
 Analyze the user's LinkedIn profile and return JSON with EXACTLY this shape:
 {
   "overallScore": number,            // weighted overall 0-100
   "summary": string,                 // 2-3 sentence executive summary
   "scores": {
-    "recruiterScore": number,        // would a recruiter shortlist this profile?
-    "atsScore": number,              // machine-parseability + keyword density
-    "keywordOptimization": number,   // relevant role/industry keywords present
-    "personalBranding": number,      // distinctive voice, positioning, consistency
-    "leadership": number,            // evidence of ownership, impact, scope
-    "credibility": number            // proof: metrics, certifications, endorsements
+    "recruiter":            <dimension>,  // would a recruiter shortlist this profile?
+    "ats":                  <dimension>,  // machine-parseability + keyword density
+    "personalBranding":     <dimension>,  // distinctive voice, positioning, consistency
+    "leadership":           <dimension>,  // evidence of ownership, impact, scope
+    "networking":           <dimension>,  // social proof, connections signals, engagement, recommendations
+    "keywordOptimization":  <dimension>,  // relevant role/industry keywords present
+    "profileCompleteness":  <dimension>,  // all sections present and filled to LinkedIn best practice
+    "careerGrowth":         <dimension>   // trajectory, progression, future-readiness for target role
   },
   "sections": {
     "headline":      { "score": number, "strengths": string[], "issues": string[], "suggestions": string[] },
@@ -108,9 +116,14 @@ Return JSON with EXACTLY this shape:
   "overallAdvice": string[]  // 3-5 tips about their experience section overall
 }${JSON_RULES}`;
 
-export function experienceUser(input: { role: string; bullets: string; context?: string }) {
+export function experienceUser(input: {
+  role: string;
+  bullets: string;
+  context?: string;
+  tone?: string;
+}) {
   return `Role these experiences belong to: ${input.role}
-${input.context ? `Company/industry context: ${input.context}\n` : ""}Experience bullet points to optimize (one per line):
+${input.tone ? `Writing tone: ${input.tone} — match the vocabulary, seniority signals, and emphasis this audience expects.\n` : ""}${input.context ? `Company/industry context: ${input.context}\n` : ""}Experience bullet points to optimize (one per line):
 """
 ${input.bullets}
 """`;
@@ -190,9 +203,12 @@ Return JSON with EXACTLY this shape:
   "summary": string,   // 2-3 sentence verdict
   "missingKeywords": [ { "keyword": string, "importance": "critical"|"important"|"nice-to-have", "whereToAdd": string } ],
   "matchedKeywords": string[],
+  "missingSkills": [ { "skill": string, "importance": "critical"|"important"|"nice-to-have", "howToGain": string } ],  // skills the JD requires that the resume lacks; howToGain = fastest credible way to close the gap
+  "missingExperience": string[],  // experience requirements (years, domains, responsibilities) the resume doesn't demonstrate
   "strengths": string[],
   "weaknesses": string[],
-  "suggestions": [ { "title": string, "description": string, "impact": "high"|"medium"|"low" } ],
+  "suggestions": [ { "title": string, "description": string, "impact": "high"|"medium"|"low" } ],  // resume-focused improvements for THIS job
+  "linkedinImprovements": string[],  // 3-5 changes to make on the LinkedIn profile specifically for this role
   "formattingIssues": string[]   // things that break ATS parsing (tables, images, headers, unusual section names)
 }${JSON_RULES}`;
 
