@@ -3,7 +3,7 @@ import { getApiUser } from "@/lib/auth";
 import { getStripe, getProPriceId } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
-import { absoluteUrl } from "@/lib/utils";
+import { requestAbsoluteUrl } from "@/lib/request-url";
 
 export async function POST() {
   try {
@@ -56,8 +56,8 @@ export async function POST() {
         metadata: { userId: user.id },
       },
       metadata: { userId: user.id },
-      success_url: absoluteUrl("/dashboard/billing?success=true"),
-      cancel_url: absoluteUrl("/dashboard/billing?canceled=true"),
+      success_url: await requestAbsoluteUrl("/dashboard/billing?success=true"),
+      cancel_url: await requestAbsoluteUrl("/dashboard/billing?canceled=true"),
     });
 
     return NextResponse.json({ data: { url: session.url } });
