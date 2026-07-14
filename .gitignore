@@ -39,3 +39,12 @@ next-env.d.ts
 
 # prisma
 /prisma/migrations/dev.db*
+
+# capacitor native build outputs
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/

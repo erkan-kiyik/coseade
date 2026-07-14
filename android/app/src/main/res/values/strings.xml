@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LinkedBoost AI</string>
+    <string name="title_activity_main">LinkedBoost AI</string>
+    <string name="package_name">com.ekkod.linkedboost</string>
+    <string name="custom_url_scheme">com.ekkod.linkedboost</string>
+</resources>
