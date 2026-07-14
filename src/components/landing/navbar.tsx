@@ -45,14 +45,14 @@ export function Navbar() {
         >
           <Link href="/" className="flex items-center gap-3 font-semibold">
             <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-xl shadow-blue-500/40 backdrop-blur-sm border border-white/20">
-              <span className="text-lg font-bold">📈</span>
+              <Rocket className="h-5 w-5" />
             </span>
             <div className="flex flex-col">
               <span className="text-base font-bold tracking-tight leading-tight text-blue-900 dark:text-blue-100">
                 LinkedBoost
               </span>
               <span className="text-xs font-semibold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">
-                Stock AI
+                AI
               </span>
             </div>
           </Link>
