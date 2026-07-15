@@ -1,9 +1,0 @@
-node_modules
-.next
-.git
-android
-ios
-www
-.env.local
-.vercel
-*.log
