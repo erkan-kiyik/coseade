@@ -17,8 +17,29 @@ to huggingface.co. Here's the exact path to do it yourself in a few minutes.
 
 ## 2. Push this repo's code to the Space
 
-The Space needs a `README.md` at its root with special YAML front-matter
-(HF reads this for the Space card). Do this locally:
+Two options — pick one.
+
+### Option A: Automatic sync via GitHub Actions (recommended)
+
+This repo includes `.github/workflows/sync-hf-space.yml`, which pushes the
+current code to your Space on every push to this branch — no manual git
+commands, ever again.
+
+1. Create a Hugging Face access token with **Write** permission:
+   https://huggingface.co/settings/tokens → New token → role "Write"
+2. In this GitHub repo: **Settings → Secrets and variables → Actions**
+   - Add **secret** `HF_TOKEN` = the token from step 1
+   - Add **variable** `HF_SPACE_REPO` = `<you>/linkedboost-ai` (no `spaces/` prefix)
+3. Push anything (or go to **Actions → Sync to Hugging Face Space → Run workflow**)
+
+The workflow copies the repo (minus `android/`, `ios/`, `www/`,
+`node_modules`, `.next`), writes the Space's `README.md` card, and
+force-pushes to `spaces/<you>/linkedboost-ai` on `main`. From then on, every
+push to GitHub auto-syncs to the Space.
+
+### Option B: Manual push (one-time or if you prefer not to add a token)
+
+Do this locally:
 
 ```bash
 git clone https://github.com/erkan-kiyik/coseade.git

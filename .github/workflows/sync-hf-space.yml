@@ -1,0 +1,60 @@
+name: Sync to Hugging Face Space
+
+# Automatically mirrors this repo to a Hugging Face Docker Space on every
+# push, so the Space always runs the latest code without a manual git push.
+#
+# One-time setup required (see HUGGINGFACE.md):
+#   1. Create the Space at https://huggingface.co/new-space (SDK: Docker)
+#   2. Add repo secret HF_TOKEN — a Hugging Face access token with "Write"
+#      permission (https://huggingface.co/settings/tokens)
+#   3. Add repo variable HF_SPACE_REPO — e.g. "yourusername/linkedboost-ai"
+
+on:
+  push:
+    branches: [main, claude/linkedboost-ai-xkwrz7]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: vars.HF_SPACE_REPO != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Space push directory
+        run: |
+          mkdir -p /tmp/space-push
+          rsync -a --exclude='.git' --exclude='android' --exclude='ios' --exclude='www' \
+            --exclude='node_modules' --exclude='.next' ./ /tmp/space-push/
+
+          cat > /tmp/space-push/README.md << 'EOF'
+          ---
+          title: LinkedBoost AI
+          emoji: 🚀
+          colorFrom: blue
+          colorTo: indigo
+          sdk: docker
+          app_port: 7860
+          pinned: false
+          ---
+
+          # LinkedBoost AI
+          AI-powered LinkedIn profile optimization — recruiter score, ATS
+          score, personal branding, keyword optimization, career growth,
+          and more.
+
+          Auto-synced from https://github.com/${{ github.repository }}
+          EOF
+
+      - name: Push to Hugging Face Space
+        working-directory: /tmp/space-push
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Sync from GitHub ${{ github.sha }}"
+          git push -f "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}" HEAD:main
