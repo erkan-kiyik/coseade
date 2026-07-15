@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Standalone output for Docker deployments (Hugging Face Spaces, etc.)
+  output: "standalone",
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [

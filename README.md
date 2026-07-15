@@ -8,7 +8,7 @@ A production-ready SaaS application that analyzes LinkedIn profiles, scores them
 
 | Feature | Description | Plan |
 |---|---|---|
-| **Profile Analyzer** | Upload your LinkedIn PDF export or paste your profile; get scored across 6 dimensions (Recruiter, ATS, Keywords, Branding, Leadership, Credibility) with per-section feedback | Free (3/day) |
+| **Profile Analyzer** | Upload your LinkedIn PDF export or paste your profile; get scored across 8 dimensions (Recruiter, ATS, Personal Branding, Leadership, Networking, Keyword Optimization, Profile Completeness, Career Growth) with confidence levels, explanations, and per-section feedback, plus a PDF report export | Free (3/day) |
 | **ATS Checker** | Compare a resume against a job description: match %, missing keywords, strengths, weaknesses, fixes | Pro |
 | **Headline Generator** | 10 optimized headlines per run, in 8 styles (Executive → AI Engineer) | Free |
 | **About Generator** | 3 story-driven About variants in 6 tones | Free |
