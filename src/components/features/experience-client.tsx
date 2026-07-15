@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowDown, Briefcase, Sparkles } from "lucide-react";
 import { useAi } from "@/hooks/use-ai";
-import type { ExperienceResult } from "@/lib/ai/schemas";
+import { WRITING_TONES, type ExperienceResult, type WritingTone } from "@/lib/ai/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,9 +20,10 @@ export function ExperienceClient() {
   const [role, setRole] = React.useState("");
   const [bullets, setBullets] = React.useState("");
   const [context, setContext] = React.useState("");
+  const [tone, setTone] = React.useState<WritingTone>("Professional");
 
   const { run, loading, result } = useAi<
-    { role: string; bullets: string; context?: string },
+    { role: string; bullets: string; context?: string; tone?: WritingTone },
     ExperienceResult
   >({ endpoint: "/api/ai/experience" });
 
@@ -35,7 +36,7 @@ export function ExperienceClient() {
       toast.error("Paste at least one bullet point");
       return;
     }
-    void run({ role, bullets, context: context || undefined });
+    void run({ role, bullets, context: context || undefined, tone });
   };
 
   return (
@@ -60,6 +61,26 @@ export function ExperienceClient() {
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
               />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Writing tone</Label>
+            <div className="flex flex-wrap gap-2">
+              {WRITING_TONES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTone(t)}
+                  className={
+                    tone === t
+                      ? "rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm"
+                      : "rounded-full border border-blue-200/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-blue-400 hover:text-foreground dark:border-blue-800/60"
+                  }
+                >
+                  {t}
+                </button>
+              ))}
             </div>
           </div>
 

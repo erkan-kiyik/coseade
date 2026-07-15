@@ -6,10 +6,13 @@ import { experienceSchema, type ExperienceResult } from "@/lib/ai/schemas";
 import { prisma } from "@/lib/prisma";
 import { sanitizeText } from "@/lib/utils";
 
+import { WRITING_TONES } from "@/lib/ai/schemas";
+
 const inputSchema = z.object({
   role: z.string().min(2).max(200),
   bullets: z.string().min(10, "Paste at least one bullet point").max(6000),
   context: z.string().max(500).optional(),
+  tone: z.enum(WRITING_TONES).optional(),
 });
 
 export const POST = createAiRoute({
@@ -23,6 +26,7 @@ export const POST = createAiRoute({
         role: sanitizeText(input.role, 200),
         bullets: sanitizeText(input.bullets, 6000),
         context: input.context ? sanitizeText(input.context, 500) : undefined,
+        tone: input.tone,
       }),
       temperature: 0.6,
       priority: user.plan === "PRO",

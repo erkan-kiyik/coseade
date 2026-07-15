@@ -11,16 +11,41 @@ export const sectionFeedbackSchema = z.object({
   suggestions: z.array(z.string()),
 });
 
+/** One scored dimension of the premium report. */
+export const scoreDimensionSchema = z.object({
+  score,
+  confidence: z.enum(["low", "medium", "high"]),
+  explanation: z.string(),
+  strengths: z.array(z.string()),
+  weaknesses: z.array(z.string()),
+  actions: z.array(z.string()),
+});
+export type ScoreDimension = z.infer<typeof scoreDimensionSchema>;
+
+export const SCORE_DIMENSIONS = [
+  { key: "recruiter", label: "Recruiter Score" },
+  { key: "ats", label: "ATS Score" },
+  { key: "personalBranding", label: "Personal Branding" },
+  { key: "leadership", label: "Leadership" },
+  { key: "networking", label: "Networking" },
+  { key: "keywordOptimization", label: "Keyword Optimization" },
+  { key: "profileCompleteness", label: "Profile Completeness" },
+  { key: "careerGrowth", label: "Career Growth" },
+] as const;
+export type ScoreDimensionKey = (typeof SCORE_DIMENSIONS)[number]["key"];
+
 export const profileAnalysisSchema = z.object({
   overallScore: score,
   summary: z.string(),
   scores: z.object({
-    recruiterScore: score,
-    atsScore: score,
-    keywordOptimization: score,
-    personalBranding: score,
-    leadership: score,
-    credibility: score,
+    recruiter: scoreDimensionSchema,
+    ats: scoreDimensionSchema,
+    personalBranding: scoreDimensionSchema,
+    leadership: scoreDimensionSchema,
+    networking: scoreDimensionSchema,
+    keywordOptimization: scoreDimensionSchema,
+    profileCompleteness: scoreDimensionSchema,
+    careerGrowth: scoreDimensionSchema,
   }),
   sections: z.object({
     headline: sectionFeedbackSchema,
@@ -97,6 +122,19 @@ export const ABOUT_TONES = [
 ] as const;
 
 // ─── Feature 4: Experience Optimizer ────────────────────────────────
+
+export const WRITING_TONES = [
+  "Professional",
+  "Executive",
+  "Startup Founder",
+  "Software Engineer",
+  "Product Manager",
+  "Data Scientist",
+  "Marketing",
+  "Finance",
+  "Student",
+] as const;
+export type WritingTone = (typeof WRITING_TONES)[number];
 
 export const experienceSchema = z.object({
   optimized: z
@@ -189,6 +227,14 @@ export const atsCheckSchema = z.object({
     })
   ),
   matchedKeywords: z.array(z.string()),
+  missingSkills: z.array(
+    z.object({
+      skill: z.string(),
+      importance: z.enum(["critical", "important", "nice-to-have"]),
+      howToGain: z.string(),
+    })
+  ),
+  missingExperience: z.array(z.string()),
   strengths: z.array(z.string()),
   weaknesses: z.array(z.string()),
   suggestions: z.array(
@@ -198,6 +244,7 @@ export const atsCheckSchema = z.object({
       impact: z.enum(["high", "medium", "low"]),
     })
   ),
+  linkedinImprovements: z.array(z.string()),
   formattingIssues: z.array(z.string()),
 });
 export type AtsCheckResult = z.infer<typeof atsCheckSchema>;

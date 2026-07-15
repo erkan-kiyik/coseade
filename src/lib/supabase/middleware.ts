@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/config";
 
 const PROTECTED_PREFIXES = ["/dashboard"];
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
@@ -8,8 +9,8 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
@@ -30,11 +31,17 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: do not add logic between createServerClient and getUser() —
-  // it can cause hard-to-debug session refresh issues.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    user = authUser;
+  } catch (error) {
+    // If Supabase auth fails, continue without user
+    // This allows the app to load even with invalid/missing credentials
+  }
 
   const { pathname } = request.nextUrl;
 

@@ -1,8 +1,15 @@
 import { type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  return await updateSession(request);
+  try {
+    const { updateSession } = await import("@/lib/supabase/middleware");
+    return await updateSession(request);
+  } catch (error) {
+    // If middleware fails, allow request to continue
+    // This ensures the app loads even without Supabase
+    return NextResponse.next({ request });
+  }
 }
 
 export const config = {

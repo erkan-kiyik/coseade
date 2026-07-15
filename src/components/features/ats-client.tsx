@@ -182,6 +182,47 @@ export function AtsClient() {
             </CardContent>
           </Card>
 
+          {(result.missingSkills?.length > 0 || result.missingExperience?.length > 0) && (
+            <div className="grid gap-6 md:grid-cols-2">
+              {result.missingSkills?.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Missing skills</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {result.missingSkills.map((item, i) => (
+                      <div key={i} className="rounded-xl border p-4">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={importanceVariant(item.importance)} className="uppercase">
+                            {item.importance}
+                          </Badge>
+                          <span className="font-medium">{item.skill}</span>
+                        </div>
+                        <p className="mt-1.5 text-sm text-muted-foreground">{item.howToGain}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+              {result.missingExperience?.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Missing experience</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2.5">
+                      {result.missingExperience.map((item, i) => (
+                        <li key={i} className="text-sm leading-relaxed text-muted-foreground">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -258,6 +299,24 @@ export function AtsClient() {
               )}
             </CardContent>
           </Card>
+
+          {result.linkedinImprovements?.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>LinkedIn improvements for this role</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2.5">
+                  {result.linkedinImprovements.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           {result.matchedKeywords.length > 0 && (
             <Card>
