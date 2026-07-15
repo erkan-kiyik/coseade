@@ -14,6 +14,10 @@ const M = {
   sightGlow: new THREE.MeshStandardMaterial({ color: 0x30ff70, emissive: 0x30ff70, emissiveIntensity: 2.2 }),
   scopeGlass: new THREE.MeshStandardMaterial({ color: 0x0a2030, roughness: 0.1, metalness: 0.9 }),
   brass: new THREE.MeshStandardMaterial({ color: 0xb8963e, roughness: 0.35, metalness: 0.95 }),
+  glove: new THREE.MeshStandardMaterial({ color: 0x26282a, roughness: 0.85, metalness: 0.05 }),
+  gloveKnuckle: new THREE.MeshStandardMaterial({ color: 0x333638, roughness: 0.7, metalness: 0.1 }),
+  sleeve: new THREE.MeshStandardMaterial({ color: 0x39402e, roughness: 0.92, metalness: 0.03 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0xba8b64, roughness: 0.75 }),
 };
 
 function box(sx, sy, sz, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
@@ -27,6 +31,50 @@ function cyl(r1, r2, h, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, seg = 
   m.position.set(x, y, z);
   m.rotation.set(rx, ry, rz);
   return m;
+}
+
+// ---------------- gloved hands (shared) ----------------
+// A gripping hand: camouflage sleeve receding toward the camera (+z), a gloved
+// palm and curled fingers wrapping forward (−z) around whatever it's placed on.
+function buildHand() {
+  const grp = new THREE.Group();
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.07, 0.36, 10), M.sleeve);
+  sleeve.rotation.x = Math.PI / 2;
+  sleeve.position.z = 0.2;
+  grp.add(sleeve);
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.05, 10), M.glove);
+  cuff.rotation.x = Math.PI / 2;
+  cuff.position.z = 0.04;
+  grp.add(cuff);
+  const palm = box(0.1, 0.062, 0.12, M.glove, 0, 0, -0.05);
+  grp.add(palm);
+  const knuckles = box(0.1, 0.03, 0.03, M.gloveKnuckle, 0, 0.03, -0.11);
+  grp.add(knuckles);
+  // four curled fingers wrapping down and forward
+  for (let i = 0; i < 4; i++) {
+    const seg = box(0.02, 0.055, 0.05, M.glove, -0.033 + i * 0.022, -0.028, -0.115, -0.95, 0, 0);
+    grp.add(seg);
+    const tip = box(0.02, 0.038, 0.028, M.glove, -0.033 + i * 0.022, -0.062, -0.09, -1.7, 0, 0);
+    grp.add(tip);
+  }
+  const thumb = box(0.03, 0.052, 0.045, M.glove, 0.056, 0.0, -0.055, 0.2, 0, 0.7);
+  grp.add(thumb);
+  grp.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; } });
+  return grp;
+}
+
+// place two hands onto a viewmodel; returns refs for animation.
+// anchors/rots are [x,y,z]; leftParent lets the shotgun's support hand ride the pump.
+function addHands(g, cfg) {
+  const left = buildHand();
+  left.position.set(...cfg.left);
+  if (cfg.leftRot) left.rotation.set(...cfg.leftRot);
+  (cfg.leftParent || g).add(left);
+  const right = buildHand();
+  right.position.set(...cfg.right);
+  if (cfg.rightRot) right.rotation.set(...cfg.rightRot);
+  g.add(right);
+  return { left, right };
 }
 
 // ---------------- viewmodel builders (z- is forward / muzzle direction) ----------------
@@ -60,7 +108,11 @@ function buildRifle() {
   // charging handle + ejection port
   g.add(box(0.02, 0.015, 0.05, M.darkSteel, 0.033, 0.04, 0.1));
   g.add(box(0.002, 0.03, 0.08, M.brass, 0.029, 0.015, -0.05));
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.015, -0.9) };
+  const hands = addHands(g, {
+    right: [0.0, -0.085, 0.11], rightRot: [0.42, 0, 0],
+    left: [-0.01, -0.055, -0.34], leftRot: [0.22, 0, -0.15],
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.015, -0.9), hands };
 }
 
 function buildPistol() {
@@ -82,7 +134,11 @@ function buildPistol() {
   mag.add(box(0.028, 0.1, 0.045, M.darkSteel, 0, -0.04, 0));
   mag.position.set(0, -0.09, 0.055);
   g.add(mag);
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.025, -0.23) };
+  const hands = addHands(g, {
+    right: [0.0, -0.07, 0.02], rightRot: [0.55, 0, 0],
+    left: [-0.05, -0.075, 0.0], leftRot: [0.5, 0.5, 0.1],
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.025, -0.23), hands };
 }
 
 function buildShotgun() {
@@ -103,7 +159,12 @@ function buildShotgun() {
   g.add(bead);
   // shell holder on receiver side
   for (let i = 0; i < 4; i++) g.add(cyl(0.011, 0.011, 0.05, M.accent, 0.035, 0.01, 0.14 - i * 0.045, Math.PI / 2, 0, 0, 8));
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.035, -0.68) };
+  // right hand on the grip; support hand rides the pump so it racks with it
+  const hands = addHands(g, {
+    right: [0.0, -0.075, 0.16], rightRot: [0.45, 0, 0],
+    left: [0.0, -0.055, 0.02], leftRot: [0.25, 0, 0], leftParent: mag,
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.035, -0.68), hands };
 }
 
 function buildSniper() {
@@ -136,7 +197,11 @@ function buildSniper() {
   mag.add(box(0.038, 0.09, 0.08, M.darkSteel, 0, -0.045, 0));
   mag.position.set(0, -0.04, -0.02);
   g.add(mag);
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -1.0) };
+  const hands = addHands(g, {
+    right: [0.0, -0.07, 0.2], rightRot: [0.4, 0, 0],
+    left: [0.0, -0.04, -0.28], leftRot: [0.2, 0, 0],
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -1.0), hands };
 }
 
 // ---------------- weapon definitions ----------------
@@ -187,6 +252,16 @@ export class WeaponSystem {
     this.rig = new THREE.Group(); // holds active viewmodel; attached to camera
     camera.add(this.rig);
 
+    // dedicated fill light so the first-person weapon + hands stay readable at
+    // night; short range keeps it off the world geometry behind the viewmodel.
+    this.vmLight = new THREE.PointLight(0xcdd8e6, 3.4, 2.4, 2);
+    this.vmLight.position.set(0.18, 0.12, -0.1);
+    this.rig.add(this.vmLight);
+    const vmFill = new THREE.DirectionalLight(0x9fb0c4, 0.6);
+    vmFill.position.set(-0.3, 0.4, 0.5);
+    this.rig.add(vmFill);
+    this.rig.add(vmFill.target);
+
     this.weapons = WEAPON_DEFS.map((def) => {
       const built = def.build();
       built.group.visible = false;
@@ -198,6 +273,10 @@ export class WeaponSystem {
         magMesh: built.mag,
         magHome: built.mag.position.clone(),
         muzzleLocal: built.muzzle,
+        leftHand: built.hands ? built.hands.left : null,
+        leftHandHome: built.hands ? built.hands.left.position.clone() : null,
+        // the shotgun's support hand rides the pump, so don't double-animate it on reload
+        animateHand: !!built.hands && def.id !== 'shotgun',
         mag: def.magSize,
         reserve: def.reserveStart,
       };
@@ -226,6 +305,7 @@ export class WeaponSystem {
     this.bobPhase = 0;
     this.kick = 0;         // backward kick amount
     this.recoilRot = 0;    // viewmodel pitch from recoil
+    this.throwT = 0;       // grenade-throw viewmodel animation timer
 
     // muzzle flash
     this.flashLight = new THREE.PointLight(0xffb35e, 0, 7, 2);
@@ -282,6 +362,8 @@ export class WeaponSystem {
   }
 
   setAds(v) { this.wantAds = v; }
+
+  playThrow() { this.throwT = 0.55; }
 
   setTrigger(v) {
     this.triggerHeld = v;
@@ -416,6 +498,15 @@ export class WeaponSystem {
         w.magMesh.rotation.x = 0;
         if (!this.reloadStagePlayed[2]) { this.audio.reloadStage(2); this.reloadStagePlayed[2] = true; }
       }
+      // support hand leaves the foregrip, drops to the mag well and returns
+      if (w.leftHand && w.animateHand) {
+        let dip = 0;
+        if (t < 0.3) dip = t / 0.3;
+        else if (t < 0.65) dip = 1;
+        else if (t < 0.92) dip = 1 - (t - 0.65) / 0.27;
+        w.leftHand.position.y = w.leftHandHome.y - dip * 0.2;
+        w.leftHand.position.z = w.leftHandHome.z + dip * 0.28;
+      }
       // whole weapon dips + rolls during reload
       this.rig.rotation.z = Math.sin(Math.min(1, t) * Math.PI) * 0.22;
       this.rig.rotation.x = Math.sin(Math.min(1, t) * Math.PI) * 0.12;
@@ -429,8 +520,13 @@ export class WeaponSystem {
         w.magMesh.position.copy(w.magHome);
         w.magMesh.rotation.x = 0;
         w.magMesh.visible = true;
+        if (w.leftHand && w.leftHandHome) w.leftHand.position.copy(w.leftHandHome);
         this.onAmmoChange && this.onAmmoChange();
       }
+    } else if (w.leftHand && w.leftHandHome && w.animateHand) {
+      // ease the support hand back home if a reload was interrupted
+      w.leftHand.position.y += (w.leftHandHome.y - w.leftHand.position.y) * Math.min(1, dt * 12);
+      w.leftHand.position.z += (w.leftHandHome.z - w.leftHand.position.z) * Math.min(1, dt * 12);
     }
 
     // ADS lerp
@@ -473,8 +569,20 @@ export class WeaponSystem {
       py + this.swayPos.y - bobY,
       pz + this.kick
     );
-    model.rotation.set(this.swayRot.x - this.recoilRot + (model.rotation.x - model.rotation.x), 0, this.swayRot.z);
+    model.rotation.set(this.swayRot.x - this.recoilRot, 0, this.swayRot.z);
     if (this.pumping > 0 && def.mode === 'bolt') model.rotation.z += Math.sin((1 - this.pumping / 0.55) * Math.PI) * 0.12;
+
+    // grenade throw: pull the weapon down/left and rock it, like the off-hand lobs a frag
+    if (this.throwT > 0) {
+      this.throwT = Math.max(0, this.throwT - dt);
+      const tt = 1 - this.throwT / 0.55;
+      const s = Math.sin(tt * Math.PI);
+      model.position.x -= s * 0.14;
+      model.position.y -= s * 0.16;
+      model.position.z += s * 0.05;
+      model.rotation.x += s * 0.6;
+      model.rotation.z -= s * 0.35;
+    }
 
     // hide viewmodel when scoped in fully
     model.visible = !(def.scope && this.adsAmount > 0.85) && (this.switching === 0 || true);

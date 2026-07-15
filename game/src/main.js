@@ -79,6 +79,10 @@ let world = new World(scene, quality);
 const weapons = new WeaponSystem(camera, audio, effects);
 const player = new Player(camera, world, audio);
 
+// the first-person weapon/hands are children of the camera, so the camera must
+// be part of the scene graph for them to render.
+scene.add(camera);
+
 // ---- post-processing ----
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
@@ -452,28 +456,51 @@ function explodeAt(pos, radius, maxDamage) {
 // ============================================================ grenades
 function throwGrenade() {
   if (G.grenades <= 0 || G.grenadeCooldown > 0) return;
+  if (weapons.reloading || weapons.switching > 0) return;
   G.grenades--;
   G.grenadeCooldown = 0.6;
   updateGrenadeHud();
   audio.grenadePin();
+  weapons.playThrow();
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
   const origin = new THREE.Vector3();
   camera.getWorldPosition(origin);
-  origin.addScaledVector(dir, 0.4);
-  const vel = dir.clone().multiplyScalar(15).add(new THREE.Vector3(0, 4, 0));
-  grenadesActive.push({ pos: origin, vel, fuse: 1.7, mesh: makeGrenadeMesh(origin) });
+  origin.addScaledVector(dir, 0.4).add(new THREE.Vector3(0, -0.1, 0));
+  const vel = dir.clone().multiplyScalar(16).add(new THREE.Vector3(0, 4.2, 0));
+  const spin = new THREE.Vector3((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 12, 8 + Math.random() * 6);
+  grenadesActive.push({ pos: origin, vel, spin, fuse: 1.7, mesh: makeGrenadeMesh(origin) });
 }
 
 function makeGrenadeMesh(pos) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.08, 8, 8),
-    new THREE.MeshStandardMaterial({ color: 0x2a3a26, roughness: 0.6, metalness: 0.3 })
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.072, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0x323f2b, roughness: 0.7, metalness: 0.25 })
   );
-  mesh.position.copy(pos);
-  mesh.castShadow = true;
-  scene.add(mesh);
-  return mesh;
+  body.scale.y = 1.18;
+  // segmentation grooves
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0x1e261a, roughness: 0.85 });
+  for (const ry of [0.024, -0.024]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.007, 6, 14), bandMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = ry;
+    g.add(band);
+  }
+  const bandV = new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.007, 6, 14), bandMat);
+  g.add(bandV);
+  // fuse cap + safety lever
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.045, 8),
+    new THREE.MeshStandardMaterial({ color: 0x5f5f56, roughness: 0.5, metalness: 0.6 }));
+  cap.position.y = 0.088;
+  const lever = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.085, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x8a8a80, roughness: 0.4, metalness: 0.7 }));
+  lever.position.set(0.036, 0.07, 0);
+  g.add(body, cap, lever);
+  g.position.copy(pos);
+  g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+  scene.add(g);
+  return g;
 }
 
 function updateGrenades(dt) {
@@ -494,6 +521,11 @@ function updateGrenades(dt) {
     }
     resolveCollisions(g.pos, 0.08, 0.16, world.colliders, g.vel);
     g.mesh.position.copy(g.pos);
+    // tumble through the air, settling as it slows on the ground
+    const spinScale = g.pos.y < 0.12 ? 0.25 : 1;
+    g.mesh.rotation.x += g.spin.x * dt * spinScale;
+    g.mesh.rotation.y += g.spin.y * dt * spinScale;
+    g.mesh.rotation.z += g.spin.z * dt * spinScale;
     g.fuse -= dt;
     if (g.fuse <= 0) {
       scene.remove(g.mesh);
@@ -524,6 +556,7 @@ function spawnWaveEnemies() {
     e.onAlert = (pos) => {
       for (const other of enemies) if (!other.dead) other.alert(pos);
     };
+    e.onDeath = (en) => dropLoot(en.pos.clone());
     enemies.push(e);
   }
   audio.waveStart();
@@ -575,20 +608,71 @@ function spawnPickup(pos, kind) {
   const light = new THREE.PointLight(color, 3, 5);
   light.position.copy(mesh.position);
   scene.add(mesh, light);
-  pickups.push({ mesh, light, kind, pos: mesh.position.clone(), t: 0 });
+  pickups.push({ mesh, light, kind, pos: mesh.position.clone(), t: 0, ground: false, ttl: Infinity });
+}
+
+// looted from a downed enemy: a small crate/med-kit lying on the ground.
+function dropLoot(pos) {
+  const r = Math.random();
+  let kind;
+  if (r < 0.14) kind = 'health';
+  else if (r < 0.82) kind = 'ammo';
+  else return; // some enemies drop nothing
+  const g = new THREE.Group();
+  if (kind === 'health') {
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0xdadada, roughness: 0.6 })));
+    const crossMat = new THREE.MeshStandardMaterial({ color: 0xd83b3b, emissive: 0x5a0f0f, emissiveIntensity: 0.6, roughness: 0.5 });
+    const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.07), crossMat); c1.position.y = 0.11;
+    const c2 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.2), crossMat); c2.position.y = 0.11;
+    g.add(c1, c2);
+  } else {
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.26),
+      new THREE.MeshStandardMaterial({ color: 0x47502f, roughness: 0.75, metalness: 0.2 })));
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.28),
+      new THREE.MeshStandardMaterial({ color: 0x373f26, roughness: 0.75 }));
+    lid.position.y = 0.13;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.24, 0.28),
+      new THREE.MeshStandardMaterial({ color: 0xcaa63e, emissive: 0x2a2208, emissiveIntensity: 0.4, roughness: 0.5, metalness: 0.4 }));
+    g.add(lid, band);
+  }
+  g.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.22, (Math.random() - 0.5) * 0.5));
+  g.rotation.y = Math.random() * Math.PI;
+  g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+  scene.add(g);
+  pickups.push({ mesh: g, light: null, kind, pos: g.position.clone(), t: Math.random() * 3, ground: true, ttl: 22 });
 }
 
 function updatePickups(dt) {
   for (let i = pickups.length - 1; i >= 0; i--) {
     const p = pickups[i];
     p.t += dt;
-    p.mesh.rotation.y += dt * 2;
-    p.mesh.position.y = p.pos.y + Math.sin(p.t * 2) * 0.08;
-    if (p.mesh.position.distanceTo(player.pos.clone().add(new THREE.Vector3(0, 1, 0))) < 1.3) {
+    if (p.ground) {
+      // sit on the ground with a slow spin and gentle bob; fade out near end of life
+      p.mesh.rotation.y += dt * 1.1;
+      p.mesh.position.y = p.pos.y + Math.sin(p.t * 2.2) * 0.04;
+      p.ttl -= dt;
+      if (p.ttl <= 0) { scene.remove(p.mesh); pickups.splice(i, 1); continue; }
+    } else {
+      p.mesh.rotation.y += dt * 2;
+      p.mesh.position.y = p.pos.y + Math.sin(p.t * 2) * 0.08;
+    }
+    if (p.mesh.position.distanceTo(player.pos.clone().add(new THREE.Vector3(0, 1, 0))) < 1.4) {
       audio.pickup(p.kind);
-      if (p.kind === 'health') { player.heal(40); showHint('SAĞLIK TOPLANDI'); }
-      else { weapons.addReserve('all', 0); showHint('MÜHİMMAT TOPLANDI'); }
-      scene.remove(p.mesh); scene.remove(p.light);
+      if (p.kind === 'health') {
+        player.heal(p.ground ? 25 : 40);
+        showHint(p.ground ? 'SAĞLIK KİTİ ALINDI' : 'SAĞLIK TOPLANDI');
+      } else if (p.ground) {
+        // loot refills the equipped weapon
+        const def = weapons.current.def;
+        weapons.addReserve(def.id, Math.ceil(def.magSize * 0.8));
+        showHint('MERMİ YAĞMALANDI');
+      } else {
+        weapons.addReserve('all', 0);
+        showHint('MÜHİMMAT TOPLANDI');
+      }
+      scene.remove(p.mesh);
+      if (p.light) scene.remove(p.light);
       pickups.splice(i, 1);
     }
   }

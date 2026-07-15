@@ -132,7 +132,7 @@ function buildSoldier() {
   return { root, torso, neck, head, armL, armR, legL, legR, hips, muzzleLocal, rifleFlashAnchor: rifle };
 }
 
-const STATE = { IDLE: 'idle', ALERT: 'alert', COMBAT: 'combat', SEARCH: 'search', DEAD: 'dead' };
+const STATE = { IDLE: 'idle', HUNT: 'hunt', ALERT: 'alert', COMBAT: 'combat', SEARCH: 'search', DEAD: 'dead' };
 
 let idCounter = 0;
 
@@ -155,11 +155,14 @@ export class Enemy {
     this.yaw = Math.random() * Math.PI * 2;
     this.radius = 0.35;
     this.height = 1.8;
-    this.speed = 1.6;
+    this.speed = 2.3 + Math.random() * 0.6 + difficulty * 0.06;
 
     this.maxHp = 70 + difficulty * 14;
     this.hp = this.maxHp;
-    this.state = STATE.IDLE;
+    this.state = STATE.HUNT; // spawned attackers advance on the player immediately
+    this.stuckT = 0;
+    this.detourT = 0;
+    this.detourDir = 1;
     this.alertTimer = 0;
     this.fireCooldown = 0;
     this.burstLeft = 0;
@@ -223,7 +226,7 @@ export class Enemy {
     const dir = playerPos.clone().sub(eye).normalize();
     const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const angle = fwd.angleTo(new THREE.Vector3(dir.x, 0, dir.z));
-    const fov = this.state === STATE.IDLE ? Math.PI * 0.35 : Math.PI * 0.75;
+    const fov = this.state === STATE.IDLE ? Math.PI * 0.35 : Math.PI * 0.8;
     if (angle > fov && this.state !== STATE.COMBAT) return false;
     const blocked = segmentBlocked(eye, playerPos, this.world.colliders, 0.2, 2.2);
     return !blocked;
@@ -231,7 +234,7 @@ export class Enemy {
 
   alert(fromPos) {
     if (this.dead) return;
-    if (this.state === STATE.IDLE) {
+    if (this.state === STATE.IDLE || this.state === STATE.HUNT) {
       this.state = STATE.ALERT;
       this.lastKnownPlayerPos = fromPos.clone();
       this.alertTimer = 2.5;
@@ -254,15 +257,16 @@ export class Enemy {
       this.lastKnownPlayerPos = playerPos.clone();
       this.giveUpSearchT = 3.5;
     } else if (this.state === STATE.COMBAT) {
+      // lost line of sight → search the last spot, then resume the hunt
       this.state = STATE.SEARCH;
-      this.giveUpSearchT = 3.5;
-    } else if (this.state === STATE.ALERT) {
-      this.alertTimer -= dt;
-      if (seesPlayer) { this.state = STATE.COMBAT; }
-      else if (this.alertTimer <= 0) this.state = STATE.IDLE;
+      this.giveUpSearchT = 3.0;
+      this.lastKnownPlayerPos = playerPos.clone();
     } else if (this.state === STATE.SEARCH) {
       this.giveUpSearchT -= dt;
-      if (this.giveUpSearchT <= 0) { this.state = STATE.IDLE; this.lastKnownPlayerPos = null; }
+      if (this.giveUpSearchT <= 0) this.state = STATE.HUNT;
+    } else if (this.state === STATE.ALERT) {
+      this.alertTimer -= dt;
+      if (this.alertTimer <= 0) this.state = STATE.HUNT;
     }
 
     let targetPos = null;
@@ -310,35 +314,28 @@ export class Enemy {
     } else if (this.state === STATE.SEARCH && this.lastKnownPlayerPos) {
       targetPos = this.lastKnownPlayerPos;
       wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
-      moveSpeed = this.speed * 0.9;
-      if (this.pos.distanceTo(targetPos) < 1.5) targetPos = null;
-    } else if (this.state === STATE.ALERT && this.lastKnownPlayerPos) {
-      targetPos = this.lastKnownPlayerPos;
-      moveSpeed = this.speed * 0.7;
-      if (this.pos.distanceTo(targetPos) < 2) targetPos = null;
+      moveSpeed = this.speed;
+      if (this.pos.distanceTo(targetPos) < 1.5) this.state = STATE.HUNT;
     } else {
-      // idle wander occasionally
-      this.reposTimer -= dt;
-      if (this.reposTimer <= 0) {
-        this.reposTimer = 3 + Math.random() * 4;
-        const a = Math.random() * Math.PI * 2;
-        this.wanderTarget = this.pos.clone().add(new THREE.Vector3(Math.sin(a) * 6, 0, Math.cos(a) * 6));
-      }
-      if (this.wanderTarget) {
-        targetPos = this.wanderTarget;
-        moveSpeed = this.speed * 0.45;
-        if (this.pos.distanceTo(targetPos) < 1) targetPos = null;
-      }
+      // HUNT / ALERT: march straight onto the player so they always close in
+      targetPos = (this.state === STATE.ALERT && this.lastKnownPlayerPos) ? this.lastKnownPlayerPos : playerPos;
+      moveSpeed = this.speed * (this.state === STATE.ALERT ? 0.95 : 1);
+      wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
     }
 
-    // movement + simple separation from other enemies
+    // movement: separation from squadmates + stuck-detour steering around cover
     let moved = false;
     if (targetPos) {
       const dir = targetPos.clone().sub(this.pos);
       dir.y = 0;
       const d = dir.length();
-      if (d > 0.3) {
+      if (d > 0.4) {
         dir.normalize();
+        if (this.detourT > 0) {
+          this.detourT -= dt;
+          const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(this.detourDir);
+          dir.addScaledVector(side, 1.2).normalize();
+        }
         for (const other of enemies) {
           if (other === this || other.dead) continue;
           const away = this.pos.clone().sub(other.pos);
@@ -347,13 +344,28 @@ export class Enemy {
           if (od < 1.4 && od > 0.01) dir.add(away.normalize().multiplyScalar((1.4 - od) * 1.5));
         }
         dir.normalize();
+        const px = this.pos.x, pz = this.pos.z;
         this.pos.addScaledVector(dir, moveSpeed * dt);
-        if (!wantFace) wantFace = Math.atan2(dir.x, dir.z);
+        resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
+        // if a wall ate our movement, pick a side and slip around it
+        const progressed = Math.hypot(this.pos.x - px, this.pos.z - pz);
+        if (progressed < moveSpeed * dt * 0.35) {
+          this.stuckT += dt;
+          if (this.stuckT > 0.5 && this.detourT <= 0) {
+            this.detourT = 0.6 + Math.random() * 0.4;
+            this.detourDir = Math.random() < 0.5 ? -1 : 1;
+          }
+        } else {
+          this.stuckT = 0;
+        }
+        if (wantFace === null) wantFace = Math.atan2(dir.x, dir.z);
         moved = true;
+      } else {
+        resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
       }
+    } else {
+      resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
     }
-
-    resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
     this.pos.y = 0;
 
     if (wantFace !== null) {

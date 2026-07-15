@@ -347,32 +347,32 @@ export class World {
 
     // ----- shipping containers -----
     const containerColors = ['#8a3b2a', '#2a5a7a', '#3d6b3a', '#7a6a2a', '#5a3a6a'];
+    // all containers sit flat on the ground — never stacked
     const containers = [
-      [-20, 20, 0.3], [-14, 20, -0.1, 2.6], [-20, 26, 0.2],
-      [28, -18, 1.4], [28, -25, 1.2], [34, -21, 1.3, 2.6],
-      [8, 38, -0.4], [-2, 40, 0.15],
-      [-38, -18, 0.9], [-38, -11, 0.8],
-      [15, -42, 2.2], [40, 30, 0.6], [-30, 60, 1.9],
+      [-21, 20, 0.3], [-13, 21, -0.1], [-21, 27, 0.2],
+      [28, -18, 1.4], [31, -25, 1.2], [38, -19, 1.3],
+      [8, 38, -0.4], [-3, 41, 0.15],
+      [-39, -18, 0.9], [-40, -10, 0.8],
+      [16, -43, 2.2], [43, 31, 0.6], [-31, 60, 1.9],
     ];
-    containers.forEach(([x, z, rot, yLift], i) => {
+    containers.forEach(([x, z, rot], i) => {
       const mat = new THREE.MeshStandardMaterial({
         map: containerTexture(containerColors[i % containerColors.length]),
         roughness: 0.7, metalness: 0.35,
       });
-      const y = (yLift ? yLift : 0) + 1.3;
-      this._solidBox(6.5, 2.6, 2.6, mat, x, y, z, { rotY: rot });
+      this._solidBox(6.5, 2.6, 2.6, mat, x, 1.3, z, { rotY: rot });
     });
 
     // ----- crates & sandbags (cover) -----
+    // single ground-level crates only — no stacks
     const crateMat = new THREE.MeshStandardMaterial({ map: crateTexture(), roughness: 0.9 });
     const cratePositions = [
-      [-6, 12], [-4.6, 12.3], [-5.3, 13.6, 1.2], [18, 8], [19.4, 8.4],
-      [-12, -28], [-10.6, -28.4], [-11.3, -27, 1.2], [36, 12], [5, -18],
-      [-28, 34], [-26.6, 34.5], [44, -38], [45.4, -38.3], [44.7, -37, 1.2],
-      [-45, 20], [10, 55], [-8, -48], [58, -20], [-58, 30],
+      [-6, 12], [19, 8], [-12, -28], [36, 12], [5, -18],
+      [-28, 34], [44, -38], [-45, 20], [10, 55], [-8, -48],
+      [58, -20], [-58, 30], [24, -8], [-18, 46],
     ];
-    for (const [x, z, y2] of cratePositions) {
-      this._solidBox(1.3, 1.3, 1.3, crateMat, x, (y2 || 0) + 0.65, z, { rotY: Math.random() * 0.6 });
+    for (const [x, z] of cratePositions) {
+      this._solidBox(1.3, 1.3, 1.3, crateMat, x, 0.65, z, { rotY: Math.random() * 0.6 });
     }
 
     const sandMat = new THREE.MeshStandardMaterial({ color: 0x8f8266, roughness: 1 });
