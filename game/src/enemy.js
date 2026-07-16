@@ -129,6 +129,52 @@ function buildSoldier() {
 // bends the wrong way on the imported rig)
 const WALK_AXIS = { thigh: 'x', calf: 'x', arm: 'x' };
 
+// weapon silhouettes carried by enemies (seen at a distance, so kept simple).
+// z- is the barrel/forward direction, matching how it hangs off the hand bone.
+const EGUN = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.5, metalness: 0.7 });
+const EWOOD = new THREE.MeshStandardMaterial({ color: 0x5a3a1e, roughness: 0.75, metalness: 0.06 });
+const ENEMY_WEAPON_KINDS = ['rifle', 'ak', 'smg', 'shotgun', 'sniper'];
+
+function ebox(sx, sy, sz, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+  m.position.set(x, y, z);
+  return m;
+}
+function ecyl(r, h, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 8), mat);
+  m.rotation.x = Math.PI / 2; m.position.set(x, y, z);
+  return m;
+}
+
+function buildEnemyWeapon(kind) {
+  const g = new THREE.Group();
+  if (kind === 'ak') {
+    g.add(ebox(0.05, 0.08, 0.44, EGUN, 0, 0, 0));
+    g.add(ecyl(0.013, 0.4, EGUN, 0, 0.01, -0.36));
+    g.add(ebox(0.045, 0.05, 0.22, EWOOD, 0, -0.005, 0.28));
+    const mag = ebox(0.04, 0.17, 0.07, EGUN, 0, -0.13, -0.05); mag.rotation.x = -0.25; g.add(mag);
+  } else if (kind === 'smg') {
+    g.add(ebox(0.045, 0.07, 0.3, EGUN, 0, 0, 0.02));
+    g.add(ecyl(0.011, 0.12, EGUN, 0, 0.01, -0.22));
+    g.add(ebox(0.03, 0.16, 0.05, EGUN, 0, -0.1, -0.06));
+  } else if (kind === 'shotgun') {
+    g.add(ebox(0.05, 0.07, 0.4, EGUN, 0, 0, 0.04));
+    g.add(ecyl(0.017, 0.5, EGUN, 0, 0.02, -0.38));
+    g.add(ecyl(0.018, 0.44, EGUN, 0, -0.015, -0.35));
+    g.add(ebox(0.045, 0.05, 0.2, EWOOD, 0, -0.005, 0.3));
+  } else if (kind === 'sniper') {
+    g.add(ebox(0.045, 0.06, 0.5, EWOOD, 0, 0, 0.08));
+    g.add(ecyl(0.014, 0.62, EGUN, 0, 0.02, -0.5));
+    g.add(ecyl(0.03, 0.2, EGUN, 0, 0.08, -0.05));           // scope
+  } else { // rifle / default
+    g.add(ebox(0.05, 0.09, 0.62, EGUN, 0, 0, 0));
+    g.add(ecyl(0.014, 0.34, EGUN, 0, 0, -0.44));
+    g.add(ebox(0.04, 0.18, 0.06, EGUN, 0, -0.13, -0.04));
+  }
+  g.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });
+  return g;
+}
+
 const STATE = { IDLE: 'idle', HUNT: 'hunt', ALERT: 'alert', COMBAT: 'combat', SEARCH: 'search', DEAD: 'dead' };
 
 let idCounter = 0;
@@ -248,16 +294,11 @@ export class Enemy {
     this.headRef = head || chest || holder;
     this.chestRef = chest || spine || holder;
 
-    // give the enemy a rifle in-hand so muzzle flashes come from the right place
+    // give the enemy a (randomly chosen) weapon in-hand so muzzle flashes come
+    // from the right place and different soldiers look distinct
+    this.weaponKind = ENEMY_WEAPON_KINDS[Math.floor(Math.random() * ENEMY_WEAPON_KINDS.length)];
     const anchor = weaponBone || rHand;
-    const rifle = new THREE.Group();
-    const g = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.5, metalness: 0.7 });
-    const bodyM = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.62), g);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 8), g);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = -0.44;
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.06), g); mag.position.set(0, -0.13, -0.04);
-    rifle.add(bodyM, barrel, mag);
-    rifle.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });
+    const rifle = buildEnemyWeapon(this.weaponKind);
     if (anchor) {
       // scale the rifle back up out of the (small) bone space and orient it
       const inv = 1 / (template.root.scale.x * T.scale || 1);

@@ -715,11 +715,14 @@ addEventListener('keydown', (e) => {
   setKeyState(e.code, true);
   if (G.state !== 'playing') return;
   if (e.code === 'KeyR') weapons.startReload();
+  if (e.code === 'KeyF') weapons.playInspect();
   if (e.code === 'KeyG') throwGrenade();
   if (e.code === 'Digit1') weapons.switchTo(0);
   if (e.code === 'Digit2') weapons.switchTo(1);
   if (e.code === 'Digit3') weapons.switchTo(2);
   if (e.code === 'Digit4') weapons.switchTo(3);
+  if (e.code === 'Digit5') weapons.switchTo(4);
+  if (e.code === 'Digit6') weapons.switchTo(5);
 });
 addEventListener('keyup', (e) => setKeyState(e.code, false));
 
@@ -863,7 +866,7 @@ function frame() {
     player.update(dt, keys);
 
     const look = player.consumeLookDelta();
-    weapons.update(dt, { lookDeltaX: look.x, lookDeltaY: look.y, speed: player.speed, grounded: player.grounded, crouch: player.crouching });
+    weapons.update(dt, { lookDeltaX: look.x, lookDeltaY: look.y, speed: player.speed, grounded: player.grounded, crouch: player.crouching, sprint: player.sprinting });
 
     const shots = weapons.tryFire(player.speed > 0.5);
     if (shots) processShots(shots);
@@ -876,7 +879,7 @@ function frame() {
     updateWaves(dt);
     effects.update(dt);
 
-    camera.fov = player.baseFov * weapons.currentFovMult() * (player.sprinting ? 1.045 : 1);
+    camera.fov = player.baseFov * weapons.currentFovMult() * (player.sprinting ? 1.07 : 1);
     camera.updateProjectionMatrix();
 
     // right-click ADS shows a red-dot reticle on non-sniper weapons; the

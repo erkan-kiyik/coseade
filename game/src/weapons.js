@@ -265,6 +265,63 @@ function buildSniper() {
   return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -1.0), hands };
 }
 
+function buildAK() {
+  const g = new THREE.Group();
+  const mag = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6a4324, roughness: 0.72, metalness: 0.08 });
+  g.add(box(0.056, 0.08, 0.42, M.gunmetal, 0, 0.015, 0.0));                    // receiver
+  g.add(box(0.05, 0.05, 0.3, wood, 0, 0.01, -0.4));                           // wooden handguard
+  g.add(box(0.052, 0.03, 0.12, wood, 0, 0.06, -0.36));                        // upper handguard
+  g.add(cyl(0.013, 0.013, 0.4, M.darkSteel, 0, 0.02, -0.72, Math.PI / 2));    // barrel
+  g.add(cyl(0.02, 0.02, 0.06, M.darkSteel, 0, 0.02, -0.93, Math.PI / 2));     // slant muzzle
+  g.add(box(0.045, 0.05, 0.24, wood, 0, -0.01, 0.28));                        // wooden stock
+  g.add(box(0.05, 0.085, 0.05, wood, 0, -0.04, 0.4));
+  g.add(box(0.035, 0.09, 0.045, wood, 0, -0.095, 0.06, 0.22));                // pistol grip
+  g.add(box(0.008, 0.03, 0.008, M.darkSteel, 0, 0.07, -0.6));                 // front sight post
+  const frontDot = new THREE.Mesh(new THREE.SphereGeometry(0.005, 6, 6), M.sightGlow);
+  frontDot.position.set(0, 0.088, -0.6); g.add(frontDot);
+  g.add(box(0.02, 0.028, 0.014, M.darkSteel, 0, 0.072, 0.16));                // rear sight block
+  // signature curved AK magazine (three angled segments)
+  mag.add(box(0.04, 0.1, 0.07, M.darkSteel, 0, -0.05, 0.02, -0.15));
+  mag.add(box(0.04, 0.09, 0.065, M.darkSteel, 0, -0.13, 0.04, -0.4));
+  mag.add(box(0.04, 0.07, 0.06, M.darkSteel, 0, -0.2, 0.09, -0.62));
+  mag.position.set(0, -0.06, -0.08);
+  g.add(mag);
+  g.add(box(0.022, 0.016, 0.05, M.darkSteel, 0.032, 0.05, 0.02));             // charging handle
+  const hands = addHands(g, {
+    right: [0.0, -0.09, 0.08], rightRot: [0.42, 0, 0],
+    left: [-0.01, -0.05, -0.36], leftRot: [0.24, 0, -0.12],
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -0.98), hands };
+}
+
+function buildSMG() {
+  const g = new THREE.Group();
+  const mag = new THREE.Group();
+  g.add(box(0.05, 0.075, 0.34, M.gunmetal, 0, 0.01, 0.02));                   // receiver
+  g.add(cyl(0.026, 0.026, 0.2, M.polymer, 0, 0.012, -0.22, Math.PI / 2));     // slim handguard
+  g.add(cyl(0.012, 0.012, 0.12, M.darkSteel, 0, 0.012, -0.4, Math.PI / 2));   // short barrel
+  g.add(cyl(0.02, 0.02, 0.05, M.darkSteel, 0, 0.012, -0.47, Math.PI / 2));    // muzzle
+  // retractable wire stock
+  g.add(cyl(0.006, 0.006, 0.22, M.darkSteel, -0.02, 0.0, 0.26, Math.PI / 2, 0, 0, 6));
+  g.add(cyl(0.006, 0.006, 0.22, M.darkSteel, 0.02, 0.0, 0.26, Math.PI / 2, 0, 0, 6));
+  g.add(box(0.06, 0.055, 0.04, M.grip, 0, -0.02, 0.38));                      // butt pad
+  g.add(box(0.034, 0.085, 0.045, M.grip, 0, -0.088, 0.08, 0.2));              // pistol grip
+  // drum/iron sight ring (MP5 signature)
+  g.add(cyl(0.018, 0.018, 0.02, M.darkSteel, 0, 0.055, -0.36, Math.PI / 2, 0, 0, 8));
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.004, 6, 6), M.sightGlow);
+  dot.position.set(0, 0.062, -0.36); g.add(dot);
+  g.add(box(0.02, 0.03, 0.03, M.darkSteel, 0, 0.058, 0.12));                  // rear diopter
+  mag.add(box(0.03, 0.16, 0.05, M.darkSteel, 0, -0.09, 0, 0.08));            // curved stick mag
+  mag.position.set(0, -0.05, -0.1);
+  g.add(mag);
+  const hands = addHands(g, {
+    right: [0.0, -0.085, 0.1], rightRot: [0.45, 0, 0],
+    left: [-0.005, -0.045, -0.2], leftRot: [0.3, 0, -0.1],
+  });
+  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.012, -0.52), hands };
+}
+
 // ---------------- weapon definitions ----------------
 
 export const WEAPON_DEFS = [
@@ -299,6 +356,22 @@ export const WEAPON_DEFS = [
     recoilPitch: 0.014, recoilYaw: 0.005, kickback: 0.05, adsFovMult: 0.9, adsTime: 0.12,
     pellets: 1, range: 70, sound: 'pistol', build: buildPistol,
     hip: [0.24, -0.23, -0.45], ads: [0, -0.135, -0.3], scope: false,
+  },
+  {
+    id: 'ak', name: 'AK-47', mode: 'auto', modeLabel: 'TAM OTOMATİK',
+    damage: 32, headshotMult: 2.1, rpm: 600, magSize: 30, reserveStart: 150, maxReserve: 240,
+    reloadTime: 2.4, spreadHip: 0.034, spreadAds: 0.006, spreadMove: 0.034,
+    recoilPitch: 0.016, recoilYaw: 0.006, kickback: 0.07, adsFovMult: 0.82, adsTime: 0.18,
+    pellets: 1, range: 130, sound: 'rifle', build: buildAK,
+    hip: [0.26, -0.24, -0.5], ads: [0, -0.152, -0.32], scope: false,
+  },
+  {
+    id: 'smg', name: 'MP5', mode: 'auto', modeLabel: 'TAM OTOMATİK',
+    damage: 20, headshotMult: 1.9, rpm: 800, magSize: 30, reserveStart: 180, maxReserve: 300,
+    reloadTime: 1.9, spreadHip: 0.03, spreadAds: 0.006, spreadMove: 0.026,
+    recoilPitch: 0.008, recoilYaw: 0.004, kickback: 0.04, adsFovMult: 0.85, adsTime: 0.13,
+    pellets: 1, range: 90, sound: 'pistol', build: buildSMG,
+    hip: [0.25, -0.23, -0.47], ads: [0, -0.142, -0.3], scope: false,
   },
 ];
 
@@ -367,6 +440,11 @@ export class WeaponSystem {
     this.kick = 0;         // backward kick amount
     this.recoilRot = 0;    // viewmodel pitch from recoil
     this.throwT = 0;       // grenade-throw viewmodel animation timer
+    this.inspectT = 0;     // weapon-inspect animation timer (counts down)
+    this.inspectDur = 2.4;
+    this.sprintAmt = 0;    // 0..1 tactical-sprint lowered-weapon blend
+    this.emptyReload = false; // reload started on an empty chamber (adds bolt release)
+    this.breatheT = Math.random() * 10; // idle breathing phase
 
     // muzzle flash
     this.flashLight = new THREE.PointLight(0xffb35e, 0, 7, 2);
@@ -419,15 +497,25 @@ export class WeaponSystem {
     if (w.mag >= w.def.magSize || w.reserve <= 0) return;
     this.reloading = true;
     this.reloadT = 0;
-    this.reloadStagePlayed = [false, false, false];
+    this.reloadStagePlayed = [false, false, false, false];
+    // empty reloads take longer and end with a bolt/charging-handle release
+    this.emptyReload = w.mag <= 0;
+    this.inspectT = 0;
   }
 
-  setAds(v) { this.wantAds = v; }
+  setAds(v) { this.wantAds = v; if (v) this.inspectT = 0; }
 
-  playThrow() { this.throwT = 0.55; }
+  playThrow() { this.throwT = 0.55; this.inspectT = 0; }
+
+  // F: examine the weapon — rotates it to check the chamber then the magazine
+  playInspect() {
+    if (this.reloading || this.switching > 0 || this.inspectT > 0) return;
+    this.inspectT = this.inspectDur;
+  }
 
   setTrigger(v) {
     this.triggerHeld = v;
+    if (v) this.inspectT = 0; // firing cancels an inspect
     if (!v) this.semiReady = true;
   }
 
@@ -476,9 +564,10 @@ export class WeaponSystem {
     this.kick = Math.min(0.2, this.kick + def.kickback);
     this.recoilRot = Math.min(0.3, this.recoilRot + def.recoilPitch * 6);
 
-    // flash
-    this.flashTime = 0.045;
-    this.flashMesh.scale.set(0.8 + Math.random() * 0.7, 0.8 + Math.random() * 0.7, 0.8 + Math.random() * 0.6);
+    // flash — bigger, brighter, randomized
+    this.flashTime = 0.05;
+    const fs = 1.0 + Math.random() * 0.9;
+    this.flashMesh.scale.set(fs, fs, 0.9 + Math.random() * 0.8);
     this.flashMesh.rotation.z = Math.random() * Math.PI * 2;
 
     this.audio.gunshot(def.sound);
@@ -533,10 +622,10 @@ export class WeaponSystem {
       if (this.switching === 0) { this.switchTarget = -1; this.rig.position.y = 0; }
     }
 
-    // reload timeline
+    // reload timeline (empty reloads run longer and add a bolt release)
     if (this.reloading) {
       this.reloadT += dt;
-      const T = def.reloadTime;
+      const T = def.reloadTime * (this.emptyReload ? 1.2 : 1);
       const t = this.reloadT / T;
       const magY = w.magHome.y;
       if (t < 0.3) {
@@ -571,13 +660,21 @@ export class WeaponSystem {
       // whole weapon dips + rolls during reload
       this.rig.rotation.z = Math.sin(Math.min(1, t) * Math.PI) * 0.22;
       this.rig.rotation.x = Math.sin(Math.min(1, t) * Math.PI) * 0.12;
+      // empty reload: slap the bolt/charging handle home near the end
+      if (this.emptyReload && t > 0.9) {
+        const k = Math.sin(Math.min(1, (t - 0.9) / 0.1) * Math.PI);
+        this.rig.position.z = k * 0.05;
+        if (!this.reloadStagePlayed[3] && t > 0.94) { this.audio.reloadStage(2); this.reloadStagePlayed[3] = true; }
+      }
       if (this.reloadT >= T) {
         const need = def.magSize - w.mag;
         const take = Math.min(need, w.reserve);
         w.mag += take;
         w.reserve -= take;
         this.reloading = false;
+        this.emptyReload = false;
         this.rig.rotation.set(0, 0, 0);
+        this.rig.position.set(0, 0, 0);
         w.magMesh.position.copy(w.magHome);
         w.magMesh.rotation.x = 0;
         w.magMesh.visible = true;
@@ -645,6 +742,51 @@ export class WeaponSystem {
       model.rotation.z -= s * 0.35;
     }
 
+    // tactical sprint: lower and cant the weapon while running (raises the
+    // instant you aim, fire, reload or inspect)
+    const wantSprint = !!ctx.sprint && !this.wantAds && !this.triggerHeld &&
+      !this.reloading && this.switching === 0 && this.inspectT <= 0 && this.pumping <= 0;
+    this.sprintAmt += ((wantSprint ? 1 : 0) - this.sprintAmt) * Math.min(1, dt * 9);
+    if (this.sprintAmt > 0.001) {
+      const s = this.sprintAmt;
+      model.position.x += s * 0.06;
+      model.position.y += -s * 0.09;
+      model.position.z += -s * 0.05;
+      model.rotation.x += s * 0.5;
+      model.rotation.z += -s * 0.5;
+      model.rotation.y += s * 0.32;
+    }
+
+    // idle breathing — subtle rise/fall, a touch more present while aiming
+    this.breatheT += dt;
+    const breatheAmp = 0.0045 * (0.5 + this.adsAmount * 0.8) * (1 - this.sprintAmt);
+    model.position.y += Math.sin(this.breatheT * 1.6) * breatheAmp;
+    model.rotation.x += Math.sin(this.breatheT * 1.6 + 0.4) * breatheAmp * 0.6;
+
+    // weapon inspect (F): raise + rotate to check the chamber, tilt to the
+    // magazine, then settle back. Beats start/end at zero so cancelling (by
+    // firing/aiming) can't pop.
+    if (this.inspectT > 0) {
+      this.inspectT = Math.max(0, this.inspectT - dt);
+      const tt = 1 - this.inspectT / this.inspectDur;
+      let ry = 0, rx = 0, rz = 0, py2 = 0, pz2 = 0;
+      if (tt < 0.42) {
+        const k = tt / 0.42;
+        ry = k * 0.95; rz = k * 0.5; rx = -k * 0.3; py2 = k * 0.05; pz2 = k * 0.09;
+      } else if (tt < 0.72) {
+        const k = (tt - 0.42) / 0.3;
+        ry = 0.95 - k * 0.45; rx = -0.3 + k * 1.05; rz = 0.5 - k * 0.2; py2 = 0.05 - k * 0.13; pz2 = 0.09 + k * 0.04;
+      } else {
+        const k = (tt - 0.72) / 0.28;
+        ry = 0.5 * (1 - k); rx = 0.75 * (1 - k); rz = 0.3 * (1 - k); py2 = -0.08 * (1 - k); pz2 = 0.13 * (1 - k);
+      }
+      model.rotation.y += ry;
+      model.rotation.x += rx;
+      model.rotation.z += rz;
+      model.position.y += py2;
+      model.position.z += pz2;
+    }
+
     // hide viewmodel when scoped in fully
     model.visible = !(def.scope && this.adsAmount > 0.85) && (this.switching === 0 || true);
 
@@ -655,9 +797,9 @@ export class WeaponSystem {
       const mLocal = this.muzzleWorldLocal();
       this.flashMesh.position.copy(mLocal);
       this.flashMesh.visible = on;
-      this.flashMesh.material.opacity = on ? 0.9 : 0;
+      this.flashMesh.material.opacity = on ? 1.0 : 0;
       this.flashLight.position.copy(mLocal);
-      this.flashLight.intensity = on ? 26 : 0;
+      this.flashLight.intensity = on ? 34 + Math.random() * 12 : 0;
     } else {
       this.flashMesh.visible = false;
       this.flashMesh.material.opacity = 0;
