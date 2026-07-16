@@ -261,9 +261,14 @@ export class World {
     this.scene.add(sun);
     this.sun = sun;
 
-    const fillMoon = new THREE.DirectionalLight(0x5a6fa8, 0.35);
+    const fillMoon = new THREE.DirectionalLight(0x5a6fa8, 0.4);
     fillMoon.position.set(60, 80, 70);
     this.scene.add(fillMoon);
+
+    // cool back-rim light so characters/cover separate from the dusk backdrop
+    const rim = new THREE.DirectionalLight(0x9fc0ff, 0.5);
+    rim.position.set(30, 26, 90);
+    this.scene.add(rim);
 
     // ----- ground -----
     const ground = new THREE.Mesh(

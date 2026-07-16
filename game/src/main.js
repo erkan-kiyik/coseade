@@ -8,9 +8,12 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { World, resolveCollisions } from './world.js';
 import { AudioEngine } from './audio.js';
 import { Effects } from './effects.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+
 import { WeaponSystem, WEAPON_DEFS } from './weapons.js';
 import { Player } from './player.js';
-import { Enemy } from './enemy.js';
+import { Enemy, pickEnemyType } from './enemy.js';
+import { loadEnemyTemplate } from './modelLoader.js';
 
 // ============================================================ DOM refs
 const $ = (id) => document.getElementById(id);
@@ -41,6 +44,7 @@ const damageVignette = $('damage-vignette');
 const lowhpVignette = $('lowhp-vignette');
 const screenFlash = $('screen-flash');
 const scopeOverlay = $('scope-overlay');
+const adsReticle = $('ads-reticle');
 const loadingEl = $('loading');
 
 const menuMain = $('menu-main');
@@ -64,7 +68,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.14;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 appEl.appendChild(renderer.domElement);
 const canvas = renderer.domElement;
@@ -82,6 +86,11 @@ const player = new Player(camera, world, audio);
 // the first-person weapon/hands are children of the camera, so the camera must
 // be part of the scene graph for them to render.
 scene.add(camera);
+
+// external rigged enemy body — loaded once, cloned per spawn. Best-effort:
+// stays null (procedural fallback) if the model can't be fetched/parsed.
+let enemyTemplate = null;
+const enemyTemplateReady = loadEnemyTemplate().then((t) => { enemyTemplate = t; }).catch(() => {});
 
 // ---- post-processing ----
 const composer = new EffectComposer(renderer);
@@ -105,6 +114,15 @@ const vignetteShader = {
 };
 const vignettePass = new ShaderPass(vignetteShader);
 composer.addPass(vignettePass);
+
+// FXAA edge smoothing (the bloom composer path can't use MSAA)
+const fxaaPass = new ShaderPass(FXAAShader);
+const setFxaaRes = () => {
+  const pr = renderer.getPixelRatio();
+  fxaaPass.material.uniforms.resolution.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr));
+};
+setFxaaRes();
+composer.addPass(fxaaPass);
 composer.addPass(new OutputPass());
 
 function applyQualityGraphics() {
@@ -121,6 +139,7 @@ function applyQualityGraphics() {
     bloomPass.enabled = true;
     renderer.shadowMap.enabled = true;
   }
+  if (typeof setFxaaRes === 'function') setFxaaRes();
 }
 applyQualityGraphics();
 
@@ -130,6 +149,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
   bloomPass.setSize(innerWidth, innerHeight);
+  setFxaaRes();
 });
 
 // ============================================================ game state
@@ -551,7 +571,10 @@ function spawnWaveEnemies() {
     const sp = spawns[Math.floor(Math.random() * spawns.length)].clone();
     sp.x += (Math.random() - 0.5) * 4;
     sp.z += (Math.random() - 0.5) * 4;
-    const e = new Enemy(scene, world, effects, audio, sp, difficulty);
+    const e = new Enemy(scene, world, effects, audio, sp, difficulty, {
+      template: enemyTemplate,
+      type: pickEnemyType(G.wave),
+    });
     e.onPlayerHit = (dmg, fromPos) => { player.takeDamage(dmg, fromPos); flashDamageDirection(fromPos); };
     e.onAlert = (pos) => {
       for (const other of enemies) if (!other.dead) other.alert(pos);
@@ -755,20 +778,20 @@ function rebuildWorldForQuality() {
   world.sun.castShadow = quality !== 'low';
 }
 
-function startGame() {
+async function startGame() {
   audio.init();
   audio.resume();
   audio.startAmbient();
   resetGameState();
   hideOverlay(menuMain); hideOverlay(menuDeath); hideOverlay(menuPause);
   showOverlay(loadingEl);
-  requestAnimationFrame(() => {
-    hideOverlay(loadingEl);
-    hud.classList.add('visible');
-    G.state = 'playing';
-    canvas.requestPointerLock();
-    startWave(1);
-  });
+  // let the rigged enemy model finish loading (capped) so wave 1 already uses it
+  await Promise.race([enemyTemplateReady, new Promise((r) => setTimeout(r, 4000))]);
+  hideOverlay(loadingEl);
+  hud.classList.add('visible');
+  G.state = 'playing';
+  canvas.requestPointerLock();
+  startWave(1);
 }
 
 function resetGameState() {
@@ -856,8 +879,12 @@ function frame() {
     camera.fov = player.baseFov * weapons.currentFovMult() * (player.sprinting ? 1.045 : 1);
     camera.updateProjectionMatrix();
 
-    crosshair.classList.toggle('hidden', weapons.isScoped() || weapons.adsAmount > 0.7);
+    // right-click ADS shows a red-dot reticle on non-sniper weapons; the
+    // sniper keeps its full scope overlay.
+    const showReticle = !weapons.isScoped() && weapons.adsAmount > 0.5;
+    crosshair.classList.toggle('hidden', weapons.isScoped() || showReticle);
     scopeOverlay.classList.toggle('active', weapons.isScoped());
+    adsReticle.classList.toggle('active', showReticle);
 
     audio.listener.pos = camera.position;
     audio.listener.fwd = camera.getWorldDirection(new THREE.Vector3());

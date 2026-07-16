@@ -17,7 +17,9 @@ const M = {
   glove: new THREE.MeshStandardMaterial({ color: 0x26282a, roughness: 0.85, metalness: 0.05 }),
   gloveKnuckle: new THREE.MeshStandardMaterial({ color: 0x333638, roughness: 0.7, metalness: 0.1 }),
   sleeve: new THREE.MeshStandardMaterial({ color: 0x39402e, roughness: 0.92, metalness: 0.03 }),
-  skin: new THREE.MeshStandardMaterial({ color: 0xba8b64, roughness: 0.75 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0xc79a72, roughness: 0.72, metalness: 0.02 }),
+  skinDark: new THREE.MeshStandardMaterial({ color: 0xa6764f, roughness: 0.75, metalness: 0.02 }),
+  nail: new THREE.MeshStandardMaterial({ color: 0xd8b79a, roughness: 0.4, metalness: 0.05 }),
 };
 
 function box(sx, sy, sz, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
@@ -33,32 +35,91 @@ function cyl(r1, r2, h, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, seg = 
   return m;
 }
 
-// ---------------- gloved hands (shared) ----------------
-// A gripping hand: camouflage sleeve receding toward the camera (+z), a gloved
-// palm and curled fingers wrapping forward (−z) around whatever it's placed on.
-function buildHand() {
+// ---------------- human hands (shared) ----------------
+// An anatomically-shaped gripping hand: a camouflage sleeve receding toward the
+// camera (+z), a bare wrist, a rounded palm, four jointed tapered fingers that
+// curl forward (−z) and an opposed thumb. Fingers are built from three phalanx
+// segments on nested pivots so they read as real fingers, not blocks.
+
+// one length-wise tapered segment pointing toward −z, joint at local origin
+function phalanx(len, r1, r2, mat) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 8), mat);
+  m.rotation.x = -Math.PI / 2; // cylinder axis (Y) → −Z
+  m.position.z = -len / 2;
+  return m;
+}
+
+// a curled finger: base -> middle -> tip on nested joints; more curl = tighter
+function buildFinger(x, z, len, curl, tipMat) {
+  const j1 = new THREE.Group();
+  j1.position.set(x, 0.006, z);
+  j1.rotation.x = -(0.25 + curl * 0.55);
+  j1.add(phalanx(len * 0.44, 0.0115, 0.0108, M.skin));
+  const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.0125, 8, 6), M.skinDark);
+  j1.add(knuckle);
+  const j2 = new THREE.Group();
+  j2.position.z = -len * 0.44;
+  j2.rotation.x = -(0.35 + curl * 0.75);
+  j2.add(phalanx(len * 0.33, 0.0106, 0.0098, M.skin));
+  const j3 = new THREE.Group();
+  j3.position.z = -len * 0.33;
+  j3.rotation.x = -(0.3 + curl * 0.7);
+  j3.add(phalanx(len * 0.26, 0.0097, 0.0075, M.skin));
+  const nail = new THREE.Mesh(new THREE.BoxGeometry(0.011, 0.004, 0.013), tipMat || M.nail);
+  nail.position.set(0, 0.007, -len * 0.16);
+  j3.add(nail);
+  j2.add(j3);
+  j1.add(j2);
+  return j1;
+}
+
+function buildHand(curl = 1) {
   const grp = new THREE.Group();
-  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.07, 0.36, 10), M.sleeve);
+  // sleeve so it reads as an arm rather than a floating hand
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, 0.34, 12), M.sleeve);
   sleeve.rotation.x = Math.PI / 2;
   sleeve.position.z = 0.2;
   grp.add(sleeve);
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.05, 10), M.glove);
-  cuff.rotation.x = Math.PI / 2;
-  cuff.position.z = 0.04;
-  grp.add(cuff);
-  const palm = box(0.1, 0.062, 0.12, M.glove, 0, 0, -0.05);
+  const cuffTrim = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.008, 6, 14), M.sleeve);
+  cuffTrim.position.z = 0.04;
+  grp.add(cuffTrim);
+  // wrist + tapered forehand
+  const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.05, 0.08, 12), M.skin);
+  wrist.rotation.x = Math.PI / 2;
+  wrist.position.z = 0.02;
+  grp.add(wrist);
+  // palm — a rounded, slightly flattened block
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.046, 0.1), M.skin);
+  palm.position.set(-0.002, 0, -0.05);
   grp.add(palm);
-  const knuckles = box(0.1, 0.03, 0.03, M.gloveKnuckle, 0, 0.03, -0.11);
-  grp.add(knuckles);
-  // four curled fingers wrapping down and forward
-  for (let i = 0; i < 4; i++) {
-    const seg = box(0.02, 0.055, 0.05, M.glove, -0.033 + i * 0.022, -0.028, -0.115, -0.95, 0, 0);
-    grp.add(seg);
-    const tip = box(0.02, 0.038, 0.028, M.glove, -0.033 + i * 0.022, -0.062, -0.09, -1.7, 0, 0);
-    grp.add(tip);
-  }
-  const thumb = box(0.03, 0.052, 0.045, M.glove, 0.056, 0.0, -0.055, 0.2, 0, 0.7);
-  grp.add(thumb);
+  const heel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), M.skin);
+  heel.scale.set(1, 0.55, 0.9);
+  heel.position.set(-0.002, -0.004, -0.01);
+  grp.add(heel);
+  // knuckle ridge across the top of the palm
+  const knuckleRidge = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.086, 8), M.skinDark);
+  knuckleRidge.rotation.z = Math.PI / 2;
+  knuckleRidge.position.set(-0.002, 0.012, -0.098);
+  grp.add(knuckleRidge);
+  // four fingers, index→pinky, slightly staggered lengths and knuckle line
+  const xs = [-0.032, -0.0105, 0.0105, 0.032];
+  const lens = [0.092, 0.1, 0.095, 0.078];
+  const zf = [-0.1, -0.104, -0.102, -0.096];
+  for (let i = 0; i < 4; i++) grp.add(buildFinger(xs[i], zf[i], lens[i], curl, M.nail));
+  // opposed thumb on the +x side, two segments angled across the grip
+  const tBase = new THREE.Group();
+  tBase.position.set(0.05, -0.004, -0.02);
+  tBase.rotation.set(0.15, 0, 0.9);
+  tBase.add(phalanx(0.05, 0.014, 0.012, M.skin));
+  const tTip = new THREE.Group();
+  tTip.position.z = -0.05;
+  tTip.rotation.x = -(0.3 + curl * 0.35);
+  tTip.add(phalanx(0.042, 0.012, 0.0085, M.skin));
+  const tNail = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.004, 0.013), M.nail);
+  tNail.position.set(0, 0.008, -0.026);
+  tTip.add(tNail);
+  tBase.add(tTip);
+  grp.add(tBase);
   grp.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; } });
   return grp;
 }

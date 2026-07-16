@@ -182,6 +182,17 @@
     #scope-overlay .scope-cross-h { position: absolute; left: 50%; top: 50%; height: 1.5px; width: 66vmin; margin: -0.75px 0 0 -33vmin; background: rgba(0,0,0,0.85); }
     #scope-overlay .scope-dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: rgba(255,60,40,0.95); border-radius: 50%; }
 
+    /* ADS red-dot / holo reticle for non-sniper weapons */
+    #ads-reticle { position: fixed; inset: 0; z-index: 23; pointer-events: none; opacity: 0; transition: opacity 0.1s ease; }
+    #ads-reticle.active { opacity: 1; }
+    #ads-reticle .rd-ring { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border: 1.5px solid rgba(255, 60, 40, 0.55); border-radius: 50%; box-shadow: 0 0 8px rgba(255,60,40,0.35), inset 0 0 10px rgba(0,0,0,0.35); }
+    #ads-reticle .rd-dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: rgba(255, 48, 32, 0.98); border-radius: 50%; box-shadow: 0 0 6px 1px rgba(255, 60, 40, 0.9); }
+    #ads-reticle .rd-tick { position: absolute; left: 50%; top: 50%; background: rgba(255, 60, 40, 0.7); }
+    #ads-reticle .rd-t { width: 2px; height: 10px; margin: -40px 0 0 -1px; }
+    #ads-reticle .rd-b { width: 2px; height: 10px; margin: 30px 0 0 -1px; }
+    #ads-reticle .rd-l { width: 10px; height: 2px; margin: -1px 0 0 -40px; }
+    #ads-reticle .rd-r { width: 10px; height: 2px; margin: -1px 0 0 30px; }
+
     /* interact / objective hint */
     #hint { position: fixed; bottom: 130px; left: 0; right: 0; text-align: center; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(232,236,239,0.85); text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity 0.2s; }
     #hint.show { opacity: 1; }
@@ -260,6 +271,15 @@
     <div class="scope-cross-v"></div>
     <div class="scope-cross-h"></div>
     <div class="scope-dot"></div>
+  </div>
+
+  <div id="ads-reticle">
+    <div class="rd-ring"></div>
+    <div class="rd-tick rd-t"></div>
+    <div class="rd-tick rd-b"></div>
+    <div class="rd-tick rd-l"></div>
+    <div class="rd-tick rd-r"></div>
+    <div class="rd-dot"></div>
   </div>
 
   <!-- ================= MENUS ================= -->

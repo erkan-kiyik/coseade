@@ -46,6 +46,13 @@ export class Player {
     this.stepDist = 0;
     this.bobT = 0;
 
+    // jump feel: buffer a slightly-early press, and allow a jump for a
+    // fraction of a second after leaving ground (coyote time). Works while
+    // crouched so you can crouch-jump.
+    this.jumpBuffer = 0;
+    this.coyote = 0;
+    this._wasJump = false;
+
     this.onDamage = null; // (amount, fromWorldPos) => void
     this.onDeath = null;
 
@@ -108,10 +115,18 @@ export class Player {
     this.vel.x = horizVel.x;
     this.vel.z = horizVel.z;
 
-    // gravity + jump
-    if (this.grounded && keys.jump) {
-      this.vel.y = JUMP_SPEED;
+    // gravity + jump (buffered + coyote, independent of crouch state)
+    const jumpPressed = !!keys.jump;
+    if (jumpPressed && !this._wasJump) this.jumpBuffer = 0.12;
+    this._wasJump = jumpPressed;
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    this.coyote = this.grounded ? 0.1 : Math.max(0, this.coyote - dt);
+    if (this.jumpBuffer > 0 && this.coyote > 0) {
+      // a touch more lift out of a crouch so crouch-jumps clear cover
+      this.vel.y = JUMP_SPEED * (wantCrouch ? 1.08 : 1);
       this.grounded = false;
+      this.jumpBuffer = 0;
+      this.coyote = 0;
       this.audio.footstep(true);
     }
     if (!this.grounded) this.vel.y -= GRAVITY * dt;

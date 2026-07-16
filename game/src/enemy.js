@@ -1,9 +1,13 @@
-// AI soldier enemies: procedural low-poly model, perception, state machine
-// (patrol -> alert -> combat -> search -> dead), steering movement with
-// wall sliding, burst-fire combat and ragdoll-lite death.
+// AI soldier enemies. The body is the external rigged model (phoenix.fbx)
+// cloned per spawn and driven procedurally (no anim clips shipped); if the
+// model isn't available we fall back to a procedural box-soldier so the game
+// always runs. Perception + state machine (hunt -> alert -> combat -> search
+// -> dead), steering with wall-detour, burst-fire combat, three enemy types.
 
 import * as THREE from 'three';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveCharacterCollisions, segmentBlocked } from './world.js';
+import { ENEMY_TEXTURES } from './modelLoader.js';
 
 const M = {
   cloth: new THREE.MeshStandardMaterial({ color: 0x3a3d33, roughness: 0.9, metalness: 0.05 }),
@@ -17,19 +21,35 @@ const M = {
   eyeGlow: new THREE.MeshStandardMaterial({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 1.4 }),
 };
 
+// enemy archetypes: multipliers over the wave baseline
+export const ENEMY_TYPES = {
+  assault: { label: 'ASKER',  hp: 1.0, speed: 1.0,  dmg: 1.0, scale: 1.0,  acc: 0.0,  tex: 'assault', tint: 0x4b533b },
+  rusher:  { label: 'AKINCI', hp: 0.6, speed: 1.55, dmg: 0.8, scale: 0.93, acc: -0.06, tex: 'rusher',  tint: 0x6e3a30 },
+  heavy:   { label: 'AĞIR',   hp: 2.1, speed: 0.72, dmg: 1.45, scale: 1.13, acc: 0.04, tex: 'heavy',   tint: 0x5c5340 },
+};
+
+// weighted type pick — tougher/faster types appear more as waves climb
+export function pickEnemyType(wave) {
+  const r = Math.random();
+  const heavyChance = Math.min(0.28, 0.05 + wave * 0.03);
+  const rusherChance = Math.min(0.4, 0.12 + wave * 0.035);
+  if (r < heavyChance) return 'heavy';
+  if (r < heavyChance + rusherChance) return 'rusher';
+  return 'assault';
+}
+
 function box(sx, sy, sz, mat) {
   return new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
 }
 
+// ---------------- procedural fallback body ----------------
 function buildSoldier() {
   const root = new THREE.Group();
-
   const hips = new THREE.Group();
   hips.position.y = 0.92;
   root.add(hips);
   hips.add(box(0.34, 0.24, 0.2, M.clothDark));
 
-  // torso (bobs slightly, holds arms + head + gun)
   const torso = new THREE.Group();
   torso.position.y = 0.24;
   hips.add(torso);
@@ -40,7 +60,6 @@ function buildSoldier() {
   chestPlate.position.set(0, 0.28, -0.15);
   torso.add(chestPlate);
 
-  // head
   const neck = new THREE.Group();
   neck.position.y = 0.48;
   torso.add(neck);
@@ -56,7 +75,6 @@ function buildSoldier() {
   const eyeL = box(0.03, 0.02, 0.01, M.eyeGlow); eyeL.position.set(-0.045, 0.13, -0.115); neck.add(eyeL);
   const eyeR = box(0.03, 0.02, 0.01, M.eyeGlow); eyeR.position.set(0.045, 0.13, -0.115); neck.add(eyeR);
 
-  // arms (upper arm pivots at shoulder, forearm pivots at elbow)
   function buildArm(side) {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * 0.22, 0.4, 0);
@@ -78,46 +96,25 @@ function buildSoldier() {
   const armL = buildArm(-1);
   const armR = buildArm(1);
 
-  // rifle held across the body, parented to right forearm
   const rifle = new THREE.Group();
-  const body = box(0.05, 0.06, 0.55, M.gun);
-  rifle.add(body);
-  const stockM = box(0.045, 0.05, 0.16, M.cloth);
-  stockM.position.z = 0.33;
-  rifle.add(stockM);
+  rifle.add(box(0.05, 0.06, 0.55, M.gun));
+  const stockM = box(0.045, 0.05, 0.16, M.cloth); stockM.position.z = 0.33; rifle.add(stockM);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 8), M.gun);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.z = -0.4;
-  rifle.add(barrel);
-  const magM = box(0.035, 0.16, 0.05, M.gun);
-  magM.position.set(0, -0.11, -0.05);
-  magM.rotation.x = -0.2;
-  rifle.add(magM);
+  barrel.rotation.x = Math.PI / 2; barrel.position.z = -0.4; rifle.add(barrel);
+  const magM = box(0.035, 0.16, 0.05, M.gun); magM.position.set(0, -0.11, -0.05); magM.rotation.x = -0.2; rifle.add(magM);
   rifle.position.set(0.02, -0.14, -0.15);
   rifle.rotation.y = Math.PI / 2 + 0.08;
   armR.elbow.add(rifle);
-  armR.shoulder.rotation.x = -1.35;
-  armR.elbow.rotation.x = 0.3;
-  armL.shoulder.rotation.x = -1.1;
-  armL.shoulder.rotation.z = 0.35;
-  armL.elbow.rotation.x = 1.15;
+  armR.shoulder.rotation.x = -1.35; armR.elbow.rotation.x = 0.3;
+  armL.shoulder.rotation.x = -1.1; armL.shoulder.rotation.z = 0.35; armL.elbow.rotation.x = 1.15;
 
-  // legs
   function buildLeg(side) {
     const hip = new THREE.Group();
     hip.position.set(side * 0.11, -0.1, 0);
-    const thigh = box(0.11, 0.32, 0.12, M.clothDark);
-    thigh.position.y = -0.16;
-    hip.add(thigh);
-    const knee = new THREE.Group();
-    knee.position.y = -0.32;
-    hip.add(knee);
-    const shin = box(0.095, 0.3, 0.1, M.clothDark);
-    shin.position.y = -0.15;
-    knee.add(shin);
-    const boot = box(0.11, 0.1, 0.18, M.boot);
-    boot.position.set(0, -0.32, 0.04);
-    knee.add(boot);
+    const thigh = box(0.11, 0.32, 0.12, M.clothDark); thigh.position.y = -0.16; hip.add(thigh);
+    const knee = new THREE.Group(); knee.position.y = -0.32; hip.add(knee);
+    const shin = box(0.095, 0.3, 0.1, M.clothDark); shin.position.y = -0.15; knee.add(shin);
+    const boot = box(0.11, 0.1, 0.18, M.boot); boot.position.set(0, -0.32, 0.04); knee.add(boot);
     hips.add(hip);
     return { hip, knee };
   }
@@ -125,19 +122,19 @@ function buildSoldier() {
   const legR = buildLeg(1);
 
   root.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
-
-  // muzzle world-local marker (rifle local -> forearm -> torso -> hips -> root chain; approximate offset)
-  const muzzleLocal = new THREE.Vector3(0.02, 1.02, -0.85);
-
-  return { root, torso, neck, head, armL, armR, legL, legR, hips, muzzleLocal, rifleFlashAnchor: rifle };
+  return { root, torso, neck, head, armL, armR, legL, legR, hips, rifleFlashAnchor: rifle };
 }
+
+// axis each limb group swings about for the walk cycle (tweak if a joint
+// bends the wrong way on the imported rig)
+const WALK_AXIS = { thigh: 'x', calf: 'x', arm: 'x' };
 
 const STATE = { IDLE: 'idle', HUNT: 'hunt', ALERT: 'alert', COMBAT: 'combat', SEARCH: 'search', DEAD: 'dead' };
 
 let idCounter = 0;
 
 export class Enemy {
-  constructor(scene, world, effects, audio, spawnPos, difficulty = 1) {
+  constructor(scene, world, effects, audio, spawnPos, difficulty = 1, opts = {}) {
     this.id = idCounter++;
     this.scene = scene;
     this.world = world;
@@ -145,9 +142,22 @@ export class Enemy {
     this.audio = audio;
     this.difficulty = difficulty;
 
-    const built = buildSoldier();
-    this.parts = built;
-    this.model = built.root;
+    this.typeKey = opts.type || 'assault';
+    const T = ENEMY_TYPES[this.typeKey] || ENEMY_TYPES.assault;
+    this.typeCfg = T;
+
+    if (opts.template) {
+      this._buildFromModel(opts.template, T);
+      this.useModel = true;
+    } else {
+      const built = buildSoldier();
+      this.parts = built;
+      this.model = built.root;
+      this.headRef = built.head;
+      this.chestRef = built.torso;
+      this.rifleFlashAnchor = built.rifleFlashAnchor;
+      this.useModel = false;
+    }
     this.model.position.copy(spawnPos);
     scene.add(this.model);
 
@@ -155,11 +165,12 @@ export class Enemy {
     this.yaw = Math.random() * Math.PI * 2;
     this.radius = 0.35;
     this.height = 1.8;
-    this.speed = 2.3 + Math.random() * 0.6 + difficulty * 0.06;
+    this.speed = (2.3 + Math.random() * 0.6 + difficulty * 0.06) * T.speed;
 
-    this.maxHp = 70 + difficulty * 14;
+    this.maxHp = (70 + difficulty * 14) * T.hp;
     this.hp = this.maxHp;
-    this.state = STATE.HUNT; // spawned attackers advance on the player immediately
+    this.dmgMult = T.dmg;
+    this.state = STATE.HUNT;
     this.stuckT = 0;
     this.detourT = 0;
     this.detourDir = 1;
@@ -175,22 +186,93 @@ export class Enemy {
     this.deathT = 0;
     this.removeAfter = null;
     this.hitFlashT = 0;
-    this.accuracy = 0.55 + Math.min(0.3, difficulty * 0.04);
+    this.accuracy = 0.55 + Math.min(0.3, difficulty * 0.04) + T.acc;
     this.combatRange = 34;
     this.giveUpSearchT = 0;
 
-    this.onPlayerHit = null; // (damage) => void
-    this.onDeath = null;     // (enemy) => void
-    this.onAlert = null;     // () => void  (alerts other enemies)
+    this.onPlayerHit = null;
+    this.onDeath = null;
+    this.onAlert = null;
   }
 
-  headWorldPos(out) {
-    return this.parts.head.getWorldPosition(out);
+  // build a cloned, re-materialised phoenix and wire up bones for animation
+  _buildFromModel(template, T) {
+    const body = skeletonClone(template.root);
+    const holder = new THREE.Group();     // steered by yaw
+    const inner = new THREE.Group();       // model-forward offset + type scale
+    inner.rotation.y = template.forwardOffset;
+    inner.scale.setScalar(T.scale);
+    inner.add(body);
+    holder.add(inner);
+    this.model = holder;
+    this.inner = inner;
+
+    // camo material (mesh ships no textures)
+    const tex = (ENEMY_TEXTURES[T.tex] || ENEMY_TEXTURES.assault)();
+    const mat = new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, roughness: 0.86, metalness: 0.08 });
+    body.traverse((m) => {
+      if (m.isMesh || m.isSkinnedMesh) {
+        m.material = mat;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.frustumCulled = false;
+      }
+    });
+
+    // collect bones by ValveBiped name
+    const b = {};
+    let weaponBone = null, rHand = null, head = null, chest = null, spine = null, neck = null;
+    body.traverse((o) => {
+      if (!o.isBone) return;
+      const n = o.name.toLowerCase();
+      if (n.includes('l_thigh')) b.lThigh = o;
+      else if (n.includes('r_thigh')) b.rThigh = o;
+      else if (n.includes('l_calf')) b.lCalf = o;
+      else if (n.includes('r_calf')) b.rCalf = o;
+      else if (n.includes('l_upperarm')) b.lArm = o;
+      else if (n.includes('r_upperarm')) b.rArm = o;
+      if (n.includes('head')) head = o;
+      else if (n.includes('spine2') || n.includes('spine1')) { chest = chest || o; spine = o; }
+      else if (n.includes('spine')) spine = spine || o;
+      if (n.includes('neck')) neck = o;
+      if (n.includes('weapon_bone') && !n.includes('clip') && !n.includes('hand')) weaponBone = o;
+      if (n.includes('r_hand')) rHand = o;
+    });
+    this.bones = b;
+    this.rest = {};
+    for (const k of Object.keys(b)) this.rest[k] = b[k].rotation.clone();
+    this.spineBone = spine || chest;
+    this.spineRest = this.spineBone ? this.spineBone.rotation.clone() : null;
+
+    // hitbox references (fall back to holder-relative points if a bone is missing)
+    this.headRef = head || chest || holder;
+    this.chestRef = chest || spine || holder;
+
+    // give the enemy a rifle in-hand so muzzle flashes come from the right place
+    const anchor = weaponBone || rHand;
+    const rifle = new THREE.Group();
+    const g = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.5, metalness: 0.7 });
+    const bodyM = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.62), g);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 8), g);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = -0.44;
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.06), g); mag.position.set(0, -0.13, -0.04);
+    rifle.add(bodyM, barrel, mag);
+    rifle.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });
+    if (anchor) {
+      // scale the rifle back up out of the (small) bone space and orient it
+      const inv = 1 / (template.root.scale.x * T.scale || 1);
+      rifle.scale.setScalar(inv);
+      anchor.add(rifle);
+      this.rifleFlashAnchor = rifle;
+    } else {
+      rifle.position.set(0.25, 1.3, -0.3);
+      holder.add(rifle);
+      this.rifleFlashAnchor = rifle;
+    }
   }
 
-  chestWorldPos(out) {
-    return this.parts.torso.getWorldPosition(out).add(new THREE.Vector3(0, 0.05, 0));
-  }
+  headWorldPos(out) { return this.headRef.getWorldPosition(out); }
+  chestWorldPos(out) { return this.chestRef.getWorldPosition(out).add(new THREE.Vector3(0, 0.05, 0)); }
 
   takeDamage(amount, isHeadshot, hitPoint, hitDir) {
     if (this.dead) return;
@@ -217,10 +299,9 @@ export class Enemy {
     this.removeAfter = 6;
   }
 
-  // ---------- perception ----------
   canSeePlayer(playerPos) {
     const eye = new THREE.Vector3();
-    this.parts.head.getWorldPosition(eye);
+    this.headRef.getWorldPosition(eye);
     const dist = eye.distanceTo(playerPos);
     if (dist > this.combatRange + 6) return false;
     const dir = playerPos.clone().sub(eye).normalize();
@@ -241,7 +322,6 @@ export class Enemy {
     }
   }
 
-  // ---------- update ----------
   update(dt, playerPos, playerCrouching, enemies) {
     if (this.dead) {
       this.updateDeath(dt);
@@ -257,7 +337,6 @@ export class Enemy {
       this.lastKnownPlayerPos = playerPos.clone();
       this.giveUpSearchT = 3.5;
     } else if (this.state === STATE.COMBAT) {
-      // lost line of sight → search the last spot, then resume the hunt
       this.state = STATE.SEARCH;
       this.giveUpSearchT = 3.0;
       this.lastKnownPlayerPos = playerPos.clone();
@@ -288,7 +367,6 @@ export class Enemy {
         targetPos = playerPos.clone();
         moveSpeed = this.speed * 1.15;
       } else if (dist < 8) {
-        // back off a bit while strafing
         const back = this.pos.clone().add(toPlayer.clone().normalize().multiplyScalar(-3));
         const side = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).normalize().multiplyScalar(this.strafeDir * 3);
         targetPos = back.add(side);
@@ -297,7 +375,6 @@ export class Enemy {
         targetPos = this.pos.clone().add(side);
       }
 
-      // fire control
       this.fireCooldown -= dt;
       if (this.burstLeft > 0) {
         this.burstPause -= dt;
@@ -317,13 +394,11 @@ export class Enemy {
       moveSpeed = this.speed;
       if (this.pos.distanceTo(targetPos) < 1.5) this.state = STATE.HUNT;
     } else {
-      // HUNT / ALERT: march straight onto the player so they always close in
       targetPos = (this.state === STATE.ALERT && this.lastKnownPlayerPos) ? this.lastKnownPlayerPos : playerPos;
       moveSpeed = this.speed * (this.state === STATE.ALERT ? 0.95 : 1);
       wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
     }
 
-    // movement: separation from squadmates + stuck-detour steering around cover
     let moved = false;
     if (targetPos) {
       const dir = targetPos.clone().sub(this.pos);
@@ -347,7 +422,6 @@ export class Enemy {
         const px = this.pos.x, pz = this.pos.z;
         this.pos.addScaledVector(dir, moveSpeed * dt);
         resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
-        // if a wall ate our movement, pick a side and slip around it
         const progressed = Math.hypot(this.pos.x - px, this.pos.z - pz);
         if (progressed < moveSpeed * dt * 0.35) {
           this.stuckT += dt;
@@ -378,22 +452,41 @@ export class Enemy {
     this.model.position.copy(this.pos);
     this.model.rotation.y = this.yaw;
 
-    // walk animation
     if (moved) this.walkPhase += dt * moveSpeed * 3.2;
+    if (this.useModel) this._animateModel(moved);
+    else this._animateBox(moved);
+
+    if (this.hitFlashT > 0) this.hitFlashT -= dt;
+  }
+
+  _animateBox(moved) {
     const swing = Math.sin(this.walkPhase) * (moved ? 0.55 : 0);
     this.parts.legL.hip.rotation.x = swing;
     this.parts.legR.hip.rotation.x = -swing;
     this.parts.legL.knee.rotation.x = Math.max(0, -swing * 0.9);
     this.parts.legR.knee.rotation.x = Math.max(0, swing * 0.9);
     this.parts.hips.position.y = 0.92 + Math.abs(Math.cos(this.walkPhase)) * (moved ? 0.02 : 0);
+  }
 
-    // hit reaction flash (emissive-ish via scale pulse substitute: skip material swap for perf)
-    if (this.hitFlashT > 0) this.hitFlashT -= dt;
+  _animateModel(moved) {
+    const b = this.bones, r = this.rest;
+    const amp = moved ? 1 : 0;
+    const sw = Math.sin(this.walkPhase) * 0.5 * amp;
+    const swBack = Math.sin(this.walkPhase + Math.PI) * 0.5 * amp;
+    const setAxis = (bone, rest, axis, v) => { if (bone) bone.rotation[axis] = rest[axis] + v; };
+    setAxis(b.lThigh, r.lThigh, WALK_AXIS.thigh, sw);
+    setAxis(b.rThigh, r.rThigh, WALK_AXIS.thigh, swBack);
+    setAxis(b.lCalf, r.lCalf, WALK_AXIS.calf, Math.max(0, -sw) * 0.9);
+    setAxis(b.rCalf, r.rCalf, WALK_AXIS.calf, Math.max(0, -swBack) * 0.9);
+    setAxis(b.lArm, r.lArm, WALK_AXIS.arm, swBack * 0.6);
+    setAxis(b.rArm, r.rArm, WALK_AXIS.arm, sw * 0.6);
+    // subtle body bob so movement reads even if a joint axis is off
+    if (this.inner) this.inner.position.y = Math.abs(Math.cos(this.walkPhase)) * 0.05 * amp;
   }
 
   shootAt(playerPos, playerCrouching) {
     const muzzle = new THREE.Vector3();
-    this.parts.rifleFlashAnchor.getWorldPosition(muzzle);
+    this.rifleFlashAnchor.getWorldPosition(muzzle);
     const targetPoint = playerPos.clone().add(new THREE.Vector3(0, playerCrouching ? 0.1 : 0.35, 0));
     const dir = targetPoint.clone().sub(muzzle).normalize();
     const dist = muzzle.distanceTo(targetPoint);
@@ -407,19 +500,17 @@ export class Enemy {
     this.audio.gunshot('enemy', muzzle);
     this.effects.spawnTracer(muzzle, dir, 40);
 
-    // hit check via short raycast against player capsule (approximate as a point + radius)
     const toPlayer = playerPos.clone().sub(muzzle);
     const alongPlayer = toPlayer.dot(dir);
     if (alongPlayer > 0) {
       const closest = muzzle.clone().addScaledVector(dir, alongPlayer);
       const missDist = closest.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 0.9, 0)));
       if (missDist < 0.5 && alongPlayer < this.combatRange + 10) {
-        const dmg = 6 + Math.random() * 6 + this.difficulty * 0.8;
+        const dmg = (6 + Math.random() * 6 + this.difficulty * 0.8) * this.dmgMult;
         this.onPlayerHit && this.onPlayerHit(dmg, muzzle);
         return;
       }
     }
-    // miss: spark somewhere near player for feedback
     if (Math.random() < 0.4) {
       const missPoint = playerPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2));
       this.effects.spawnImpact(missPoint, new THREE.Vector3(0, 1, 0), 'dust');
@@ -436,9 +527,10 @@ export class Enemy {
     if (this.removeAfter !== null) {
       this.removeAfter -= dt;
       if (this.removeAfter <= 1) {
-        this.model.traverse((m) => { if (m.isMesh) m.material.transparent = true; });
         const op = Math.max(0, this.removeAfter);
-        this.model.traverse((m) => { if (m.isMesh) m.material.opacity = op; });
+        this.model.traverse((m) => {
+          if (m.isMesh || m.isSkinnedMesh) { m.material.transparent = true; m.material.opacity = op; }
+        });
       }
     }
   }
