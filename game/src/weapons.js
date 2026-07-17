@@ -3,10 +3,100 @@
 
 import * as THREE from 'three';
 
+// ---------------- procedural 2K PBR maps for gun surfaces ----------------
+// Worn metal: brushed streaks, fine scratches, grunge blotches and lightly
+// scuffed edges baked into a colour map + matching roughness map so the whole
+// arsenal reads as real service-worn steel rather than flat plastic.
+const TEX_SIZE = 2048;
+
+function metalColorTexture(baseHex, scuffHex = '#7b828c', size = TEX_SIZE) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const base = '#' + new THREE.Color(baseHex).getHexString();
+  g.fillStyle = base;
+  g.fillRect(0, 0, size, size);
+  // horizontal brushed-metal streaks
+  for (let i = 0; i < 1400; i++) {
+    const y = Math.random() * size;
+    g.strokeStyle = `rgba(255,255,255,${0.015 + Math.random() * 0.03})`;
+    g.lineWidth = Math.random() < 0.5 ? 1 : 2;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(size, y + (Math.random() - 0.5) * 6); g.stroke();
+  }
+  // dark grunge / oil blotches
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * size, y = Math.random() * size, r = 20 + Math.random() * 120;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(0,0,0,${0.12 + Math.random() * 0.18})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // bright edge scratches (bare metal showing through)
+  for (let i = 0; i < 260; i++) {
+    g.strokeStyle = `rgba(${scuffFromHex(scuffHex)},${0.25 + Math.random() * 0.4})`;
+    g.lineWidth = Math.random() < 0.7 ? 1 : 2;
+    const x = Math.random() * size, y = Math.random() * size;
+    const len = 8 + Math.random() * 90, a = Math.random() * Math.PI;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+function scuffFromHex(hex) {
+  const c = new THREE.Color(hex);
+  return `${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)}`;
+}
+let _roughTex = null;
+function metalRoughnessTexture(size = TEX_SIZE) {
+  if (_roughTex) return _roughTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8a8a8a'; // mid roughness base
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 900; i++) { // brushed streaks slightly smoother
+    const y = Math.random() * size;
+    g.strokeStyle = `rgba(60,60,60,${0.05 + Math.random() * 0.08})`;
+    g.lineWidth = 1 + Math.random() * 2;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(size, y); g.stroke();
+  }
+  for (let i = 0; i < 260; i++) { // scratches read as polished (darker = smoother)
+    g.strokeStyle = `rgba(30,30,30,${0.4 + Math.random() * 0.4})`;
+    g.lineWidth = Math.random() < 0.7 ? 1 : 2;
+    const x = Math.random() * size, y = Math.random() * size, len = 8 + Math.random() * 90, a = Math.random() * Math.PI;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  }
+  for (let i = 0; i < 90; i++) { // grunge reads rougher
+    const x = Math.random() * size, y = Math.random() * size, r = 20 + Math.random() * 120;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(210,210,210,${0.2 + Math.random() * 0.2})`);
+    gr.addColorStop(1, 'rgba(210,210,210,0)');
+    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.anisotropy = 8;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  _roughTex = tex;
+  return tex;
+}
+function wornMetal(baseHex, metalness = 0.72) {
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: metalColorTexture(baseHex),
+    roughnessMap: metalRoughnessTexture(),
+    roughness: 1.0, metalness,
+    envMapIntensity: 1.1,
+  });
+}
+
 // shared materials
 const M = {
-  gunmetal: new THREE.MeshStandardMaterial({ color: 0x33373d, roughness: 0.42, metalness: 0.6 }),
-  darkSteel: new THREE.MeshStandardMaterial({ color: 0x2a2d32, roughness: 0.48, metalness: 0.6 }),
+  gunmetal: wornMetal(0x34383e, 0.7),
+  darkSteel: wornMetal(0x24272c, 0.8),
   polymer: new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.75, metalness: 0.15 }),
   grip: new THREE.MeshStandardMaterial({ color: 0x1e2023, roughness: 0.9, metalness: 0.05 }),
   tan: new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.7, metalness: 0.1 }),
@@ -147,33 +237,78 @@ function buildRifle() {
   g.add(box(0.055, 0.075, 0.46, M.gunmetal, 0, 0.015, -0.02));               // upper receiver
   g.add(box(0.05, 0.06, 0.3, M.polymer, 0, -0.04, 0.02));                    // lower
   g.add(box(0.06, 0.055, 0.34, M.polymer, 0, 0.02, -0.42));                  // handguard
-  // handguard rails
-  for (let i = 0; i < 6; i++) g.add(box(0.062, 0.008, 0.03, M.darkSteel, 0, 0.052, -0.3 - i * 0.05));
-  g.add(cyl(0.014, 0.014, 0.34, M.darkSteel, 0, 0.015, -0.7, Math.PI / 2)); // barrel
-  g.add(cyl(0.022, 0.022, 0.07, M.darkSteel, 0, 0.015, -0.85, Math.PI / 2)); // muzzle brake
+  // handguard side + bottom M-LOK slots
+  for (let i = 0; i < 5; i++) {
+    g.add(box(0.004, 0.02, 0.03, M.gunmetal, 0.031, 0.02, -0.32 - i * 0.05));
+    g.add(box(0.004, 0.02, 0.03, M.gunmetal, -0.031, 0.02, -0.32 - i * 0.05));
+  }
+  // full-length flat-top Picatinny rail (teeth) across receiver + handguard
+  addRail(g, -0.02, 0.058, 0.16, -0.58, 0.06);
+  g.add(cyl(0.013, 0.013, 0.36, M.darkSteel, 0, 0.015, -0.7, Math.PI / 2));  // barrel
+  g.add(cyl(0.016, 0.016, 0.05, M.darkSteel, 0, 0.015, -0.62, Math.PI / 2)); // gas block
+  g.add(box(0.012, 0.04, 0.02, M.darkSteel, 0, 0.05, -0.62));                // gas block sight base
+  addMuzzleBrake(g, 0, 0.015, -0.86);
   g.add(box(0.045, 0.05, 0.2, M.polymer, 0, 0.0, 0.24));                     // stock body
-  g.add(box(0.05, 0.09, 0.05, M.grip, 0, -0.03, 0.32));                      // stock butt
-  g.add(box(0.035, 0.09, 0.045, M.grip, 0, -0.095, 0.08, 0.25));             // pistol grip
-  // front sight + rear sight (used for ADS alignment)
-  g.add(box(0.008, 0.035, 0.008, M.darkSteel, 0, 0.075, -0.55));
-  const frontDot = new THREE.Mesh(new THREE.SphereGeometry(0.005, 6, 6), M.sightGlow);
-  frontDot.position.set(0, 0.095, -0.55);
-  g.add(frontDot);
-  g.add(box(0.016, 0.03, 0.012, M.darkSteel, -0.014, 0.075, 0.12));
-  g.add(box(0.016, 0.03, 0.012, M.darkSteel, 0.014, 0.075, 0.12));
-  // magazine (curved look via two segments), detachable for reload anim
+  g.add(box(0.055, 0.1, 0.06, M.grip, 0, -0.03, 0.33));                      // stock butt
+  g.add(box(0.03, 0.02, 0.09, M.polymer, 0, 0.05, 0.25));                    // cheek riser
+  addGrip(g, 0, -0.055, 0.09, 0.28);                                          // ergonomic pistol grip
+  // flip-up iron sights (rear on receiver, front on gas block)
+  g.add(box(0.02, 0.028, 0.014, M.darkSteel, 0, 0.078, 0.12));
+  g.add(box(0.008, 0.03, 0.008, M.darkSteel, 0, 0.072, -0.62));
+  // red-dot optic mounted on the rail
+  const optic = buildRedDot(); optic.position.set(0, 0.075, -0.02); g.add(optic);
+  // magazine (curved STANAG, two segments), detachable for reload anim
   mag.add(box(0.042, 0.13, 0.075, M.polymer, 0, -0.065, 0, -0.12));
   mag.add(box(0.042, 0.08, 0.07, M.polymer, 0, -0.155, 0.018, -0.3));
+  mag.add(box(0.044, 0.02, 0.078, M.grip, 0, -0.196, 0.027, -0.3));          // baseplate
   mag.position.set(0, -0.07, -0.06);
   g.add(mag);
-  // charging handle + ejection port
-  g.add(box(0.02, 0.015, 0.05, M.darkSteel, 0.033, 0.04, 0.1));
-  g.add(box(0.002, 0.03, 0.08, M.brass, 0.029, 0.015, -0.05));
+  // ejection port + dust cover + forward assist (right side)
+  g.add(box(0.006, 0.032, 0.09, M.darkSteel, 0.03, 0.03, -0.02));
+  g.add(cyl(0.012, 0.012, 0.02, M.darkSteel, 0.036, 0.012, 0.02, 0, 0, Math.PI / 2, 8));
+  // selector switch (left side, above grip)
+  g.add(cyl(0.006, 0.006, 0.024, M.darkSteel, -0.03, -0.01, 0.06, 0, 0, Math.PI / 2, 8));
+  g.add(box(0.004, 0.008, 0.03, M.darkSteel, -0.04, -0.01, 0.065));
+  // reciprocating charging handle (T-latch at the rear) — cycles on fire
+  const bolt = new THREE.Group();
+  bolt.add(box(0.03, 0.014, 0.05, M.darkSteel, 0, 0.045, 0.14));
+  bolt.add(box(0.05, 0.012, 0.014, M.darkSteel, 0, 0.045, 0.165));
+  g.add(bolt);
+  // QD sling loops
+  g.add(cyl(0.006, 0.006, 0.006, M.darkSteel, -0.03, -0.02, 0.3, Math.PI / 2, 0, 0, 8));
+  g.add(cyl(0.006, 0.006, 0.006, M.darkSteel, -0.03, -0.01, -0.3, Math.PI / 2, 0, 0, 8));
   const hands = addHands(g, {
     right: [0.0, -0.085, 0.11], rightRot: [0.42, 0, 0],
     left: [-0.01, -0.055, -0.34], leftRot: [0.22, 0, -0.15],
   });
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.015, -0.9), hands };
+  return { group: g, mag, bolt, boltThrow: 0.05, muzzle: new THREE.Vector3(0, 0.015, -0.9), hands };
+}
+
+// ---- shared weapon detail helpers ----
+function addRail(g, x, y, zFront, zBack, width = 0.06) {
+  g.add(box(width, 0.01, Math.abs(zFront - zBack), M.gunmetal, x, y - 0.006, (zFront + zBack) / 2));
+  const n = Math.round(Math.abs(zFront - zBack) / 0.018);
+  for (let i = 0; i < n; i++) {
+    g.add(box(width, 0.008, 0.008, M.darkSteel, x, y, zFront - i * 0.018));
+  }
+}
+function addMuzzleBrake(g, x, y, z) {
+  g.add(cyl(0.02, 0.02, 0.075, M.darkSteel, x, y, z, Math.PI / 2, 0, 0, 10));
+  for (let i = 0; i < 3; i++) g.add(box(0.042, 0.006, 0.006, M.grip, x, y, z - 0.01 - i * 0.02)); // port slots
+}
+function addGrip(g, x, y, z, tilt) {
+  g.add(box(0.036, 0.095, 0.05, M.grip, x, y, z, tilt));
+  for (let i = 0; i < 3; i++) g.add(box(0.04, 0.008, 0.05, M.polymer, x, y - 0.02 - i * 0.022, z + (i - 1) * 0.01, tilt)); // finger grooves
+}
+function buildRedDot() {
+  const o = new THREE.Group();
+  o.add(box(0.03, 0.014, 0.05, M.darkSteel, 0, -0.006, 0));       // mount base
+  o.add(cyl(0.017, 0.017, 0.05, M.gunmetal, 0, 0.02, 0, Math.PI / 2, 0, 0, 12)); // tube
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.013, 14), M.scopeGlass);
+  lens.position.set(0, 0.02, 0.026); o.add(lens);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0035, 6, 6), M.sightGlow);
+  dot.position.set(0, 0.02, 0.025); o.add(dot);
+  return o;
 }
 
 function buildPistol() {
@@ -287,12 +422,22 @@ function buildAK() {
   mag.add(box(0.04, 0.07, 0.06, M.darkSteel, 0, -0.2, 0.09, -0.62));
   mag.position.set(0, -0.06, -0.08);
   g.add(mag);
-  g.add(box(0.022, 0.016, 0.05, M.darkSteel, 0.032, 0.05, 0.02));             // charging handle
+  // big AK safety/selector lever (right side) + dust-cover serrations
+  g.add(box(0.006, 0.05, 0.02, M.darkSteel, 0.03, 0.02, 0.1));
+  for (let i = 0; i < 5; i++) g.add(box(0.056, 0.006, 0.004, M.gunmetal, 0, 0.056, -0.02 + i * 0.03));
+  // reciprocating charging handle attached to the bolt carrier (right side)
+  const bolt = new THREE.Group();
+  bolt.add(box(0.022, 0.016, 0.05, M.darkSteel, 0.033, 0.05, 0.02));
+  bolt.add(box(0.012, 0.03, 0.03, M.darkSteel, 0.04, 0.05, 0.03));
+  g.add(bolt);
+  // sling loops (side-mount, AK style)
+  g.add(cyl(0.006, 0.006, 0.006, M.darkSteel, -0.028, -0.02, 0.28, Math.PI / 2, 0, 0, 8));
+  g.add(cyl(0.006, 0.006, 0.006, M.darkSteel, -0.028, -0.03, -0.28, Math.PI / 2, 0, 0, 8));
   const hands = addHands(g, {
     right: [0.0, -0.09, 0.08], rightRot: [0.42, 0, 0],
     left: [-0.01, -0.05, -0.36], leftRot: [0.24, 0, -0.12],
   });
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -0.98), hands };
+  return { group: g, mag, bolt, boltThrow: 0.045, muzzle: new THREE.Vector3(0, 0.02, -0.98), hands };
 }
 
 function buildSMG() {
@@ -313,13 +458,23 @@ function buildSMG() {
   dot.position.set(0, 0.062, -0.36); g.add(dot);
   g.add(box(0.02, 0.03, 0.03, M.darkSteel, 0, 0.058, 0.12));                  // rear diopter
   mag.add(box(0.03, 0.16, 0.05, M.darkSteel, 0, -0.09, 0, 0.08));            // curved stick mag
+  mag.add(box(0.032, 0.02, 0.052, M.grip, 0, -0.17, 0.006, 0.08));           // baseplate
   mag.position.set(0, -0.05, -0.1);
   g.add(mag);
+  // short top rail + compact red-dot
+  addRail(g, 0, 0.052, -0.12, 0.12, 0.05);
+  const optic = buildRedDot(); optic.position.set(0, 0.066, 0); optic.scale.setScalar(0.85); g.add(optic);
+  // selector + reciprocating cocking handle (left, HK style)
+  g.add(box(0.005, 0.014, 0.03, M.darkSteel, -0.028, -0.005, 0.08));
+  const bolt = new THREE.Group();
+  bolt.add(box(0.012, 0.03, 0.03, M.darkSteel, -0.036, 0.055, -0.28));
+  bolt.add(cyl(0.006, 0.006, 0.14, M.darkSteel, -0.03, 0.055, -0.2, Math.PI / 2, 0, 0, 8));
+  g.add(bolt);
   const hands = addHands(g, {
     right: [0.0, -0.085, 0.1], rightRot: [0.45, 0, 0],
     left: [-0.005, -0.045, -0.2], leftRot: [0.3, 0, -0.1],
   });
-  return { group: g, mag, muzzle: new THREE.Vector3(0, 0.012, -0.52), hands };
+  return { group: g, mag, bolt, boltThrow: 0.04, muzzle: new THREE.Vector3(0, 0.012, -0.52), hands };
 }
 
 // ---------------- weapon definitions ----------------
@@ -406,6 +561,9 @@ export class WeaponSystem {
         model: built.group,
         magMesh: built.mag,
         magHome: built.mag.position.clone(),
+        boltMesh: built.bolt || null,
+        boltHome: built.bolt ? built.bolt.position.clone() : null,
+        boltThrow: built.boltThrow || 0,
         muzzleLocal: built.muzzle,
         leftHand: built.hands ? built.hands.left : null,
         leftHandHome: built.hands ? built.hands.left.position.clone() : null,
@@ -729,6 +887,14 @@ export class WeaponSystem {
     );
     model.rotation.set(this.swayRot.x - this.recoilRot, 0, this.swayRot.z);
     if (this.pumping > 0 && def.mode === 'bolt') model.rotation.z += Math.sin((1 - this.pumping / 0.55) * Math.PI) * 0.12;
+
+    // reciprocating charging handle / bolt carrier: slams rearward with recoil
+    // and rides back forward as the kick recovers.
+    const cur = this.current;
+    if (cur.boltMesh) {
+      const cycle = Math.min(1, this.kick / (def.kickback || 0.06));
+      cur.boltMesh.position.z = cur.boltHome.z + cycle * cur.boltThrow;
+    }
 
     // grenade throw: pull the weapon down/left and rock it, like the off-hand lobs a frag
     if (this.throwT > 0) {
