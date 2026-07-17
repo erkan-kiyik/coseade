@@ -4,12 +4,12 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { World, resolveCollisions } from './world.js';
 import { AudioEngine } from './audio.js';
 import { Effects } from './effects.js';
-import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 import { WeaponSystem, WEAPON_DEFS } from './weapons.js';
 import { Player } from './player.js';
@@ -101,8 +101,24 @@ scene.add(camera);
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
 composer.addPass(renderPass);
+
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.5, 0.9);
 composer.addPass(bloomPass);
+
+// subtle cinematic colour grade (a touch of contrast + warmth)
+const gradeShader = {
+  uniforms: { tDiffuse: { value: null }, contrast: { value: 1.06 }, warmth: { value: 0.015 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float contrast; uniform float warmth; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb = (c.rgb - 0.5) * contrast + 0.5;
+      c.r += warmth; c.b -= warmth * 0.6;
+      gl_FragColor = c;
+    }`,
+};
+composer.addPass(new ShaderPass(gradeShader));
 
 const vignetteShader = {
   uniforms: { tDiffuse: { value: null }, amount: { value: 0.3 } },
@@ -120,14 +136,9 @@ const vignetteShader = {
 const vignettePass = new ShaderPass(vignetteShader);
 composer.addPass(vignettePass);
 
-// FXAA edge smoothing (the bloom composer path can't use MSAA)
-const fxaaPass = new ShaderPass(FXAAShader);
-const setFxaaRes = () => {
-  const pr = renderer.getPixelRatio();
-  fxaaPass.material.uniforms.resolution.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr));
-};
-setFxaaRes();
-composer.addPass(fxaaPass);
+// SMAA — higher-quality edge anti-aliasing than FXAA for the composer path
+const smaaPass = new SMAAPass(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
+composer.addPass(smaaPass);
 composer.addPass(new OutputPass());
 
 function applyQualityGraphics() {
@@ -144,7 +155,6 @@ function applyQualityGraphics() {
     bloomPass.enabled = true;
     renderer.shadowMap.enabled = true;
   }
-  if (typeof setFxaaRes === 'function') setFxaaRes();
 }
 applyQualityGraphics();
 
@@ -154,7 +164,6 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
   bloomPass.setSize(innerWidth, innerHeight);
-  setFxaaRes();
 });
 
 // ============================================================ game state

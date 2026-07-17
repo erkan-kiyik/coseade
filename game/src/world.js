@@ -342,27 +342,8 @@ export class World {
       [64, 8, 14, 22, 2, '#7a7264'],
       [-64, -8, 14, 20, 2, '#6e6960'],
     ];
-    for (const [x, z, w, d, floors, hue] of buildings) {
-      const h = floors * 3.4;
-      const mat = new THREE.MeshStandardMaterial({ map: facadeTexture(floors, Math.max(3, Math.round(w / 4)), hue), roughness: 0.85 });
-      const roofMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#4a4740'), roughness: 0.95 });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [mat, mat, roofMat, roofMat, mat, mat]);
-      mesh.position.set(x, h / 2, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-      this.addCollider(x, h / 2, z, w, h, d);
-      this.raycastMeshes.push(mesh);
-      // roof rim
-      const rim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.5, d + 0.6), roofMat);
-      rim.position.set(x, h + 0.25, z);
-      rim.castShadow = true;
-      this.scene.add(rim);
-      // rooftop AC unit
-      const ac = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 2), new THREE.MeshStandardMaterial({ color: 0x9aa0a4, roughness: 0.6, metalness: 0.4 }));
-      ac.position.set(x + w * 0.2, h + 1.2, z - d * 0.15);
-      ac.castShadow = true;
-      this.scene.add(ac);
+    for (let i = 0; i < buildings.length; i++) {
+      this._buildStructure(...buildings[i], i);
     }
 
     // ----- shipping containers -----
@@ -552,6 +533,125 @@ export class World {
     this.scene.add(g);
     const r = Math.abs(Math.cos(rot)), s = Math.abs(Math.sin(rot));
     this.addCollider(x, 0.9, z, 4.2 * r + 1.9 * s, 1.9, 4.2 * s + 1.9 * r);
+  }
+
+  // A believable multi-storey building: textured facade with per-floor cornice
+  // ledges, corner pilasters, a recessed entrance + canopy, a stepped-back upper
+  // section on taller blocks, a roof parapet and a cluttered rooftop (stairwell
+  // penthouse, water tank, HVAC, vents, pipe run). Not a plain cube.
+  _buildStructure(x, z, w, d, floors, hue, idx = 0) {
+    const floorH = 3.4;
+    const h = floors * floorH;
+    const g = new THREE.Group();
+    const cols = Math.max(3, Math.round(w / 4));
+    const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture(floors, cols, hue), roughness: 0.82, metalness: 0.04 });
+    const facadeMatD = new THREE.MeshStandardMaterial({ map: facadeTexture(floors, Math.max(3, Math.round(d / 4)), hue), roughness: 0.82, metalness: 0.04 });
+    const trimMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#8d867a'), roughness: 0.9 });
+    const roofMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#4d4a44'), roughness: 0.96 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x9299a0, roughness: 0.5, metalness: 0.55, envMapIntensity: 1.1 });
+    const darkMetal = new THREE.MeshStandardMaterial({ color: 0x40474d, roughness: 0.6, metalness: 0.5 });
+    const pipeMat = new THREE.MeshStandardMaterial({ color: 0x6b7076, roughness: 0.55, metalness: 0.6 });
+
+    // main mass (facade on the 4 sides, roof slab on top/bottom)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [facadeMatD, facadeMatD, roofMat, roofMat, facadeMat, facadeMat]);
+    body.position.y = h / 2; body.castShadow = true; body.receiveShadow = true;
+    g.add(body);
+
+    // per-floor cornice ledges (breaks up the flat wall + reads scale)
+    for (let f = 1; f < floors; f++) {
+      const ledge = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, 0.16, d + 0.24), trimMat);
+      ledge.position.set(0, f * floorH, 0); ledge.castShadow = true; ledge.receiveShadow = true;
+      g.add(ledge);
+    }
+    // ground base course
+    const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.7, d + 0.3), trimMat);
+    base.position.y = 0.35; base.castShadow = true; base.receiveShadow = true; g.add(base);
+
+    // corner pilasters
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const pil = new THREE.Mesh(new THREE.BoxGeometry(0.5, h, 0.5), trimMat);
+      pil.position.set(sx * (w / 2 - 0.05), h / 2, sz * (d / 2 - 0.05));
+      pil.castShadow = true; g.add(pil);
+    }
+
+    // roof parapet (raised edge wall)
+    for (const [sx, sz, pw, pd] of [[0, -1, w + 0.5, 0.4], [0, 1, w + 0.5, 0.4], [-1, 0, 0.4, d + 0.5], [1, 0, 0.4, d + 0.5]]) {
+      const par = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.7, pd), roofMat);
+      par.position.set(sx * (w / 2), h + 0.35, sz * (d / 2));
+      par.castShadow = true; g.add(par);
+    }
+
+    // stepped-back upper section on taller blocks → complex silhouette
+    if (floors >= 4) {
+      const uw = w * 0.55, ud = d * 0.55, uh = floorH * 1.2;
+      const up = new THREE.Mesh(new THREE.BoxGeometry(uw, uh, ud), [facadeMatD, facadeMatD, roofMat, roofMat, facadeMat, facadeMat]);
+      up.position.set(-w * 0.12, h + uh / 2, d * 0.1); up.castShadow = true; g.add(up);
+      const upPar = new THREE.Mesh(new THREE.BoxGeometry(uw + 0.4, 0.5, ud + 0.4), roofMat);
+      upPar.position.set(-w * 0.12, h + uh + 0.2, d * 0.1); g.add(upPar);
+    }
+
+    // recessed entrance + canopy on the courtyard-facing side (toward map centre)
+    const faceZ = z > 0 ? -1 : 1;           // side facing origin
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.5, metalness: 0.3 });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.5, 0.2), doorMat);
+    door.position.set(w * 0.1, 1.3, faceZ * (d / 2 + 0.02)); g.add(door);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.9, 0.35), trimMat);
+    frame.position.set(w * 0.1, 1.45, faceZ * (d / 2 + 0.0)); g.add(frame);
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.18, 1.1), darkMetal);
+    canopy.position.set(w * 0.1, 2.95, faceZ * (d / 2 + 0.55)); canopy.castShadow = true; g.add(canopy);
+    // signage board above the door
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.7, 0.12),
+      new THREE.MeshStandardMaterial({ color: [0x9a3b2a, 0x2a5a7a, 0x3d6b3a, 0x6a5a2a][idx % 4], roughness: 0.6, metalness: 0.2 }));
+    sign.position.set(w * 0.1, 3.6, faceZ * (d / 2 + 0.1)); g.add(sign);
+
+    // vertical drain pipe down one corner + an electrical box
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, h - 0.5, 8), pipeMat);
+    pipe.position.set(w / 2 - 0.35, (h - 0.5) / 2, faceZ * (d / 2 - 0.35)); pipe.castShadow = true; g.add(pipe);
+    const ebox = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.3), darkMetal);
+    ebox.position.set(-w * 0.28, 1.6, faceZ * (d / 2 + 0.15)); g.add(ebox);
+    // a couple of exterior AC condensers on the wall
+    for (let k = 0; k < Math.min(floors, 3); k++) {
+      const acw = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 0.5), metalMat);
+      acw.position.set(-w * 0.28 + k * 0.02, 2.2 + k * floorH, -faceZ * (d / 2 + 0.28)); acw.castShadow = true; g.add(acw);
+    }
+
+    // ---- rooftop clutter ----
+    const ry = (floors >= 4) ? h + floorH * 1.2 : h; // sit on the upper roof if stepped
+    const rcx = (floors >= 4) ? -w * 0.12 : 0, rcz = (floors >= 4) ? d * 0.1 : 0;
+    // stairwell penthouse
+    const pent = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 2.6), trimMat);
+    pent.position.set(rcx - w * 0.18, ry + 1.2, rcz - d * 0.12); pent.castShadow = true; g.add(pent);
+    const pentDoor = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.12), doorMat);
+    pentDoor.position.set(rcx - w * 0.18, ry + 0.85, rcz - d * 0.12 + 1.31); g.add(pentDoor);
+    // water tank on legs
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 14), metalMat);
+    tank.position.set(rcx + w * 0.2, ry + 1.7, rcz + d * 0.05); tank.castShadow = true; g.add(tank);
+    for (const [lx, lz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.8, 6), darkMetal);
+      leg.position.set(rcx + w * 0.2 + lx, ry + 0.4, rcz + d * 0.05 + lz); g.add(leg);
+    }
+    // HVAC units + vents
+    for (let k = 0; k < 2; k++) {
+      const hv = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 1.8), metalMat);
+      hv.position.set(rcx + (k ? w * 0.05 : -w * 0.02), ry + 0.6, rcz + (k ? -d * 0.18 : d * 0.2)); hv.castShadow = true; g.add(hv);
+    }
+    for (let k = 0; k < 3; k++) {
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.7, 8), darkMetal);
+      vent.position.set(rcx + (k - 1) * 0.9, ry + 0.35, rcz + d * 0.28); vent.castShadow = true; g.add(vent);
+    }
+    // roof-edge safety railing (thin posts + rail) on the main roof
+    if (floors < 4) {
+      const railMat = darkMetal;
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, 0.05), railMat);
+        rail.position.set(0, h + 0.9, side * (d / 2 - 0.2)); g.add(rail);
+      }
+    }
+
+    g.position.set(x, 0, z);
+    g.traverse((m) => { if (m.isMesh) this.raycastMeshes.push(m); });
+    this.scene.add(g);
+    this.addCollider(x, h / 2, z, w, h, d);
   }
 
   // scatter foliage, cover and street dressing so the compound feels lived-in
