@@ -212,7 +212,7 @@
     /* flash on explosion / muzzle */
     #screen-flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 24; }
   </style>
-  <script type="module" crossorigin src="/game/assets/index-Ce0XvCiI.js"></script>
+  <script type="module" crossorigin src="/game/assets/index-CrYtK52z.js"></script>
 </head>
 <body>
   <div id="app"></div>
@@ -234,9 +234,9 @@
     </div>
 
     <div id="score-block" class="mono">
-      <div class="row"><span class="lbl">Dalga</span><span class="num" id="wave-num">1</span></div>
       <div class="row"><span class="lbl">Skor</span><span class="num" id="score-num">0</span></div>
-      <div class="row"><span class="lbl">Düşman</span><span class="num" id="enemies-num">0</span></div>
+      <div class="row"><span class="lbl">Öldürme</span><span class="num" id="kills-num">0</span></div>
+      <div class="row"><span class="lbl">Kalan</span><span class="num" id="enemies-num">0</span></div>
     </div>
 
     <div id="minimap-wrap"><canvas id="minimap" width="150" height="150"></canvas></div>
@@ -286,8 +286,8 @@
   <!-- ================= MENUS ================= -->
   <div id="menu-main" class="overlay">
     <div class="title-block">
-      <div class="game-title">BLACKOUT<span> PROTOCOL</span></div>
-      <div class="game-subtitle">Tek Kişilik Operasyon — Sektör 7</div>
+      <div class="game-title">STRIKE<span> POINT</span></div>
+      <div class="game-subtitle">Gündüz Operasyonu — Sahayı Ele Geçir</div>
     </div>
     <div class="menu-buttons">
       <button class="menu-btn primary" id="btn-start">▶&nbsp; Göreve Başla</button>
@@ -306,8 +306,9 @@
         <span class="key">SOL TIK</span><span class="desc">Ateş</span>
         <span class="key">SAĞ TIK</span><span class="desc">Nişan al (ADS)</span>
         <span class="key">SHIFT</span><span class="desc">Koş (sprint)</span>
+        <span class="key">SHIFT + C</span><span class="desc">Kayarak süzül (slide)</span>
         <span class="key">SPACE</span><span class="desc">Zıpla</span>
-        <span class="key">C</span><span class="desc">Eğil</span>
+        <span class="key">C</span><span class="desc">Eğil / çömel</span>
         <span class="key">R</span><span class="desc">Şarjör değiştir</span>
         <span class="key">F</span><span class="desc">Silahı incele</span>
         <span class="key">G</span><span class="desc">El bombası fırlat</span>
@@ -360,7 +361,7 @@
 
   <div id="menu-death" class="overlay hidden">
     <div id="death-title">Görev Başarısız</div>
-    <div class="game-subtitle" id="death-wave-sub">7. dalgada düştün</div>
+    <div class="game-subtitle" id="death-wave-sub">Sahada düştün</div>
     <div id="death-stats">
       <div><div class="ds-l">Skor</div><div class="ds-v" id="ds-score">0</div></div>
       <div><div class="ds-l">Öldürme</div><div class="ds-v" id="ds-kills">0</div></div>

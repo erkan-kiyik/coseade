@@ -29,7 +29,7 @@ const weaponName = $('weapon-name');
 const fireMode = $('fire-mode');
 const grenadeCountEl = $('grenade-count');
 const reloadHint = $('reload-hint');
-const waveNum = $('wave-num');
+const killsNum = $('kills-num');
 const scoreNum = $('score-num');
 const enemiesNum = $('enemies-num');
 const minimapCanvas = $('minimap');
@@ -68,7 +68,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.14;
+renderer.toneMappingExposure = 1.02;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 appEl.appendChild(renderer.domElement);
 const canvas = renderer.domElement;
@@ -96,11 +96,11 @@ const enemyTemplateReady = loadEnemyTemplate().then((t) => { enemyTemplate = t; 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
 composer.addPass(renderPass);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.55, 0.86);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.5, 0.9);
 composer.addPass(bloomPass);
 
 const vignetteShader = {
-  uniforms: { tDiffuse: { value: null }, amount: { value: 0.55 } },
+  uniforms: { tDiffuse: { value: null }, amount: { value: 0.3 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float amount; varying vec2 vUv;
@@ -155,12 +155,12 @@ addEventListener('resize', () => {
 // ============================================================ game state
 const G = {
   state: 'menu', // menu | playing | paused | dead
-  wave: 0,
   score: 0,
   kills: 0,
   headshots: 0,
   shotsFired: 0,
   shotsHit: 0,
+  enemyTotal: 0,
   grenades: 3,
   maxGrenades: 3,
   grenadeCooldown: 0,
@@ -170,9 +170,7 @@ const G = {
 let enemies = [];
 let grenadesActive = [];
 let pickups = [];
-let waveTimer = 0;
-let waveState = 'incoming'; // incoming | active | clear
-let waveClearTimer = 0;
+let matchOver = false;
 
 const keys = { forward: 0, right: 0, jump: false, sprint: false, crouch: false };
 const rawKeys = {};
@@ -267,9 +265,10 @@ function updateHealthHud() {
 }
 
 function updateScoreHud() {
-  waveNum.textContent = G.wave;
+  const alive = enemies.filter((e) => !e.dead).length;
   scoreNum.textContent = G.score;
-  enemiesNum.textContent = enemies.filter((e) => !e.dead).length;
+  enemiesNum.textContent = alive;
+  if (killsNum) killsNum.textContent = G.kills;
 }
 
 function updateGrenadeHud() {
@@ -492,6 +491,19 @@ function throwGrenade() {
   grenadesActive.push({ pos: origin, vel, spin, fuse: 1.7, mesh: makeGrenadeMesh(origin) });
 }
 
+// an enemy lobs a frag toward the player's position with a ballistic arc.
+function throwEnemyGrenade(from, target) {
+  audio.grenadePin();
+  const flat = new THREE.Vector3(target.x - from.x, 0, target.z - from.z);
+  const range = flat.length();
+  const dir = range > 0.001 ? flat.clone().multiplyScalar(1 / range) : new THREE.Vector3(0, 0, 1);
+  // pick a throw that roughly lands on target: more forward speed with distance
+  const speed = Math.min(19, 8 + range * 0.55);
+  const vel = dir.multiplyScalar(speed).add(new THREE.Vector3(0, 4.6 + range * 0.08, 0));
+  const spin = new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, 7 + Math.random() * 5);
+  grenadesActive.push({ pos: from.clone(), vel, spin, fuse: 1.9, mesh: makeGrenadeMesh(from) });
+}
+
 function makeGrenadeMesh(pos) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
@@ -555,61 +567,58 @@ function updateGrenades(dt) {
   }
 }
 
-// ============================================================ waves
-function startWave(n) {
-  G.wave = n;
-  waveState = 'incoming';
-  waveTimer = n === 1 ? 1.2 : 2.6;
-  announceText(`DALGA ${n}`, 'DÜŞMANLAR YAKLAŞIYOR');
-}
+// ============================================================ deployment
+// Fixed garrison: enemies are already on the map when the match begins, each
+// holding a post and patrolling around it. No waves, no respawns — clear them
+// all to win. Posts are spread across cover, buildings and flank routes.
+const ENEMY_POSTS = [
+  { x: -46, z: -34, type: 'assault', r: 9 },   // NW building approach
+  { x: 44, z: -40, type: 'heavy', r: 7 },       // NE building
+  { x: -40, z: 42, type: 'assault', r: 9 },     // SW building
+  { x: 46, z: 48, type: 'heavy', r: 7 },        // SE building
+  { x: 30, z: -20, type: 'rusher', r: 10 },     // container yard (N)
+  { x: -20, z: 24, type: 'rusher', r: 10 },     // container yard (S)
+  { x: 0, z: -34, type: 'assault', r: 8 },      // central sandbag line N
+  { x: 12, z: 30, type: 'rusher', r: 9 },       // central courtyard S
+  { x: -34, z: 8, type: 'assault', r: 8 },      // W flank sandbags
+  { x: 48, z: 4, type: 'heavy', r: 6 },         // E flank
+  { x: -14, z: -14, type: 'rusher', r: 11 },    // mid roamer
+  { x: 18, z: 12, type: 'assault', r: 9 },      // mid roamer
+];
 
-function spawnWaveEnemies() {
-  const count = 3 + Math.floor(G.wave * 1.7);
-  const difficulty = 1 + (G.wave - 1) * 0.18;
-  const spawns = world.enemySpawns;
-  for (let i = 0; i < count; i++) {
-    const sp = spawns[Math.floor(Math.random() * spawns.length)].clone();
-    sp.x += (Math.random() - 0.5) * 4;
-    sp.z += (Math.random() - 0.5) * 4;
+function deployEnemies() {
+  const difficulty = 1.35; // single consistent skill level (no ramping waves)
+  for (const post of ENEMY_POSTS) {
+    const sp = new THREE.Vector3(post.x, 0, post.z);
     const e = new Enemy(scene, world, effects, audio, sp, difficulty, {
       template: enemyTemplate,
-      type: pickEnemyType(G.wave),
+      type: post.type,
+      guardPos: sp.clone(),
+      patrolRadius: post.r,
     });
     e.onPlayerHit = (dmg, fromPos) => { player.takeDamage(dmg, fromPos); flashDamageDirection(fromPos); };
     e.onAlert = (pos) => {
-      for (const other of enemies) if (!other.dead) other.alert(pos);
+      // ally within earshot gets pulled toward the contact
+      for (const other of enemies) {
+        if (other.dead || other === e) continue;
+        if (other.pos.distanceTo(pos) < 34) other.alert(pos);
+      }
     };
     e.onDeath = (en) => dropLoot(en.pos.clone());
+    e.onThrowGrenade = (from, target) => throwEnemyGrenade(from, target);
     enemies.push(e);
   }
-  audio.waveStart();
+  G.enemyTotal = enemies.length;
   updateScoreHud();
 }
 
-function updateWaves(dt) {
-  if (waveState === 'incoming') {
-    waveTimer -= dt;
-    if (waveTimer <= 0) {
-      spawnWaveEnemies();
-      waveState = 'active';
-    }
-  } else if (waveState === 'active') {
-    const alive = enemies.some((e) => !e.dead);
-    if (!alive && enemies.length > 0) {
-      waveState = 'clear';
-      waveClearTimer = 3;
-      audio.waveClear();
-      announceText('DALGA TEMİZLENDİ', 'Bir sonraki dalga hazırlanıyor…');
-      maybeSpawnPickup();
-      G.grenades = Math.min(G.maxGrenades, G.grenades + 1);
-      updateGrenadeHud();
-    }
-  } else if (waveState === 'clear') {
-    waveClearTimer -= dt;
-    if (waveClearTimer <= 0) {
-      enemies = enemies.filter((e) => !e.expired);
-      startWave(G.wave + 1);
-    }
+function checkMatchState() {
+  if (matchOver) return;
+  const alive = enemies.some((e) => !e.dead);
+  if (!alive && enemies.length > 0) {
+    matchOver = true;
+    audio.waveClear();
+    announceText('SAHA TEMİZLENDİ', 'Bütün düşmanlar etkisiz hâle getirildi', 6000);
   }
 }
 
@@ -794,7 +803,8 @@ async function startGame() {
   hud.classList.add('visible');
   G.state = 'playing';
   canvas.requestPointerLock();
-  startWave(1);
+  deployEnemies();
+  announceText('SAHAYI TEMİZLE', 'Bölgeyi ele geçir — düşman devriyeleri yerleşmiş durumda', 4000);
 }
 
 function resetGameState() {
@@ -804,8 +814,9 @@ function resetGameState() {
   grenadesActive = [];
   pickups.forEach((p) => { scene.remove(p.mesh); scene.remove(p.light); });
   pickups = [];
-  G.wave = 0; G.score = 0; G.kills = 0; G.headshots = 0;
-  G.shotsFired = 0; G.shotsHit = 0;
+  matchOver = false;
+  G.score = 0; G.kills = 0; G.headshots = 0;
+  G.shotsFired = 0; G.shotsHit = 0; G.enemyTotal = 0;
   G.grenades = G.maxGrenades;
   player.hp = player.maxHp;
   player.dead = false;
@@ -848,7 +859,7 @@ player.onDeath = () => {
   G.state = 'dead';
   audio.gameOver();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
-  deathWaveSub.textContent = `${G.wave}. dalgada düştün`;
+  deathWaveSub.textContent = `${G.kills}/${G.enemyTotal} düşman etkisiz — sahada düştün`;
   dsScore.textContent = G.score;
   dsKills.textContent = G.kills;
   dsHs.textContent = G.headshots;
@@ -876,7 +887,7 @@ function frame() {
 
     updateGrenades(dt);
     updatePickups(dt);
-    updateWaves(dt);
+    checkMatchState();
     effects.update(dt);
 
     camera.fov = player.baseFov * weapons.currentFovMult() * (player.sprinting ? 1.07 : 1);

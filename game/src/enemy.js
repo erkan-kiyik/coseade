@@ -17,8 +17,8 @@ const M = {
   helmet: new THREE.MeshStandardMaterial({ color: 0x22241f, roughness: 0.5, metalness: 0.3 }),
   boot: new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 }),
   gun: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.5, metalness: 0.7 }),
-  visor: new THREE.MeshStandardMaterial({ color: 0x0a0f14, roughness: 0.2, metalness: 0.6 }),
-  eyeGlow: new THREE.MeshStandardMaterial({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 1.4 }),
+  visor: new THREE.MeshStandardMaterial({ color: 0x1a2733, roughness: 0.25, metalness: 0.6 }),
+  eyeGlow: new THREE.MeshStandardMaterial({ color: 0x11161c, roughness: 0.35, metalness: 0.4 }),
 };
 
 // enemy archetypes: multipliers over the wave baseline
@@ -216,7 +216,15 @@ export class Enemy {
     this.maxHp = (70 + difficulty * 14) * T.hp;
     this.hp = this.maxHp;
     this.dmgMult = T.dmg;
-    this.state = STATE.HUNT;
+
+    // pre-placed enemies hold a post and patrol around it until they make
+    // contact — nobody beelines across the whole map at spawn.
+    this.guardPos = (opts.guardPos || spawnPos).clone();
+    this.patrolRadius = opts.patrolRadius != null ? opts.patrolRadius : 7;
+    this.patrolTarget = this._pickPatrolTarget();
+    this.patrolWait = 0;
+    this.lookPhase = Math.random() * Math.PI * 2;
+    this.state = STATE.IDLE;
     this.stuckT = 0;
     this.detourT = 0;
     this.detourDir = 1;
@@ -239,6 +247,10 @@ export class Enemy {
     this.onPlayerHit = null;
     this.onDeath = null;
     this.onAlert = null;
+    this.onThrowGrenade = null;
+    // grenadiers flush the player out of cover; rushers never throw (they push)
+    this.canThrow = this.typeKey !== 'rusher';
+    this.grenadeCooldown = 6 + Math.random() * 8;
   }
 
   // build a cloned, re-materialised phoenix and wire up bones for animation
@@ -312,6 +324,12 @@ export class Enemy {
     }
   }
 
+  _pickPatrolTarget() {
+    const a = Math.random() * Math.PI * 2;
+    const r = this.patrolRadius * (0.35 + Math.random() * 0.65);
+    return this.guardPos.clone().add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+  }
+
   headWorldPos(out) { return this.headRef.getWorldPosition(out); }
   chestWorldPos(out) { return this.chestRef.getWorldPosition(out).add(new THREE.Vector3(0, 0.05, 0)); }
 
@@ -383,10 +401,10 @@ export class Enemy {
       this.lastKnownPlayerPos = playerPos.clone();
     } else if (this.state === STATE.SEARCH) {
       this.giveUpSearchT -= dt;
-      if (this.giveUpSearchT <= 0) this.state = STATE.HUNT;
+      if (this.giveUpSearchT <= 0) this.state = STATE.IDLE;
     } else if (this.state === STATE.ALERT) {
       this.alertTimer -= dt;
-      if (this.alertTimer <= 0) this.state = STATE.HUNT;
+      if (this.alertTimer <= 0) this.state = STATE.IDLE;
     }
 
     let targetPos = null;
@@ -416,6 +434,14 @@ export class Enemy {
         targetPos = this.pos.clone().add(side);
       }
 
+      // lob a grenade to flush the player out — telegraphed, on a long cooldown
+      this.grenadeCooldown -= dt;
+      if (this.canThrow && this.grenadeCooldown <= 0 && dist > 9 && dist < 30 && this.onThrowGrenade) {
+        const from = this.pos.clone().add(new THREE.Vector3(0, 1.45, 0));
+        this.onThrowGrenade(from, playerPos.clone());
+        this.grenadeCooldown = 11 + Math.random() * 9;
+      }
+
       this.fireCooldown -= dt;
       if (this.burstLeft > 0) {
         this.burstPause -= dt;
@@ -433,11 +459,32 @@ export class Enemy {
       targetPos = this.lastKnownPlayerPos;
       wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
       moveSpeed = this.speed;
-      if (this.pos.distanceTo(targetPos) < 1.5) this.state = STATE.HUNT;
-    } else {
-      targetPos = (this.state === STATE.ALERT && this.lastKnownPlayerPos) ? this.lastKnownPlayerPos : playerPos;
-      moveSpeed = this.speed * (this.state === STATE.ALERT ? 0.95 : 1);
+      if (this.pos.distanceTo(targetPos) < 1.5) this.state = STATE.IDLE;
+    } else if (this.state === STATE.ALERT && this.lastKnownPlayerPos) {
+      // heard something — move to investigate the last cue at a wary jog
+      targetPos = this.lastKnownPlayerPos;
+      moveSpeed = this.speed * 0.85;
       wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
+      if (this.pos.distanceTo(targetPos) < 1.5) { this.state = STATE.IDLE; this.alertTimer = 0; }
+    } else {
+      // IDLE: hold the post, stroll between patrol points, glance around
+      this.patrolWait -= dt;
+      if (this.pos.distanceTo(this.patrolTarget) < 1.2) {
+        if (this.patrolWait <= 0) {
+          this.patrolTarget = this._pickPatrolTarget();
+          this.patrolWait = 1.5 + Math.random() * 3;
+        }
+      }
+      moveSpeed = this.speed * 0.34;
+      if (this.patrolWait > 0 && this.pos.distanceTo(this.patrolTarget) < 1.2) {
+        // standing a beat at the waypoint: scan the area instead of walking
+        targetPos = null;
+        this.lookPhase += dt * 0.6;
+        wantFace = this.lookPhase;
+      } else {
+        targetPos = this.patrolTarget;
+        wantFace = Math.atan2(targetPos.x - this.pos.x, targetPos.z - this.pos.z);
+      }
     }
 
     let moved = false;
@@ -459,6 +506,10 @@ export class Enemy {
           const od = away.length();
           if (od < 1.4 && od > 0.01) dir.add(away.normalize().multiplyScalar((1.4 - od) * 1.5));
         }
+        // personal space from the player — never walk into the camera
+        const awayP = new THREE.Vector3(this.pos.x - playerPos.x, 0, this.pos.z - playerPos.z);
+        const pd = awayP.length();
+        if (pd < 1.6 && pd > 0.01) dir.add(awayP.normalize().multiplyScalar((1.6 - pd) * 2.4));
         dir.normalize();
         const px = this.pos.x, pz = this.pos.z;
         this.pos.addScaledVector(dir, moveSpeed * dt);
@@ -482,6 +533,17 @@ export class Enemy {
       resolveCharacterCollisions(this.pos, this.radius, this.height, this.world.colliders);
     }
     this.pos.y = 0;
+
+    // hard personal-space clamp: a soldier can never stand inside the camera.
+    {
+      const dpx = this.pos.x - playerPos.x, dpz = this.pos.z - playerPos.z;
+      const pdist = Math.hypot(dpx, dpz);
+      const MINP = 1.5;
+      if (pdist < MINP && pdist > 1e-3) {
+        this.pos.x = playerPos.x + (dpx / pdist) * MINP;
+        this.pos.z = playerPos.z + (dpz / pdist) * MINP;
+      }
+    }
 
     if (wantFace !== null) {
       let diff = wantFace - this.yaw;

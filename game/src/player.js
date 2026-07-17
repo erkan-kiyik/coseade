@@ -15,6 +15,9 @@ const SPRINT_MULT = 1.6;
 const CROUCH_MULT = 0.5;
 const ACCEL = 42;
 const FRICTION = 12;
+const SLIDE_SPEED = WALK_SPEED * 2.05;   // launch speed when a slide begins
+const SLIDE_TIME = 0.62;                 // max slide duration (s)
+const SLIDE_MIN = WALK_SPEED * 0.95;     // drop out of slide below this speed
 
 export class Player {
   constructor(camera, world, audio) {
@@ -53,6 +56,13 @@ export class Player {
     this.coyote = 0;
     this._wasJump = false;
 
+    // tactical slide: crouch while carrying sprint momentum launches a low,
+    // fast slide that bleeds off into a crouch.
+    this.sliding = false;
+    this.slideT = 0;
+    this._wasCrouch = false;
+    this.slideLean = 0;
+
     this.onDamage = null; // (amount, fromWorldPos) => void
     this.onDeath = null;
 
@@ -87,11 +97,26 @@ export class Player {
   update(dt, keys) {
     // decay per-frame look delta (consumed by weapon sway each frame in main loop already; reset after)
     const wantCrouch = !!keys.crouch;
-    this.crouching = wantCrouch;
-    this.targetHeight = wantCrouch ? CROUCH_HEIGHT : STAND_HEIGHT;
-    this.height += (this.targetHeight - this.height) * Math.min(1, dt * 10);
+    const crouchPressed = wantCrouch && !this._wasCrouch;
+    this._wasCrouch = wantCrouch;
 
-    this.sprinting = !!keys.sprint && !wantCrouch && (keys.forward || 0) > 0;
+    const horizSpeed0 = Math.hypot(this.vel.x, this.vel.z);
+    // begin a slide: fresh crouch press while grounded and moving near sprint speed
+    if (!this.sliding && crouchPressed && this.grounded && horizSpeed0 > WALK_SPEED * 1.15) {
+      this.sliding = true;
+      this.slideT = SLIDE_TIME;
+      const inv = horizSpeed0 > 0.001 ? 1 / horizSpeed0 : 0;
+      this.vel.x = this.vel.x * inv * SLIDE_SPEED;
+      this.vel.z = this.vel.z * inv * SLIDE_SPEED;
+      this.audio.footstep(true);
+    }
+
+    this.crouching = wantCrouch || this.sliding;
+    this.targetHeight = this.crouching ? CROUCH_HEIGHT : STAND_HEIGHT;
+    // slides dip the camera a touch faster than a normal crouch for punch
+    this.height += (this.targetHeight - this.height) * Math.min(1, dt * (this.sliding ? 16 : 10));
+
+    this.sprinting = !!keys.sprint && !this.crouching && (keys.forward || 0) > 0 && !this.sliding;
 
     // desired horizontal direction from yaw + input
     const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
@@ -101,19 +126,42 @@ export class Player {
     wish.addScaledVector(right, keys.right || 0);
     if (wish.lengthSq() > 0) wish.normalize();
 
-    let targetSpeed = WALK_SPEED;
-    if (wantCrouch) targetSpeed *= CROUCH_MULT;
-    else if (this.sprinting) targetSpeed *= SPRINT_MULT;
+    if (this.sliding) {
+      // bleed momentum, allow a little steering, exit when slow/short/airborne/uncrouched
+      this.slideT -= dt;
+      const decay = Math.exp(-2.7 * dt);
+      this.vel.x *= decay;
+      this.vel.z *= decay;
+      const s = Math.hypot(this.vel.x, this.vel.z);
+      if (s > 0.001 && wish.lengthSq() > 0) {
+        // steer the momentum vector slightly toward input without adding speed
+        const nx = this.vel.x / s, nz = this.vel.z / s;
+        const steer = 2.2 * dt;
+        let vx = nx + wish.x * steer, vz = nz + wish.z * steer;
+        const nl = Math.hypot(vx, vz) || 1;
+        this.vel.x = (vx / nl) * s;
+        this.vel.z = (vz / nl) * s;
+      }
+      this.slideLean = Math.min(1, this.slideLean + dt * 6);
+      if (this.slideT <= 0 || s < SLIDE_MIN || !this.grounded || (!wantCrouch && !keys.sprint)) {
+        this.sliding = false;
+      }
+    } else {
+      this.slideLean = Math.max(0, this.slideLean - dt * 5);
+      let targetSpeed = WALK_SPEED;
+      if (wantCrouch) targetSpeed *= CROUCH_MULT;
+      else if (this.sprinting) targetSpeed *= SPRINT_MULT;
 
-    const wishVel = wish.multiplyScalar(targetSpeed);
-    const horizVel = new THREE.Vector3(this.vel.x, 0, this.vel.z);
-    const diff = wishVel.clone().sub(horizVel);
-    const accel = wish.lengthSq() > 0 ? ACCEL : FRICTION;
-    const maxDelta = accel * dt;
-    if (diff.length() > maxDelta) diff.setLength(maxDelta);
-    horizVel.add(diff);
-    this.vel.x = horizVel.x;
-    this.vel.z = horizVel.z;
+      const wishVel = wish.multiplyScalar(targetSpeed);
+      const horizVel = new THREE.Vector3(this.vel.x, 0, this.vel.z);
+      const diff = wishVel.clone().sub(horizVel);
+      const accel = wish.lengthSq() > 0 ? ACCEL : FRICTION;
+      const maxDelta = accel * dt;
+      if (diff.length() > maxDelta) diff.setLength(maxDelta);
+      horizVel.add(diff);
+      this.vel.x = horizVel.x;
+      this.vel.z = horizVel.z;
+    }
 
     // gravity + jump (buffered + coyote, independent of crouch state)
     const jumpPressed = !!keys.jump;
@@ -163,10 +211,10 @@ export class Player {
     if (this.regenDelay > 0) this.regenDelay -= dt;
     else if (this.hp < this.maxHp && !this.dead) this.hp = Math.min(this.maxHp, this.hp + dt * 8);
 
-    // camera
+    // camera (subtle roll into an active slide)
     const eyeHeight = this.height - 0.12;
     this.camera.position.set(this.pos.x, this.pos.y + eyeHeight, this.pos.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.rotation.set(this.pitch, this.yaw, -0.09 * this.slideLean, 'YXZ');
 
     this.speed = speed;
   }

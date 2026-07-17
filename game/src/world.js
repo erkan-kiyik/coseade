@@ -191,16 +191,17 @@ export class World {
     const S = MAP_SIZE;
     const half = S / 2;
 
-    // ----- sky & fog -----
-    this.scene.fog = new THREE.FogExp2(0x1a1f2e, 0.0085);
+    // ----- sky & fog (clear bright daytime) -----
+    // light distance haze only — keeps far cover readable without any gloom
+    this.scene.fog = new THREE.Fog(0xbcd4ec, 130, 460);
     const skyGeo = new THREE.SphereGeometry(480, 24, 16);
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
       uniforms: {
-        top: { value: new THREE.Color(0x0a1024) },
-        mid: { value: new THREE.Color(0x2b3550) },
-        horizon: { value: new THREE.Color(0xd96f32) },
+        top: { value: new THREE.Color(0x2f74d0) },     // deep blue zenith
+        mid: { value: new THREE.Color(0x74a9e6) },     // mid sky
+        horizon: { value: new THREE.Color(0xdae8f4) },  // pale near the ground
       },
       vertexShader: `
         varying vec3 vDir;
@@ -213,41 +214,53 @@ export class World {
         varying vec3 vDir;
         void main() {
           float h = clamp(vDir.y, -0.1, 1.0);
-          vec3 col = mix(horizon, mid, smoothstep(0.0, 0.22, h));
-          col = mix(col, top, smoothstep(0.2, 0.75, h));
-          // sun glow low in the west
-          float sun = pow(max(dot(normalize(vDir), normalize(vec3(-0.75, 0.12, -0.4))), 0.0), 32.0);
-          col += vec3(1.0, 0.55, 0.2) * sun * 0.9;
+          vec3 col = mix(horizon, mid, smoothstep(0.0, 0.30, h));
+          col = mix(col, top, smoothstep(0.25, 0.9, h));
+          // bright sun disk + glow high in the sky
+          vec3 sunDir = normalize(vec3(-0.42, 0.72, -0.34));
+          float d = max(dot(normalize(vDir), sunDir), 0.0);
+          float disk = smoothstep(0.9975, 0.9992, d);
+          float glow = pow(d, 220.0) * 0.6 + pow(d, 12.0) * 0.10;
+          col += vec3(1.0, 0.97, 0.9) * (disk + glow);
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
     const sky = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(sky);
 
-    // stars
-    const starCount = 500;
-    const starPos = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount; i++) {
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(0.15 + Math.random() * 0.8);
-      const r = 460;
-      starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      starPos[i * 3 + 1] = r * Math.cos(phi);
-      starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    // drifting clouds — a few soft billboard puffs high overhead
+    const cloudTex = canvasTexture(128, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      for (let i = 0; i < 26; i++) {
+        const cx = w * (0.2 + Math.random() * 0.6);
+        const cy = h * (0.35 + Math.random() * 0.3);
+        const rr = 14 + Math.random() * 26;
+        const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(cx, cy, rr, 0, 7); g.fill();
+      }
+    });
+    const cloudMat = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+    for (let i = 0; i < 9; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 200 + Math.random() * 150;
+      const cloud = new THREE.Mesh(new THREE.PlaneGeometry(120 + Math.random() * 90, 55 + Math.random() * 40), cloudMat);
+      cloud.position.set(Math.cos(a) * r, 150 + Math.random() * 70, Math.sin(a) * r);
+      cloud.lookAt(0, 40, 0);
+      this.scene.add(cloud);
     }
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-      color: 0xcdd8ff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.7, fog: false,
-    }));
-    this.scene.add(stars);
 
-    // ----- lights -----
-    const hemi = new THREE.HemisphereLight(0x3a4a6a, 0x1c1712, 0.55);
+    // ----- lights (midday sun) -----
+    const hemi = new THREE.HemisphereLight(0xbcd8ff, 0x6a6152, 0.95);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xff9a4d, 1.35);
-    sun.position.set(-90, 42, -55);
+    // small ambient floor so shadow-side faces never crush to pure black
+    this.scene.add(new THREE.AmbientLight(0x5b6b7d, 0.32));
+
+    const sun = new THREE.DirectionalLight(0xfff4e2, 2.6);
+    sun.position.set(-84, 138, -66);   // high, matches the sky sun disk
     sun.castShadow = quality !== 'low';
     const shadowRes = quality === 'high' ? 2048 : 1024;
     sun.shadow.mapSize.set(shadowRes, shadowRes);
@@ -256,19 +269,15 @@ export class World {
     sun.shadow.camera.top = half + 10;
     sun.shadow.camera.bottom = -half - 10;
     sun.shadow.camera.near = 10;
-    sun.shadow.camera.far = 260;
-    sun.shadow.bias = -0.0015;
+    sun.shadow.camera.far = 320;
+    sun.shadow.bias = -0.0013;
     this.scene.add(sun);
     this.sun = sun;
 
-    const fillMoon = new THREE.DirectionalLight(0x5a6fa8, 0.4);
-    fillMoon.position.set(60, 80, 70);
-    this.scene.add(fillMoon);
-
-    // cool back-rim light so characters/cover separate from the dusk backdrop
-    const rim = new THREE.DirectionalLight(0x9fc0ff, 0.5);
-    rim.position.set(30, 26, 90);
-    this.scene.add(rim);
+    // sky-blue bounce fill from the opposite side softens shadow interiors
+    const skyFill = new THREE.DirectionalLight(0xaecbef, 0.5);
+    skyFill.position.set(70, 90, 80);
+    this.scene.add(skyFill);
 
     // ----- ground -----
     const ground = new THREE.Mesh(
@@ -457,8 +466,8 @@ export class World {
     // ----- street lights -----
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6, metalness: 0.7 });
     const lampSpots = [[-14, -14], [14, 14], [-14, 40], [40, -14], [-40, 14], [14, -44], [-44, -40], [44, 44]];
-    const maxRealLights = quality === 'high' ? 8 : quality === 'medium' ? 5 : 3;
-    lampSpots.forEach(([x, z], i) => {
+    // daytime: fixtures stay as props but lamps are switched off (no glow / real lights)
+    lampSpots.forEach(([x, z]) => {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 6.4, 8), poleMat);
       pole.position.set(x, 3.2, z);
       pole.castShadow = true;
@@ -468,16 +477,10 @@ export class World {
       this.scene.add(arm);
       const bulb = new THREE.Mesh(
         new THREE.SphereGeometry(0.2, 10, 8),
-        new THREE.MeshStandardMaterial({ color: 0xffc069, emissive: 0xffa33e, emissiveIntensity: 2.5 })
+        new THREE.MeshStandardMaterial({ color: 0xcfd3d6, roughness: 0.4, metalness: 0.3 })
       );
       bulb.position.set(x + 1.35, 6.22, z);
       this.scene.add(bulb);
-      if (i < maxRealLights) {
-        const pt = new THREE.PointLight(0xffa54a, 14, 26, 1.8);
-        pt.position.set(x + 1.35, 6.0, z);
-        this.scene.add(pt);
-        this.lampLights.push(pt);
-      }
       this.addCollider(x, 3.2, z, 0.4, 6.4, 0.4);
       this.raycastMeshes.push(pole);
     });
