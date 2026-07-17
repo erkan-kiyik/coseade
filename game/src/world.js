@@ -492,7 +492,7 @@ export class World {
     });
 
     // ----- scattered debris / tires -----
-    const tireMat = new THREE.MeshStandardMaterial({ color: 0x17181a, roughness: 0.95 });
+    const tireMat = new THREE.MeshStandardMaterial({ color: 0x2b2d30, roughness: 0.95 });
     for (const [x, z] of [[9, 3], [-22, 8], [33, -33], [-6, -14], [20, 44], [-52, -32]]) {
       const tire = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.17, 8, 16), tireMat);
       tire.rotation.x = Math.PI / 2;

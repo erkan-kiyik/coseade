@@ -42,23 +42,33 @@ function box(sx, sy, sz, mat) {
   return new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
 }
 
-// ---------------- procedural fallback body ----------------
-function buildSoldier() {
+// ---------------- procedural soldier body ----------------
+// Built facing +z (the direction Enemy maps yaw onto), tinted by type, and
+// visibly holding the given weapon in a two-handed ready grip.
+function buildSoldier(T, weaponKind) {
+  const base = new THREE.Color(T && T.tint != null ? T.tint : 0x4b533b);
+  const cloth = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.9), roughness: 0.92 });
+  const clothDark = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.55), roughness: 0.9 });
+  const vest = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.42), roughness: 0.82, metalness: 0.06 });
+
   const root = new THREE.Group();
   const hips = new THREE.Group();
   hips.position.y = 0.92;
   root.add(hips);
-  hips.add(box(0.34, 0.24, 0.2, M.clothDark));
+  hips.add(box(0.36, 0.26, 0.22, clothDark));
 
   const torso = new THREE.Group();
   torso.position.y = 0.24;
   hips.add(torso);
-  const chest = box(0.38, 0.46, 0.24, M.vest);
+  const chest = box(0.4, 0.48, 0.26, vest);
   chest.position.y = 0.23;
   torso.add(chest);
-  const chestPlate = box(0.3, 0.28, 0.06, M.clothDark);
-  chestPlate.position.set(0, 0.28, -0.15);
+  const chestPlate = box(0.32, 0.3, 0.07, clothDark);
+  chestPlate.position.set(0, 0.28, 0.15); // plate on the front (+z)
   torso.add(chestPlate);
+  // shoulder pads read as bulk / stops the torso looking like a bare box
+  const padL = box(0.14, 0.12, 0.24, vest); padL.position.set(-0.24, 0.42, 0); torso.add(padL);
+  const padR = box(0.14, 0.12, 0.24, vest); padR.position.set(0.24, 0.42, 0); torso.add(padR);
 
   const neck = new THREE.Group();
   neck.position.y = 0.48;
@@ -66,28 +76,26 @@ function buildSoldier() {
   const head = box(0.2, 0.22, 0.2, M.skin);
   head.position.y = 0.12;
   neck.add(head);
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), M.helmet);
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.145, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.62), M.helmet);
   helmet.position.y = 0.2;
   neck.add(helmet);
-  const visor = box(0.16, 0.05, 0.03, M.visor);
-  visor.position.set(0, 0.13, -0.1);
+  const visor = box(0.17, 0.06, 0.04, M.visor);
+  visor.position.set(0, 0.12, 0.1); // face on the front (+z)
   neck.add(visor);
-  const eyeL = box(0.03, 0.02, 0.01, M.eyeGlow); eyeL.position.set(-0.045, 0.13, -0.115); neck.add(eyeL);
-  const eyeR = box(0.03, 0.02, 0.01, M.eyeGlow); eyeR.position.set(0.045, 0.13, -0.115); neck.add(eyeR);
 
   function buildArm(side) {
     const shoulder = new THREE.Group();
-    shoulder.position.set(side * 0.22, 0.4, 0);
-    const upper = box(0.09, 0.26, 0.09, M.cloth);
+    shoulder.position.set(side * 0.24, 0.4, 0);
+    const upper = box(0.095, 0.27, 0.095, cloth);
     upper.position.y = -0.13;
     shoulder.add(upper);
     const elbow = new THREE.Group();
-    elbow.position.y = -0.26;
+    elbow.position.y = -0.27;
     shoulder.add(elbow);
-    const fore = box(0.075, 0.24, 0.075, M.cloth);
+    const fore = box(0.08, 0.24, 0.08, cloth);
     fore.position.y = -0.12;
     elbow.add(fore);
-    const hand = box(0.07, 0.08, 0.08, M.skin);
+    const hand = box(0.08, 0.085, 0.095, M.skin);
     hand.position.y = -0.24;
     elbow.add(hand);
     torso.add(shoulder);
@@ -96,33 +104,31 @@ function buildSoldier() {
   const armL = buildArm(-1);
   const armR = buildArm(1);
 
-  const rifle = new THREE.Group();
-  rifle.add(box(0.05, 0.06, 0.55, M.gun));
-  const stockM = box(0.045, 0.05, 0.16, M.cloth); stockM.position.z = 0.33; rifle.add(stockM);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 8), M.gun);
-  barrel.rotation.x = Math.PI / 2; barrel.position.z = -0.4; rifle.add(barrel);
-  const magM = box(0.035, 0.16, 0.05, M.gun); magM.position.set(0, -0.11, -0.05); magM.rotation.x = -0.2; rifle.add(magM);
-  rifle.position.set(0.02, -0.14, -0.15);
-  rifle.rotation.y = Math.PI / 2 + 0.08;
-  armR.elbow.add(rifle);
-  armR.shoulder.rotation.x = -1.35; armR.elbow.rotation.x = 0.3;
-  armL.shoulder.rotation.x = -1.1; armL.shoulder.rotation.z = 0.35; armL.elbow.rotation.x = 1.15;
+  // weapon held in front, barrel pointing +z (buildEnemyWeapon points -z, so flip)
+  const weapon = buildEnemyWeapon(weaponKind);
+  weapon.rotation.y = Math.PI;
+  weapon.position.set(0.04, 0.30, 0.32);
+  torso.add(weapon);
+
+  // two-handed low-ready: both arms forward gripping the weapon
+  armR.shoulder.rotation.set(-1.18, 0, -0.12); armR.elbow.rotation.x = 0.55;
+  armL.shoulder.rotation.set(-1.05, 0, 0.4); armL.elbow.rotation.x = 0.9;
 
   function buildLeg(side) {
     const hip = new THREE.Group();
-    hip.position.set(side * 0.11, -0.1, 0);
-    const thigh = box(0.11, 0.32, 0.12, M.clothDark); thigh.position.y = -0.16; hip.add(thigh);
-    const knee = new THREE.Group(); knee.position.y = -0.32; hip.add(knee);
-    const shin = box(0.095, 0.3, 0.1, M.clothDark); shin.position.y = -0.15; knee.add(shin);
-    const boot = box(0.11, 0.1, 0.18, M.boot); boot.position.set(0, -0.32, 0.04); knee.add(boot);
+    hip.position.set(side * 0.12, -0.11, 0);
+    const thigh = box(0.13, 0.34, 0.14, clothDark); thigh.position.y = -0.17; hip.add(thigh);
+    const knee = new THREE.Group(); knee.position.y = -0.34; hip.add(knee);
+    const shin = box(0.1, 0.3, 0.11, clothDark); shin.position.y = -0.15; knee.add(shin);
+    const boot = box(0.12, 0.1, 0.22, M.boot); boot.position.set(0, -0.32, 0.06); knee.add(boot); // toe +z
     hips.add(hip);
     return { hip, knee };
   }
   const legL = buildLeg(-1);
   const legR = buildLeg(1);
 
-  root.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
-  return { root, torso, neck, head, armL, armR, legL, legR, hips, rifleFlashAnchor: rifle };
+  root.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; } });
+  return { root, torso, neck, head, armL, armR, legL, legR, hips, rifleFlashAnchor: weapon };
 }
 
 // axis each limb group swings about for the walk cycle (tweak if a joint
@@ -192,18 +198,18 @@ export class Enemy {
     const T = ENEMY_TYPES[this.typeKey] || ENEMY_TYPES.assault;
     this.typeCfg = T;
 
-    if (opts.template) {
-      this._buildFromModel(opts.template, T);
-      this.useModel = true;
-    } else {
-      const built = buildSoldier();
-      this.parts = built;
-      this.model = built.root;
-      this.headRef = built.head;
-      this.chestRef = built.torso;
-      this.rifleFlashAnchor = built.rifleFlashAnchor;
-      this.useModel = false;
-    }
+    // procedural soldier, tinted by type and holding a random weapon. (The
+    // external FBX rig shipped only a broken T-pose with no usable grip, so we
+    // build our own body that reliably animates and carries a weapon.)
+    this.weaponKind = ENEMY_WEAPON_KINDS[Math.floor(Math.random() * ENEMY_WEAPON_KINDS.length)];
+    const built = buildSoldier(T, this.weaponKind);
+    this.parts = built;
+    this.model = built.root;
+    this.model.scale.setScalar(T.scale || 1);
+    this.headRef = built.head;
+    this.chestRef = built.torso;
+    this.rifleFlashAnchor = built.rifleFlashAnchor;
+    this.useModel = false;
     this.model.position.copy(spawnPos);
     scene.add(this.model);
 

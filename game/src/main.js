@@ -13,8 +13,7 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 import { WeaponSystem, WEAPON_DEFS } from './weapons.js';
 import { Player } from './player.js';
-import { Enemy, pickEnemyType } from './enemy.js';
-import { loadEnemyTemplate } from './modelLoader.js';
+import { Enemy } from './enemy.js';
 
 // ============================================================ DOM refs
 const $ = (id) => document.getElementById(id);
@@ -97,11 +96,6 @@ const player = new Player(camera, world, audio);
 // the first-person weapon/hands are children of the camera, so the camera must
 // be part of the scene graph for them to render.
 scene.add(camera);
-
-// external rigged enemy body — loaded once, cloned per spawn. Best-effort:
-// stays null (procedural fallback) if the model can't be fetched/parsed.
-let enemyTemplate = null;
-const enemyTemplateReady = loadEnemyTemplate().then((t) => { enemyTemplate = t; }).catch(() => {});
 
 // ---- post-processing ----
 const composer = new EffectComposer(renderer);
@@ -602,7 +596,6 @@ function deployEnemies() {
   for (const post of ENEMY_POSTS) {
     const sp = new THREE.Vector3(post.x, 0, post.z);
     const e = new Enemy(scene, world, effects, audio, sp, difficulty, {
-      template: enemyTemplate,
       type: post.type,
       guardPos: sp.clone(),
       patrolRadius: post.r,
@@ -807,9 +800,6 @@ async function startGame() {
   audio.startAmbient();
   resetGameState();
   hideOverlay(menuMain); hideOverlay(menuDeath); hideOverlay(menuPause);
-  showOverlay(loadingEl);
-  // let the rigged enemy model finish loading (capped) so wave 1 already uses it
-  await Promise.race([enemyTemplateReady, new Promise((r) => setTimeout(r, 4000))]);
   hideOverlay(loadingEl);
   hud.classList.add('visible');
   G.state = 'playing';
