@@ -217,11 +217,14 @@ function buildHand(curl = 1) {
 // place two hands onto a viewmodel; returns refs for animation.
 // anchors/rots are [x,y,z]; leftParent lets the shotgun's support hand ride the pump.
 function addHands(g, cfg) {
-  const left = buildHand();
-  left.position.set(...cfg.left);
-  if (cfg.leftRot) left.rotation.set(...cfg.leftRot);
-  (cfg.leftParent || g).add(left);
-  const right = buildHand();
+  let left = null;
+  if (cfg.left) {
+    left = buildHand();
+    left.position.set(...cfg.left);
+    if (cfg.leftRot) left.rotation.set(...cfg.leftRot);
+    (cfg.leftParent || g).add(left);
+  }
+  const right = buildHand(cfg.rightCurl != null ? cfg.rightCurl : 1);
   right.position.set(...cfg.right);
   if (cfg.rightRot) right.rotation.set(...cfg.rightRot);
   g.add(right);
@@ -400,6 +403,30 @@ function buildSniper() {
   return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -1.0), hands };
 }
 
+function buildKnife() {
+  const g = new THREE.Group();
+  const k = new THREE.Group();          // tilted blade assembly
+  k.rotation.set(-0.12, 0.05, 0.1);
+  g.add(k);
+  const steel = M.gunmetal;
+  const edge = new THREE.MeshStandardMaterial({ color: 0xc9ced4, roughness: 0.22, metalness: 0.95 });
+  // handle + wrap + pommel
+  k.add(box(0.03, 0.045, 0.16, M.grip, 0, -0.02, 0.16));
+  for (let i = 0; i < 4; i++) k.add(box(0.034, 0.01, 0.014, M.polymer, 0, -0.02, 0.115 + i * 0.03));
+  k.add(box(0.038, 0.05, 0.03, M.darkSteel, 0, -0.02, 0.25));                 // pommel
+  k.add(box(0.09, 0.02, 0.03, M.darkSteel, 0, -0.005, 0.06));                 // crossguard
+  // blade (drop-point): body + tip + bright edge
+  k.add(box(0.012, 0.05, 0.3, steel, 0, 0.0, -0.1));
+  k.add(box(0.012, 0.032, 0.09, steel, 0, 0.008, -0.29));                     // tip taper
+  k.add(box(0.014, 0.01, 0.28, edge, 0, -0.024, -0.1));                       // sharpened edge
+  k.add(box(0.006, 0.02, 0.24, M.darkSteel, 0, 0.006, -0.1));                 // fuller groove
+  for (let i = 0; i < 5; i++) k.add(box(0.013, 0.014, 0.014, M.darkSteel, 0, 0.03, 0.02 - i * 0.03)); // spine serrations
+  const hands = addHands(k, {
+    right: [0.0, -0.05, 0.2], rightRot: [0.5, 0.05, 0.12], rightCurl: 1,
+  });
+  return { group: g, mag: new THREE.Group(), muzzle: new THREE.Vector3(0, 0, -0.4), hands, melee: true };
+}
+
 function buildAK() {
   const g = new THREE.Group();
   const mag = new THREE.Group();
@@ -528,6 +555,14 @@ export const WEAPON_DEFS = [
     pellets: 1, range: 90, sound: 'pistol', build: buildSMG,
     hip: [0.25, -0.23, -0.47], ads: [0, -0.142, -0.3], scope: false,
   },
+  {
+    id: 'knife', name: 'TAKTİK BIÇAK', mode: 'melee', modeLabel: 'YAKIN DÖVÜŞ',
+    damage: 55, headshotMult: 1.4, rpm: 150, magSize: 0, reserveStart: 0, maxReserve: 0,
+    reloadTime: 0, spreadHip: 0, spreadAds: 0, spreadMove: 0,
+    recoilPitch: 0, recoilYaw: 0, kickback: 0, adsFovMult: 1.0, adsTime: 0.12,
+    pellets: 0, range: 2.6, sound: 'pistol', build: buildKnife,
+    hip: [0.14, -0.12, -0.46], ads: [0.14, -0.12, -0.46], scope: false,
+  },
 ];
 
 // ---------------- weapon system ----------------
@@ -566,7 +601,7 @@ export class WeaponSystem {
         boltThrow: built.boltThrow || 0,
         muzzleLocal: built.muzzle,
         leftHand: built.hands ? built.hands.left : null,
-        leftHandHome: built.hands ? built.hands.left.position.clone() : null,
+        leftHandHome: (built.hands && built.hands.left) ? built.hands.left.position.clone() : null,
         // the shotgun's support hand rides the pump, so don't double-animate it on reload
         animateHand: !!built.hands && def.id !== 'shotgun',
         mag: def.magSize,
@@ -600,6 +635,9 @@ export class WeaponSystem {
     this.throwT = 0;       // grenade-throw viewmodel animation timer
     this.inspectT = 0;     // weapon-inspect animation timer (counts down)
     this.inspectDur = 2.4;
+    this.meleeT = 0;       // knife swing timer (counts down)
+    this.meleeDur = 0.42;
+    this.meleeType = 0;    // 0 = slash, 1 = stab
     this.sprintAmt = 0;    // 0..1 tactical-sprint lowered-weapon blend
     this.emptyReload = false; // reload started on an empty chamber (adds bolt release)
     this.breatheT = Math.random() * 10; // idle breathing phase
@@ -671,6 +709,19 @@ export class WeaponSystem {
     this.inspectT = this.inspectDur;
   }
 
+  isMelee() { return this.current.def.mode === 'melee'; }
+
+  // knife swing — returns true if a new swing started (main.js does the hit test).
+  // heavy = stab (slower, more damage window), else slash.
+  meleeSwing(heavy) {
+    if (this.meleeT > 0 || this.switching > 0) return false;
+    this.meleeType = heavy ? 1 : 0;
+    this.meleeDur = heavy ? 0.5 : 0.36;
+    this.meleeT = this.meleeDur;
+    this.inspectT = 0;
+    return true;
+  }
+
   setTrigger(v) {
     this.triggerHeld = v;
     if (v) this.inspectT = 0; // firing cancels an inspect
@@ -681,6 +732,7 @@ export class WeaponSystem {
   tryFire(moving) {
     const w = this.current;
     const def = w.def;
+    if (def.mode === 'melee') return null; // knife never fires bullets
     if (!this.triggerHeld || this.reloading || this.switching > 0 || this.pumping > 0 || this.cooldown > 0) return null;
     if (def.mode === 'semi' || def.mode === 'pump' || def.mode === 'bolt') {
       if (!this.semiReady) return null;
@@ -951,6 +1003,25 @@ export class WeaponSystem {
       model.rotation.z += rz;
       model.position.y += py2;
       model.position.z += pz2;
+    }
+
+    // knife swing: a fast wind-up then a strike, easing back to guard.
+    if (this.meleeT > 0) {
+      this.meleeT = Math.max(0, this.meleeT - dt);
+      const tt = 1 - this.meleeT / this.meleeDur;       // 0..1
+      const strike = Math.sin(Math.min(1, tt / 0.55) * Math.PI); // peak mid-swing
+      if (this.meleeType === 1) {
+        // stab: thrust forward + slight downward angle
+        model.position.z += -strike * 0.34;
+        model.position.y += -strike * 0.03;
+        model.rotation.x += -strike * 0.25;
+      } else {
+        // slash: sweep across from upper-right to lower-left
+        model.position.x += (0.14 - strike * 0.34);
+        model.position.y += strike * 0.05;
+        model.rotation.z += (0.5 - strike * 1.1);
+        model.rotation.y += strike * 0.5;
+      }
     }
 
     // hide viewmodel when scoped in fully

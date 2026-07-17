@@ -250,6 +250,13 @@ function updateAmmoHud() {
   const def = w.def;
   weaponName.textContent = def.name;
   fireMode.textContent = def.modeLabel;
+  if (def.mode === 'melee') {
+    ammoMag.textContent = '—';
+    ammoReserve.textContent = '';
+    ammoMag.classList.remove('low');
+    reloadHint.style.display = 'none';
+    return;
+  }
   ammoMag.textContent = w.mag;
   ammoReserve.textContent = ' / ' + w.reserve;
   ammoMag.classList.toggle('low', w.mag <= Math.ceil(def.magSize * 0.25));
@@ -419,6 +426,50 @@ function processShots(shots) {
       const kind = hitObject && hitObject.geometry && hitObject.geometry.type === 'PlaneGeometry' ? 'dust' : 'metal';
       effects.spawnImpact(hitPoint, hitNormal, kind);
     }
+  }
+}
+
+// ---- knife melee ----
+function doMelee(heavy) {
+  if (!weapons.meleeSwing(heavy)) return;
+  const def = weapons.current.def;
+  // land the hit at the swing's apex
+  setTimeout(() => meleeHit(heavy, def), heavy ? 210 : 140);
+}
+
+function meleeHit(heavy, def) {
+  if (G.state !== 'playing') return;
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  const origin = camera.getWorldPosition(new THREE.Vector3());
+  const dmg = def.damage * (heavy ? 1.7 : 1);
+  let hitAny = false;
+  const chest = new THREE.Vector3();
+  for (const e of enemies) {
+    if (e.dead) continue;
+    e.chestWorldPos(chest);
+    const to = chest.clone().sub(origin);
+    const dist = to.length();
+    if (dist > def.range) continue;
+    if (to.normalize().dot(dir) < 0.5) continue; // must be in front of the blade
+    const wasAlive = !e.dead;
+    e.takeDamage(dmg, false, chest.clone(), dir.clone());
+    hitAny = true;
+    hitmarker.classList.remove('show', 'kill');
+    void hitmarker.offsetWidth;
+    hitmarker.classList.add('show');
+    if (e.dead && wasAlive) {
+      hitmarker.classList.add('kill');
+      G.kills++; G.score += 120;
+      addKillfeed('DÜŞMAN ✕ bıçak', false);
+      updateScoreHud();
+    }
+  }
+  if (hitAny) audio.hitmarker(false);
+  // slice through a barrel in reach too
+  for (const b of world.barrels) {
+    if (!b.alive) continue;
+    const to = b.pos.clone().sub(origin);
+    if (to.length() < def.range && to.normalize().dot(dir) > 0.5) damageBarrel(b, dmg);
   }
 }
 
@@ -736,11 +787,17 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Digit4') weapons.switchTo(3);
   if (e.code === 'Digit5') weapons.switchTo(4);
   if (e.code === 'Digit6') weapons.switchTo(5);
+  if (e.code === 'Digit7') weapons.switchTo(6);
 });
 addEventListener('keyup', (e) => setKeyState(e.code, false));
 
 addEventListener('mousedown', (e) => {
   if (G.state !== 'playing' || document.pointerLockElement !== canvas) return;
+  if (weapons.isMelee()) {
+    if (e.button === 0) doMelee(false);   // slash
+    if (e.button === 2) doMelee(true);    // stab
+    return;
+  }
   if (e.button === 0) weapons.setTrigger(true);
   if (e.button === 2) weapons.setAds(true);
 });

@@ -506,6 +506,9 @@ export class World {
     this._buildWreck(-2, -8, 0.6);
     this._buildWreck(30, 6, -1.1);
 
+    // ----- foliage, barriers, fences, signs, poles -----
+    this._addProps(half);
+
     // ----- enemy spawn points (near edges, outside player start) -----
     this.enemySpawns = [
       new THREE.Vector3(-half + 12, 0, -half + 20),
@@ -549,6 +552,136 @@ export class World {
     this.scene.add(g);
     const r = Math.abs(Math.cos(rot)), s = Math.abs(Math.sin(rot));
     this.addCollider(x, 0.9, z, 4.2 * r + 1.9 * s, 1.9, 4.2 * s + 1.9 * r);
+  }
+
+  // scatter foliage, cover and street dressing so the compound feels lived-in
+  _addProps(half) {
+    const bark = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.95 });
+    const leafA = new THREE.MeshStandardMaterial({ color: 0x3f6b2e, roughness: 0.95 });
+    const leafB = new THREE.MeshStandardMaterial({ color: 0x4f7d38, roughness: 0.95 });
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6f6f72, roughness: 0.98, metalness: 0.02 });
+    const concreteMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#9a9488'), roughness: 0.95 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd8b53a, roughness: 0.7 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.55, metalness: 0.4 });
+    const woodPole = new THREE.MeshStandardMaterial({ color: 0x6b5236, roughness: 0.9 });
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0x1c1e20, roughness: 0.6, metalness: 0.3 });
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x496b30, roughness: 1 });
+
+    // --- trees (trunk collides, canopy is decorative) ---
+    const treeSpots = [[-9, 52], [12, -54], [-63, -42], [61, -40], [-61, 61], [63, 57], [-42, -3], [45, 2], [-3, 66], [7, -66], [40, 40], [-38, 34]];
+    for (const [x, z] of treeSpots) {
+      const g = new THREE.Group();
+      const h = 3.0 + Math.random() * 1.4;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, h, 8), bark);
+      trunk.position.y = h / 2; trunk.castShadow = true; g.add(trunk);
+      for (let i = 0; i < 3; i++) {
+        const r = 1.0 + Math.random() * 0.5;
+        const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), Math.random() < 0.5 ? leafA : leafB);
+        blob.position.set((Math.random() - 0.5) * 0.9, h + 0.2 + i * 0.5, (Math.random() - 0.5) * 0.9);
+        blob.castShadow = true; blob.receiveShadow = true; g.add(blob);
+      }
+      g.position.set(x, 0, z);
+      this.scene.add(g);
+      this.addCollider(x, h / 2, z, 0.5, h, 0.5);
+      this.raycastMeshes.push(trunk);
+    }
+
+    // --- bushes ---
+    for (const [x, z] of [[-14, 44], [18, 36], [-26, -10], [30, -28], [6, 20], [-46, 24], [50, -6], [-6, -30], [24, 52], [-52, -18], [42, 24], [-30, 58], [16, 8], [-18, 16]]) {
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6 + Math.random() * 0.4, 0), Math.random() < 0.5 ? leafA : leafB);
+      b.position.set(x, 0.45, z); b.scale.y = 0.75; b.castShadow = true; b.receiveShadow = true;
+      this.scene.add(b);
+    }
+
+    // --- grass tufts (cheap billboards of crossed quads) ---
+    for (let i = 0; i < 90; i++) {
+      const x = (Math.random() - 0.5) * (half * 1.9);
+      const z = (Math.random() - 0.5) * (half * 1.9);
+      if (Math.hypot(x, z - 6) < 6) continue; // keep spawn clear
+      const t = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 4), grassMat);
+      t.position.set(x, 0.2, z); t.rotation.y = Math.random() * Math.PI;
+      this.scene.add(t);
+    }
+
+    // --- rocks ---
+    for (const [x, z] of [[-11, 34], [26, -12], [-30, 20], [38, 30], [-48, -6], [8, 46], [52, 12], [-24, -26], [44, -30], [-40, 46]]) {
+      const s = 0.4 + Math.random() * 0.7;
+      const rk = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), rockMat);
+      rk.position.set(x, s * 0.55, z); rk.rotation.set(Math.random(), Math.random(), Math.random());
+      rk.castShadow = true; rk.receiveShadow = true;
+      this.scene.add(rk); this.raycastMeshes.push(rk);
+    }
+
+    // --- concrete jersey barriers (cover, collide) ---
+    const barrierRows = [[-12, 16, 0], [14, -8, 0], [-30, 0, Math.PI / 2], [28, 20, 0], [0, 34, 0], [-44, -14, Math.PI / 2], [48, -18, 0]];
+    for (const [x, z, rot] of barrierRows) {
+      const bar = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.72), concreteMat); base.position.y = 0.25;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.34), concreteMat); top.position.y = 0.72;
+      bar.add(base, top);
+      bar.position.set(x, 0, z); bar.rotation.y = rot;
+      bar.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; this.raycastMeshes.push(m); } });
+      this.scene.add(bar);
+      const r = Math.abs(Math.cos(rot)), s = Math.abs(Math.sin(rot));
+      this.addCollider(x, 0.5, z, 2.4 * r + 0.72 * s, 1.0, 2.4 * s + 0.72 * r);
+    }
+
+    // --- chain-link fence runs ---
+    const meshTex = canvasTexture(64, 64, (gg, w, h) => {
+      gg.clearRect(0, 0, w, h);
+      gg.strokeStyle = 'rgba(150,155,160,0.9)'; gg.lineWidth = 2;
+      for (let i = -w; i < w; i += 10) { gg.beginPath(); gg.moveTo(i, 0); gg.lineTo(i + h, h); gg.stroke(); gg.beginPath(); gg.moveTo(i + h, 0); gg.lineTo(i, h); gg.stroke(); }
+    }, 6, 2);
+    const fenceMat = new THREE.MeshStandardMaterial({ map: meshTex, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, metalness: 0.4, roughness: 0.6 });
+    const fenceRuns = [[-half + 4, -30, -half + 4, 20], [half - 4, -20, half - 4, 30], [-30, half - 4, 24, half - 4]];
+    for (const [x1, z1, x2, z2] of fenceRuns) {
+      const len = Math.hypot(x2 - x1, z2 - z1);
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, 2.2), fenceMat);
+      panel.position.set((x1 + x2) / 2, 1.1, (z1 + z2) / 2);
+      panel.rotation.y = Math.atan2(x2 - x1, z2 - z1) + Math.PI / 2;
+      this.scene.add(panel);
+      const n = Math.round(len / 3);
+      for (let i = 0; i <= n; i++) {
+        const px = x1 + (x2 - x1) * (i / n), pz = z1 + (z2 - z1) * (i / n);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), metalMat);
+        post.position.set(px, 1.2, pz); post.castShadow = true; this.scene.add(post);
+      }
+    }
+
+    // --- warning signs ---
+    for (const [x, z] of [[-8, 24], [20, 4], [-34, -6], [36, 34], [4, -22]]) {
+      const g = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.2, 8), metalMat);
+      pole.position.y = 1.1; pole.castShadow = true; g.add(pole);
+      const board = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.04), stripeMat);
+      board.position.y = 1.9; g.add(board);
+      const tri = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.24, 3), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 }));
+      tri.rotation.x = Math.PI / 2; tri.position.set(0, 1.9, 0.03); g.add(tri);
+      g.position.set(x, 0, z); this.scene.add(g);
+      this.raycastMeshes.push(board);
+    }
+
+    // --- utility poles with hanging wires ---
+    const poleSpots = [[-half + 6, -50], [-half + 6, -10], [-half + 6, 30], [-half + 6, 66]];
+    let prev = null;
+    for (const [x, z] of poleSpots) {
+      const g = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 8.4, 8), woodPole);
+      pole.position.y = 4.2; pole.castShadow = true; g.add(pole);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.14, 0.14), woodPole);
+      arm.position.y = 7.6; g.add(arm);
+      g.position.set(x, 0, z); this.scene.add(g);
+      this.addCollider(x, 4.2, z, 0.4, 8.4, 0.4);
+      this.raycastMeshes.push(pole);
+      if (prev) {
+        const dz = z - prev[1];
+        const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, Math.abs(dz), 5), wireMat);
+        wire.rotation.x = Math.PI / 2;
+        wire.position.set(x - 0.05, 7.4, (z + prev[1]) / 2);
+        this.scene.add(wire);
+      }
+      prev = [x, z];
+    }
   }
 
   removeBarrel(rec) {
