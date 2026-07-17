@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { World, resolveCollisions } from './world.js';
 import { AudioEngine } from './audio.js';
 import { Effects } from './effects.js';
@@ -80,6 +81,16 @@ let quality = 'high';
 const audio = new AudioEngine();
 const effects = new Effects(scene, audio);
 let world = new World(scene, quality);
+
+// Image-based lighting: without an environment map, high-metalness PBR
+// materials (streetlight poles, razor wire, gun metal, glass, containers)
+// have nothing to reflect and render as solid black cylinders/panels in
+// daylight. A neutral generated environment gives them real reflections.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.75;
+pmrem.dispose();
+
 const weapons = new WeaponSystem(camera, audio, effects);
 const player = new Player(camera, world, audio);
 

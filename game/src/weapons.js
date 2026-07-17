@@ -5,15 +5,15 @@ import * as THREE from 'three';
 
 // shared materials
 const M = {
-  gunmetal: new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 0.38, metalness: 0.85 }),
-  darkSteel: new THREE.MeshStandardMaterial({ color: 0x17191c, roughness: 0.45, metalness: 0.9 }),
+  gunmetal: new THREE.MeshStandardMaterial({ color: 0x33373d, roughness: 0.42, metalness: 0.6 }),
+  darkSteel: new THREE.MeshStandardMaterial({ color: 0x2a2d32, roughness: 0.48, metalness: 0.6 }),
   polymer: new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.75, metalness: 0.15 }),
   grip: new THREE.MeshStandardMaterial({ color: 0x1e2023, roughness: 0.9, metalness: 0.05 }),
   tan: new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 0.7, metalness: 0.1 }),
   accent: new THREE.MeshStandardMaterial({ color: 0xb84a2e, roughness: 0.5, metalness: 0.3 }),
   sightGlow: new THREE.MeshStandardMaterial({ color: 0x30ff70, emissive: 0x30ff70, emissiveIntensity: 2.2 }),
-  scopeGlass: new THREE.MeshStandardMaterial({ color: 0x0a2030, roughness: 0.1, metalness: 0.9 }),
-  brass: new THREE.MeshStandardMaterial({ color: 0xb8963e, roughness: 0.35, metalness: 0.95 }),
+  scopeGlass: new THREE.MeshStandardMaterial({ color: 0x1c4055, roughness: 0.15, metalness: 0.6 }),
+  brass: new THREE.MeshStandardMaterial({ color: 0xc4a24a, roughness: 0.35, metalness: 0.7 }),
   glove: new THREE.MeshStandardMaterial({ color: 0x26282a, roughness: 0.85, metalness: 0.05 }),
   gloveKnuckle: new THREE.MeshStandardMaterial({ color: 0x333638, roughness: 0.7, metalness: 0.1 }),
   sleeve: new THREE.MeshStandardMaterial({ color: 0x39402e, roughness: 0.92, metalness: 0.03 }),

@@ -16,7 +16,7 @@ const M = {
   skin: new THREE.MeshStandardMaterial({ color: 0xc79a72, roughness: 0.8 }),
   helmet: new THREE.MeshStandardMaterial({ color: 0x22241f, roughness: 0.5, metalness: 0.3 }),
   boot: new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 }),
-  gun: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.5, metalness: 0.7 }),
+  gun: new THREE.MeshStandardMaterial({ color: 0x33363b, roughness: 0.55, metalness: 0.4 }),
   visor: new THREE.MeshStandardMaterial({ color: 0x1a2733, roughness: 0.25, metalness: 0.6 }),
   eyeGlow: new THREE.MeshStandardMaterial({ color: 0x11161c, roughness: 0.35, metalness: 0.4 }),
 };
@@ -131,7 +131,7 @@ const WALK_AXIS = { thigh: 'x', calf: 'x', arm: 'x' };
 
 // weapon silhouettes carried by enemies (seen at a distance, so kept simple).
 // z- is the barrel/forward direction, matching how it hangs off the hand bone.
-const EGUN = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.5, metalness: 0.7 });
+const EGUN = new THREE.MeshStandardMaterial({ color: 0x2e3136, roughness: 0.55, metalness: 0.4 });
 const EWOOD = new THREE.MeshStandardMaterial({ color: 0x5a3a1e, roughness: 0.75, metalness: 0.06 });
 const ENEMY_WEAPON_KINDS = ['rifle', 'ak', 'smg', 'shotgun', 'sniper'];
 

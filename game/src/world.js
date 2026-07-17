@@ -253,11 +253,17 @@ export class World {
     }
 
     // ----- lights (midday sun) -----
-    const hemi = new THREE.HemisphereLight(0xbcd8ff, 0x6a6152, 0.95);
+    const hemi = new THREE.HemisphereLight(0xbcd8ff, 0x8a8171, 1.25);
     this.scene.add(hemi);
 
-    // small ambient floor so shadow-side faces never crush to pure black
-    this.scene.add(new THREE.AmbientLight(0x5b6b7d, 0.32));
+    // strong ambient floor so shadow-side faces stay a readable grey, never black
+    this.scene.add(new THREE.AmbientLight(0x74869a, 0.68));
+
+    // low fill from the shadow side so building faces turned away from the sun
+    // still catch light instead of going flat black
+    const shadowFill = new THREE.DirectionalLight(0x9fb0c4, 0.45);
+    shadowFill.position.set(60, 30, -70);
+    this.scene.add(shadowFill);
 
     const sun = new THREE.DirectionalLight(0xfff4e2, 2.6);
     sun.position.set(-84, 138, -66);   // high, matches the sky sun disk
@@ -303,14 +309,14 @@ export class World {
     }
 
     // ----- perimeter walls -----
-    const wallMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#6f6a60'), roughness: 0.9 });
+    const wallMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#918a7d'), roughness: 0.9 });
     const wallH = 7, wallT = 1.6;
     this._solidBox(S + wallT, wallH, wallT, wallMat, 0, wallH / 2, -half, {});
     this._solidBox(S + wallT, wallH, wallT, wallMat, 0, wallH / 2, half, {});
     this._solidBox(wallT, wallH, S + wallT, wallMat, -half, wallH / 2, 0, {});
     this._solidBox(wallT, wallH, S + wallT, wallMat, half, wallH / 2, 0, {});
     // wall top razor-wire hint (thin dark cylinder lines)
-    const wireMat = new THREE.MeshStandardMaterial({ color: 0x222528, roughness: 0.5, metalness: 0.8 });
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0x555b62, roughness: 0.55, metalness: 0.35 });
     [[0, -half], [0, half]].forEach(([x, z]) => {
       const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, S, 6), wireMat);
       wire.rotation.z = Math.PI / 2;
@@ -372,7 +378,7 @@ export class World {
     containers.forEach(([x, z, rot], i) => {
       const mat = new THREE.MeshStandardMaterial({
         map: containerTexture(containerColors[i % containerColors.length]),
-        roughness: 0.7, metalness: 0.35,
+        roughness: 0.75, metalness: 0.15,
       });
       this._solidBox(6.5, 2.6, 2.6, mat, x, 1.3, z, { rotY: rot });
     });
@@ -464,7 +470,7 @@ export class World {
     }
 
     // ----- street lights -----
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6, metalness: 0.7 });
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x484d54, roughness: 0.6, metalness: 0.35 });
     const lampSpots = [[-14, -14], [14, 14], [-14, 40], [40, -14], [-40, 14], [14, -44], [-44, -40], [44, 44]];
     // daytime: fixtures stay as props but lamps are switched off (no glow / real lights)
     lampSpots.forEach(([x, z]) => {
@@ -517,7 +523,7 @@ export class World {
 
   _buildWreck(x, z, rot) {
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x37423f, roughness: 0.8, metalness: 0.3 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0x0d1216, roughness: 0.3, metalness: 0.6 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x243441, roughness: 0.35, metalness: 0.4 });
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.0, 1.9), bodyMat);
     body.position.y = 0.75;
