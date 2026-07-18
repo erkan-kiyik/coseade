@@ -328,9 +328,15 @@ function buildPistol() {
   g.add(dot);
   g.add(box(0.014, 0.018, 0.01, M.darkSteel, -0.011, 0.055, 0.06));
   g.add(box(0.014, 0.018, 0.01, M.darkSteel, 0.011, 0.055, 0.06));
-  // slide serrations
+  // slide serrations (front and rear)
   for (let i = 0; i < 5; i++) g.add(box(0.044, 0.04, 0.006, M.darkSteel, 0, 0.02, 0.045 + i * 0.012));
+  for (let i = 0; i < 4; i++) g.add(box(0.044, 0.038, 0.005, M.darkSteel, 0, 0.02, -0.155 - i * 0.011));
+  // accessory rail under the dust cover + takedown lever
+  g.add(box(0.03, 0.012, 0.06, M.darkSteel, 0, -0.045, -0.1));
+  for (let i = 0; i < 3; i++) g.add(box(0.032, 0.006, 0.01, M.gunmetal, 0, -0.04, -0.08 - i * 0.018));
+  g.add(cyl(0.008, 0.008, 0.02, M.darkSteel, -0.02, -0.005, -0.03, 0, 0, Math.PI / 2, 8)); // takedown lever
   mag.add(box(0.028, 0.1, 0.045, M.darkSteel, 0, -0.04, 0));
+  mag.add(box(0.03, 0.016, 0.048, M.grip, 0, -0.098, 0.002));            // baseplate
   mag.position.set(0, -0.09, 0.055);
   g.add(mag);
   const hands = addHands(g, {
@@ -356,8 +362,12 @@ function buildShotgun() {
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.006, 6, 6), M.sightGlow);
   bead.position.set(0, 0.078, -0.62);
   g.add(bead);
-  // shell holder on receiver side
+  // shell holder on receiver side + a second row along the stock strap
   for (let i = 0; i < 4; i++) g.add(cyl(0.011, 0.011, 0.05, M.accent, 0.035, 0.01, 0.14 - i * 0.045, Math.PI / 2, 0, 0, 8));
+  for (let i = 0; i < 3; i++) g.add(cyl(0.01, 0.01, 0.044, M.accent, -0.032, -0.01, 0.34 - i * 0.05, Math.PI / 2, 0, 0, 8));
+  // barrel heat shield ring + front sling swivel
+  g.add(cyl(0.023, 0.023, 0.14, M.darkSteel, 0, 0.035, -0.58, Math.PI / 2, 0, 0, 10));
+  g.add(cyl(0.006, 0.006, 0.006, M.darkSteel, 0, 0.01, -0.68, Math.PI / 2, 0, 0, 8));
   // right hand on the grip; support hand rides the pump so it racks with it
   const hands = addHands(g, {
     right: [0.0, -0.075, 0.16], rightRot: [0.45, 0, 0],
@@ -403,28 +413,67 @@ function buildSniper() {
   return { group: g, mag, muzzle: new THREE.Vector3(0, 0.02, -1.0), hands };
 }
 
-function buildKnife() {
+// karambit hawkbill blade: a chain of shrinking, increasingly-curled segments
+// (same joint-chain technique as buildFinger) so the blade reads as a single
+// smooth claw-like curve rather than a straight bar.
+function buildKarambitBlade(steelMat, edgeMat) {
+  const root = new THREE.Group();
+  let cur = root;
+  const segs = 6;
+  let curl = -0.02;
+  const len = 0.052;
+  for (let i = 0; i < segs; i++) {
+    const w = 0.05 - i * 0.0062;
+    const seg = new THREE.Group();
+    seg.rotation.x = curl;
+    cur.add(seg);
+    const body = box(0.009, w, len, steelMat, 0, 0, -len / 2);
+    seg.add(body);
+    // sharpened edge on the concave (inside) face of the hook
+    const edge = box(0.011, 0.008, len * 0.9, edgeMat, 0, -w / 2 + 0.004, -len / 2);
+    seg.add(edge);
+    if (i === segs - 1) {
+      // hooked tip
+      const tip = box(0.008, w * 0.4, len * 0.5, steelMat, 0, -w * 0.2, -len * 1.15);
+      tip.rotation.x = -0.5;
+      seg.add(tip);
+    }
+    const next = new THREE.Group();
+    next.position.z = -len;
+    seg.add(next);
+    cur = next;
+    curl -= 0.24; // each segment hooks a little more — builds the claw curve
+  }
+  return root;
+}
+
+function buildKarambit() {
   const g = new THREE.Group();
   const k = new THREE.Group();          // tilted blade assembly
-  k.rotation.set(-0.12, 0.05, 0.1);
+  k.rotation.set(-0.15, 0.06, 0.16);
   g.add(k);
   const steel = M.gunmetal;
-  const edge = new THREE.MeshStandardMaterial({ color: 0xc9ced4, roughness: 0.22, metalness: 0.95 });
-  // handle + wrap + pommel
-  k.add(box(0.03, 0.045, 0.16, M.grip, 0, -0.02, 0.16));
-  for (let i = 0; i < 4; i++) k.add(box(0.034, 0.01, 0.014, M.polymer, 0, -0.02, 0.115 + i * 0.03));
-  k.add(box(0.038, 0.05, 0.03, M.darkSteel, 0, -0.02, 0.25));                 // pommel
-  k.add(box(0.09, 0.02, 0.03, M.darkSteel, 0, -0.005, 0.06));                 // crossguard
-  // blade (drop-point): body + tip + bright edge
-  k.add(box(0.012, 0.05, 0.3, steel, 0, 0.0, -0.1));
-  k.add(box(0.012, 0.032, 0.09, steel, 0, 0.008, -0.29));                     // tip taper
-  k.add(box(0.014, 0.01, 0.28, edge, 0, -0.024, -0.1));                       // sharpened edge
-  k.add(box(0.006, 0.02, 0.24, M.darkSteel, 0, 0.006, -0.1));                 // fuller groove
-  for (let i = 0; i < 5; i++) k.add(box(0.013, 0.014, 0.014, M.darkSteel, 0, 0.03, 0.02 - i * 0.03)); // spine serrations
+  const edge = new THREE.MeshStandardMaterial({ color: 0xc9ced4, roughness: 0.2, metalness: 0.95 });
+  // short contoured grip with finger grooves
+  k.add(box(0.026, 0.038, 0.12, M.grip, 0, -0.012, 0.115));
+  for (let i = 0; i < 3; i++) k.add(box(0.03, 0.009, 0.012, M.polymer, 0, -0.012, 0.085 + i * 0.026));
+  // bolster where handle meets blade (thumb ramp / choil)
+  k.add(box(0.028, 0.042, 0.028, M.darkSteel, 0, -0.002, 0.05));
+  k.add(box(0.02, 0.014, 0.02, M.darkSteel, 0, 0.024, 0.045));               // spine hump / thumb ramp
+  // signature finger ring at the pommel end
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.0065, 8, 16), M.darkSteel);
+  ring.position.set(0, -0.012, 0.2);
+  ring.rotation.y = Math.PI / 2;
+  k.add(ring);
+  // curved hawkbill blade, hooking down and back toward the grip
+  const blade = buildKarambitBlade(steel, edge);
+  blade.position.set(0, 0.006, 0.03);
+  blade.rotation.x = -0.15;
+  k.add(blade);
   const hands = addHands(k, {
-    right: [0.0, -0.05, 0.2], rightRot: [0.5, 0.05, 0.12], rightCurl: 1,
+    right: [0.0, -0.03, 0.18], rightRot: [0.55, 0.05, 0.14], rightCurl: 1,
   });
-  return { group: g, mag: new THREE.Group(), muzzle: new THREE.Vector3(0, 0, -0.4), hands, melee: true };
+  return { group: g, mag: new THREE.Group(), muzzle: new THREE.Vector3(0, 0, -0.3), hands, melee: true };
 }
 
 function buildAK() {
@@ -556,11 +605,11 @@ export const WEAPON_DEFS = [
     hip: [0.25, -0.23, -0.47], ads: [0, -0.142, -0.3], scope: false,
   },
   {
-    id: 'knife', name: 'TAKTİK BIÇAK', mode: 'melee', modeLabel: 'YAKIN DÖVÜŞ',
+    id: 'knife', name: 'KARAMBIT', mode: 'melee', modeLabel: 'YAKIN DÖVÜŞ',
     damage: 55, headshotMult: 1.4, rpm: 150, magSize: 0, reserveStart: 0, maxReserve: 0,
     reloadTime: 0, spreadHip: 0, spreadAds: 0, spreadMove: 0,
     recoilPitch: 0, recoilYaw: 0, kickback: 0, adsFovMult: 1.0, adsTime: 0.12,
-    pellets: 0, range: 2.6, sound: 'pistol', build: buildKnife,
+    pellets: 0, range: 2.6, sound: 'pistol', build: buildKarambit,
     hip: [0.14, -0.12, -0.46], ads: [0.14, -0.12, -0.46], scope: false,
   },
 ];

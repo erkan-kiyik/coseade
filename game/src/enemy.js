@@ -69,6 +69,16 @@ function buildSoldier(T, weaponKind) {
   // shoulder pads read as bulk / stops the torso looking like a bare box
   const padL = box(0.14, 0.12, 0.24, vest); padL.position.set(-0.24, 0.42, 0); torso.add(padL);
   const padR = box(0.14, 0.12, 0.24, vest); padR.position.set(0.24, 0.42, 0); torso.add(padR);
+  // chest-rig magazine pouches (breaks up the flat plate, reads as kit)
+  for (const px of [-0.1, 0, 0.1]) {
+    const pouch = box(0.075, 0.1, 0.05, clothDark);
+    pouch.position.set(px, 0.14, 0.17);
+    torso.add(pouch);
+  }
+  // backpack
+  const pack = box(0.28, 0.32, 0.14, clothDark);
+  pack.position.set(0, 0.2, -0.19);
+  torso.add(pack);
 
   const neck = new THREE.Group();
   neck.position.y = 0.48;
@@ -157,24 +167,34 @@ function buildEnemyWeapon(kind) {
   if (kind === 'ak') {
     g.add(ebox(0.05, 0.08, 0.44, EGUN, 0, 0, 0));
     g.add(ecyl(0.013, 0.4, EGUN, 0, 0.01, -0.36));
+    g.add(ecyl(0.018, 0.05, EGUN, 0, 0.01, -0.55));         // slant muzzle brake
     g.add(ebox(0.045, 0.05, 0.22, EWOOD, 0, -0.005, 0.28));
+    g.add(ebox(0.048, 0.075, 0.18, EWOOD, 0, -0.01, 0.42));  // wooden stock
+    g.add(ebox(0.008, 0.03, 0.008, EGUN, 0, 0.065, -0.54));  // front sight post
     const mag = ebox(0.04, 0.17, 0.07, EGUN, 0, -0.13, -0.05); mag.rotation.x = -0.25; g.add(mag);
   } else if (kind === 'smg') {
     g.add(ebox(0.045, 0.07, 0.3, EGUN, 0, 0, 0.02));
     g.add(ecyl(0.011, 0.12, EGUN, 0, 0.01, -0.22));
-    g.add(ebox(0.03, 0.16, 0.05, EGUN, 0, -0.1, -0.06));
+    g.add(ebox(0.028, 0.075, 0.05, EGUN, 0, -0.06, 0.2));    // folding stock
+    const mag = ebox(0.026, 0.14, 0.05, EGUN, 0, -0.11, -0.02); g.add(mag);
+    g.add(ecyl(0.014, 0.018, EGUN, 0, 0.045, -0.16)); // rear sight ring
   } else if (kind === 'shotgun') {
     g.add(ebox(0.05, 0.07, 0.4, EGUN, 0, 0, 0.04));
     g.add(ecyl(0.017, 0.5, EGUN, 0, 0.02, -0.38));
     g.add(ecyl(0.018, 0.44, EGUN, 0, -0.015, -0.35));
     g.add(ebox(0.045, 0.05, 0.2, EWOOD, 0, -0.005, 0.3));
+    g.add(ebox(0.05, 0.08, 0.16, EWOOD, 0, -0.01, 0.44));    // stock
   } else if (kind === 'sniper') {
     g.add(ebox(0.045, 0.06, 0.5, EWOOD, 0, 0, 0.08));
     g.add(ecyl(0.014, 0.62, EGUN, 0, 0.02, -0.5));
     g.add(ecyl(0.03, 0.2, EGUN, 0, 0.08, -0.05));           // scope
+    g.add(ebox(0.04, 0.09, 0.06, EWOOD, 0, -0.02, 0.35));    // cheek-riser stock
+    const bip = ecyl(0.006, 0.16, EGUN, -0.03, -0.06, -0.7); bip.rotation.z = 0.4; g.add(bip);
   } else { // rifle / default
     g.add(ebox(0.05, 0.09, 0.62, EGUN, 0, 0, 0));
     g.add(ecyl(0.014, 0.34, EGUN, 0, 0, -0.44));
+    g.add(ebox(0.045, 0.06, 0.16, EGUN, 0, -0.01, 0.36));    // stock
+    g.add(ebox(0.008, 0.028, 0.008, EGUN, 0, 0.06, -0.58));  // front sight post
     g.add(ebox(0.04, 0.18, 0.06, EGUN, 0, -0.13, -0.04));
   }
   g.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });
@@ -242,6 +262,7 @@ export class Enemy {
     this.strafeDir = Math.random() < 0.5 ? -1 : 1;
     this.lastKnownPlayerPos = null;
     this.walkPhase = Math.random() * 10;
+    this.crouchAmt = 0;
     this.dead = false;
     this.deathT = 0;
     this.removeAfter = null;
@@ -562,6 +583,10 @@ export class Enemy {
     this.model.rotation.y = this.yaw;
 
     if (moved) this.walkPhase += dt * moveSpeed * 3.2;
+    // hunker down a little while holding a firing position — reads as taking
+    // the engagement seriously instead of standing bolt upright in the open
+    const wantCrouch = this.state === STATE.COMBAT && !moved;
+    this.crouchAmt = (this.crouchAmt || 0) + ((wantCrouch ? 1 : 0) - (this.crouchAmt || 0)) * Math.min(1, dt * 5);
     if (this.useModel) this._animateModel(moved);
     else this._animateBox(moved);
 
@@ -570,11 +595,12 @@ export class Enemy {
 
   _animateBox(moved) {
     const swing = Math.sin(this.walkPhase) * (moved ? 0.55 : 0);
+    const crouch = this.crouchAmt || 0;
     this.parts.legL.hip.rotation.x = swing;
     this.parts.legR.hip.rotation.x = -swing;
-    this.parts.legL.knee.rotation.x = Math.max(0, -swing * 0.9);
-    this.parts.legR.knee.rotation.x = Math.max(0, swing * 0.9);
-    this.parts.hips.position.y = 0.92 + Math.abs(Math.cos(this.walkPhase)) * (moved ? 0.02 : 0);
+    this.parts.legL.knee.rotation.x = Math.max(0, -swing * 0.9) + crouch * 0.35;
+    this.parts.legR.knee.rotation.x = Math.max(0, swing * 0.9) + crouch * 0.35;
+    this.parts.hips.position.y = 0.92 - crouch * 0.1 + Math.abs(Math.cos(this.walkPhase)) * (moved ? 0.02 : 0);
   }
 
   _animateModel(moved) {
