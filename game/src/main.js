@@ -994,6 +994,10 @@ function frame() {
     // sniper keeps its full scope overlay.
     const showReticle = !weapons.isScoped() && weapons.adsAmount > 0.5;
     crosshair.classList.toggle('hidden', weapons.isScoped() || showReticle);
+    // dynamic spread: bloom out with movement and recoil, tighten crouched/still
+    const chGap = Math.min(18, Math.max(2.5,
+      4 + player.speed * 1.5 + weapons.kick * 70 - (player.crouching ? 2 : 0) + (player.grounded ? 0 : 4)));
+    crosshair.style.setProperty('--gap', chGap.toFixed(1) + 'px');
     scopeOverlay.classList.toggle('active', weapons.isScoped());
     adsReticle.classList.toggle('active', showReticle);
 

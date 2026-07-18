@@ -201,7 +201,7 @@ export class Player {
       const stepEvery = this.sprinting ? 2.2 : wantCrouch ? 3.6 : 2.8;
       if (this.stepDist > stepEvery) {
         this.stepDist = 0;
-        this.audio.footstep(this.sprinting);
+        this.audio.footstep(this.sprinting, this.world.isInterior(this.pos.x, this.pos.z));
       }
     } else {
       this.stepDist = 0;

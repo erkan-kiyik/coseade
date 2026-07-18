@@ -157,6 +157,7 @@ export class World {
     this.barrels = [];        // explosive barrels: { mesh, pos, alive }
     this.enemySpawns = [];
     this.lampLights = [];
+    this.interiorZones = [];  // AABBs of walkable interiors (hard floors, echo)
     this._build(quality);
   }
 
@@ -663,6 +664,7 @@ export class World {
   // racks, crate stacks and hanging light fixtures. Enemies can hold it.
   // doorSide: -1 = door on the -x wall, +1 = door on the +x wall.
   _buildWarehouse(x, z, w, d, doorSide) {
+    this.interiorZones.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
     const wallH = 5.6, wallT = 0.35;
     const doorW = 3.2, doorH = 3.6;
     const wallMat = new THREE.MeshStandardMaterial({ map: containerTexture('#6d7276'), roughness: 0.7, metalness: 0.3 });
@@ -886,6 +888,13 @@ export class World {
       }
       prev = [x, z];
     }
+  }
+
+  isInterior(x, z) {
+    for (const zn of this.interiorZones) {
+      if (x > zn.minX && x < zn.maxX && z > zn.minZ && z < zn.maxZ) return true;
+    }
+    return false;
   }
 
   removeBarrel(rec) {

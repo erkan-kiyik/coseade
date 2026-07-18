@@ -169,19 +169,33 @@ export class AudioEngine {
 
   // ---------- movement ----------
 
-  footstep(running) {
+  // indoor steps read as hard concrete: brighter attack, shorter decay, plus a
+  // single early reflection so warehouse interiors sound echoey.
+  footstep(running, indoor = false) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const noise = this._noiseSource();
     const lp = this.ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = running ? 500 : 380;
+    lp.frequency.value = indoor ? (running ? 950 : 700) : (running ? 500 : 380);
     const g = this.ctx.createGain();
     const v = running ? 0.16 : 0.09;
     g.gain.setValueAtTime(v, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (indoor ? 0.07 : 0.09));
     noise.connect(lp); lp.connect(g); g.connect(this.sfxBus);
     noise.start(t); noise.stop(t + 0.12);
+    if (indoor) {
+      const echo = this._noiseSource();
+      const lp2 = this.ctx.createBiquadFilter();
+      lp2.type = 'lowpass';
+      lp2.frequency.value = 600;
+      const g2 = this.ctx.createGain();
+      g2.gain.setValueAtTime(0.0001, t);
+      g2.gain.setValueAtTime(v * 0.3, t + 0.055);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+      echo.connect(lp2); lp2.connect(g2); g2.connect(this.sfxBus);
+      echo.start(t + 0.055); echo.stop(t + 0.16);
+    }
   }
 
   land() {

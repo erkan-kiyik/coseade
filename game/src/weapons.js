@@ -690,6 +690,9 @@ export class WeaponSystem {
     this.sprintAmt = 0;    // 0..1 tactical-sprint lowered-weapon blend
     this.emptyReload = false; // reload started on an empty chamber (adds bolt release)
     this.breatheT = Math.random() * 10; // idle breathing phase
+    this.airAmt = 0;          // 0..1 blend while airborne (weapon floats up)
+    this.landDip = 0;         // landing-impact dip timer
+    this._wasGrounded = true;
 
     // muzzle flash
     this.flashLight = new THREE.PointLight(0xffb35e, 0, 7, 2);
@@ -1049,6 +1052,24 @@ export class WeaponSystem {
     const breatheAmp = 0.0045 * (0.5 + this.adsAmount * 0.8) * (1 - this.sprintAmt);
     model.position.y += Math.sin(this.breatheT * 1.6) * breatheAmp;
     model.rotation.x += Math.sin(this.breatheT * 1.6 + 0.4) * breatheAmp * 0.6;
+
+    // airborne float + landing impact: the weapon drifts up slightly while the
+    // feet are off the ground and dips hard the moment they hit it again
+    if (!ctx.grounded) {
+      this.airAmt += (1 - this.airAmt) * Math.min(1, dt * 6);
+    } else {
+      if (!this._wasGrounded) this.landDip = 0.26;
+      this.airAmt += (0 - this.airAmt) * Math.min(1, dt * 10);
+    }
+    this._wasGrounded = !!ctx.grounded;
+    model.position.y += this.airAmt * 0.03;
+    model.rotation.x += this.airAmt * 0.05;
+    if (this.landDip > 0) {
+      this.landDip = Math.max(0, this.landDip - dt);
+      const k = Math.sin((1 - this.landDip / 0.26) * Math.PI);
+      model.position.y -= k * 0.045;
+      model.rotation.x -= k * 0.07;
+    }
 
     // weapon inspect (F): raise + rotate to check the chamber, tilt to the
     // magazine, then settle back. Beats start/end at zero so cancelling (by

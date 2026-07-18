@@ -98,10 +98,11 @@
     /* crosshair */
     #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; z-index: 21; }
     #crosshair .ch-line { position: absolute; background: rgba(255,255,255,0.92); box-shadow: 0 0 3px rgba(0,0,0,0.9); transition: none; }
-    #crosshair .ch-t { width: 2px; height: 9px; left: -1px; top: -14px; }
-    #crosshair .ch-b { width: 2px; height: 9px; left: -1px; top: 5px; }
-    #crosshair .ch-l { height: 2px; width: 9px; top: -1px; left: -14px; }
-    #crosshair .ch-r { height: 2px; width: 9px; top: -1px; left: 5px; }
+    /* --gap is driven per-frame from game state: widens with movement/fire */
+    #crosshair .ch-t { width: 2px; height: 9px; left: -1px; top: calc(-9px - var(--gap, 5px)); }
+    #crosshair .ch-b { width: 2px; height: 9px; left: -1px; top: var(--gap, 5px); }
+    #crosshair .ch-l { height: 2px; width: 9px; top: -1px; left: calc(-9px - var(--gap, 5px)); }
+    #crosshair .ch-r { height: 2px; width: 9px; top: -1px; left: var(--gap, 5px); }
     #crosshair .ch-dot { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: rgba(255,255,255,0.95); }
     #crosshair.hidden { display: none; }
 
@@ -212,7 +213,7 @@
     /* flash on explosion / muzzle */
     #screen-flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 24; }
   </style>
-  <script type="module" crossorigin src="/game/assets/index-BV7mAC-L.js"></script>
+  <script type="module" crossorigin src="/game/assets/index-xMhW1Rtb.js"></script>
 </head>
 <body>
   <div id="app"></div>
