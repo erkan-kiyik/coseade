@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BLACKOUT PROTOCOL — 3D FPS</title>
+  <style>
+    :root {
+      --accent: #ffb340;
+      --accent-dim: rgba(255, 179, 64, 0.55);
+      --danger: #ff4b3e;
+      --hud-bg: rgba(8, 12, 16, 0.55);
+      --hud-border: rgba(255, 255, 255, 0.14);
+      --text: #e8ecef;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #05070a; }
+    body {
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #app { position: fixed; inset: 0; }
+    #app canvas { display: block; }
+
+    .mono { font-family: "Consolas", "SF Mono", "Roboto Mono", monospace; }
+
+    /* ============ overlays ============ */
+    .overlay {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 40;
+      background: radial-gradient(ellipse at center, rgba(10, 16, 22, 0.82) 0%, rgba(3, 5, 8, 0.96) 100%);
+      backdrop-filter: blur(3px);
+      transition: opacity 0.35s ease;
+    }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .title-block { text-align: center; margin-bottom: 42px; }
+    .game-title {
+      font-size: clamp(38px, 7vw, 84px); font-weight: 900; letter-spacing: 0.18em;
+      color: #fff; text-transform: uppercase; line-height: 1;
+      text-shadow: 0 0 32px rgba(255, 179, 64, 0.35), 0 4px 24px rgba(0,0,0,0.8);
+    }
+    .game-title span { color: var(--accent); }
+    .game-subtitle {
+      margin-top: 12px; font-size: clamp(12px, 1.6vw, 16px); letter-spacing: 0.55em;
+      text-transform: uppercase; color: rgba(232, 236, 239, 0.55);
+    }
+
+    .menu-buttons { display: flex; flex-direction: column; gap: 12px; width: min(340px, 80vw); }
+    .menu-btn {
+      position: relative; padding: 14px 22px; font-size: 15px; font-weight: 700;
+      letter-spacing: 0.22em; text-transform: uppercase; text-align: left;
+      color: var(--text); background: var(--hud-bg); border: 1px solid var(--hud-border);
+      cursor: pointer; transition: all 0.15s ease; font-family: inherit;
+    }
+    .menu-btn::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--accent); transform: scaleY(0); transition: transform 0.15s ease;
+    }
+    .menu-btn:hover { background: rgba(255, 179, 64, 0.12); border-color: var(--accent-dim); padding-left: 30px; }
+    .menu-btn:hover::before { transform: scaleY(1); }
+    .menu-btn.primary { border-color: var(--accent-dim); color: var(--accent); }
+    .menu-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .panel {
+      width: min(560px, 92vw); max-height: 76vh; overflow-y: auto;
+      background: var(--hud-bg); border: 1px solid var(--hud-border); padding: 28px 32px;
+    }
+    .panel h2 {
+      font-size: 18px; letter-spacing: 0.3em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 20px; border-bottom: 1px solid var(--hud-border); padding-bottom: 12px;
+    }
+    .panel .back-row { margin-top: 24px; display: flex; justify-content: flex-end; }
+
+    .controls-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; font-size: 14px; }
+    .controls-grid .key {
+      font-family: "Consolas", monospace; background: rgba(255,255,255,0.08);
+      border: 1px solid var(--hud-border); padding: 2px 10px; text-align: center;
+      color: var(--accent); font-weight: 700; min-width: 84px;
+    }
+    .controls-grid .desc { align-self: center; color: rgba(232,236,239,0.8); }
+
+    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .setting-row label { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(232,236,239,0.85); }
+    .setting-row input[type="range"] { width: 180px; accent-color: var(--accent); }
+    .setting-row .val { font-family: "Consolas", monospace; color: var(--accent); min-width: 48px; text-align: right; }
+    .setting-row select {
+      background: #10161c; color: var(--text); border: 1px solid var(--hud-border);
+      padding: 6px 10px; font-family: inherit; font-size: 13px;
+    }
+
+    /* ============ HUD ============ */
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; opacity: 0; transition: opacity 0.4s; }
+    #hud.visible { opacity: 1; }
+
+    /* crosshair */
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; z-index: 21; }
+    #crosshair .ch-line { position: absolute; background: rgba(255,255,255,0.92); box-shadow: 0 0 3px rgba(0,0,0,0.9); transition: none; }
+    /* --gap is driven per-frame from game state: widens with movement/fire */
+    #crosshair .ch-t { width: 2px; height: 9px; left: -1px; top: calc(-9px - var(--gap, 5px)); }
+    #crosshair .ch-b { width: 2px; height: 9px; left: -1px; top: var(--gap, 5px); }
+    #crosshair .ch-l { height: 2px; width: 9px; top: -1px; left: calc(-9px - var(--gap, 5px)); }
+    #crosshair .ch-r { height: 2px; width: 9px; top: -1px; left: var(--gap, 5px); }
+    #crosshair .ch-dot { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: rgba(255,255,255,0.95); }
+    #crosshair.hidden { display: none; }
+
+    /* hitmarker */
+    #hitmarker { position: fixed; left: 50%; top: 50%; width: 0; height: 0; z-index: 22; opacity: 0; }
+    #hitmarker .hm { position: absolute; width: 10px; height: 2px; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,0.8); }
+    #hitmarker.kill .hm { background: var(--danger); }
+    #hitmarker.show { animation: hm-pop 0.22s ease-out; }
+    @keyframes hm-pop { 0% { opacity: 1; transform: scale(1.35); } 100% { opacity: 0; transform: scale(0.9); } }
+
+    /* bottom-left: health */
+    #health-block { position: fixed; left: 28px; bottom: 26px; width: 250px; }
+    #health-bar-wrap { height: 10px; background: rgba(0,0,0,0.55); border: 1px solid var(--hud-border); }
+    #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #d8e6ee, #ffffff); transition: width 0.12s linear; }
+    #health-bar.low { background: linear-gradient(90deg, #ff4b3e, #ff7a5e); }
+    #health-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; letter-spacing: 0.18em; color: rgba(232,236,239,0.75); }
+    #health-num { font-family: "Consolas", monospace; font-size: 13px; font-weight: 700; color: #fff; }
+
+    /* bottom-right: ammo */
+    #ammo-block { position: fixed; right: 30px; bottom: 22px; text-align: right; }
+    #weapon-name { font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+    #ammo-count { font-family: "Consolas", monospace; font-weight: 700; line-height: 1; }
+    #ammo-mag { font-size: 46px; color: #fff; }
+    #ammo-mag.low { color: var(--danger); }
+    #ammo-reserve { font-size: 20px; color: rgba(232,236,239,0.55); }
+    #fire-mode { font-size: 10px; letter-spacing: 0.35em; text-transform: uppercase; color: rgba(232,236,239,0.45); margin-top: 3px; }
+    #grenade-count { font-size: 12px; color: rgba(232,236,239,0.7); margin-top: 6px; letter-spacing: 0.15em; }
+    #reload-hint { font-size: 12px; letter-spacing: 0.25em; color: var(--danger); margin-top: 6px; text-transform: uppercase; animation: blink 0.9s infinite; display: none; }
+    @keyframes blink { 50% { opacity: 0.25; } }
+
+    /* top-left: score & wave */
+    #score-block { position: fixed; left: 28px; top: 24px; font-size: 13px; letter-spacing: 0.12em; }
+    #score-block .row { display: flex; gap: 10px; margin-bottom: 4px; align-items: baseline; }
+    #score-block .lbl { color: rgba(232,236,239,0.55); text-transform: uppercase; font-size: 11px; min-width: 62px; }
+    #score-block .num { font-family: "Consolas", monospace; font-weight: 700; color: #fff; font-size: 16px; }
+    #wave-num { color: var(--accent) !important; }
+
+    /* top-right: minimap + killfeed */
+    #minimap-wrap { position: fixed; right: 26px; top: 24px; border: 1px solid var(--hud-border); background: rgba(4,7,10,0.6); }
+    #minimap { display: block; }
+    #killfeed { position: fixed; right: 26px; top: 190px; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+    .kf-entry {
+      font-size: 12px; padding: 4px 10px; background: rgba(4,7,10,0.65);
+      border-right: 2px solid var(--accent); letter-spacing: 0.05em;
+      animation: kf-in 0.2s ease-out; color: rgba(232,236,239,0.9);
+    }
+    .kf-entry .who { color: var(--accent); font-weight: 700; }
+    .kf-entry.hs { border-right-color: var(--danger); }
+    @keyframes kf-in { from { transform: translateX(24px); opacity: 0; } }
+
+    /* compass */
+    #compass { position: fixed; top: 22px; left: 50%; transform: translateX(-50%); width: 320px; height: 26px; overflow: hidden; border-bottom: 1px solid var(--hud-border); mask-image: linear-gradient(90deg, transparent, black 15%, black 85%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, black 15%, black 85%, transparent); }
+    #compass-strip { position: absolute; top: 0; height: 100%; white-space: nowrap; font-family: "Consolas", monospace; font-size: 12px; color: rgba(232,236,239,0.7); }
+    #compass-strip .tick { position: absolute; top: 2px; }
+    #compass-strip .tick.major { color: var(--accent); font-weight: 700; font-size: 13px; }
+    #compass-center { position: fixed; top: 22px; left: 50%; width: 2px; height: 8px; background: var(--accent); transform: translateX(-1px); }
+
+    /* announcements */
+    #announce { position: fixed; top: 24%; left: 0; right: 0; text-align: center; pointer-events: none; }
+    #announce-main { font-size: clamp(26px, 4.4vw, 52px); font-weight: 900; letter-spacing: 0.3em; text-transform: uppercase; color: #fff; text-shadow: 0 0 30px rgba(255,179,64,0.4), 0 3px 16px rgba(0,0,0,0.9); opacity: 0; }
+    #announce-sub { font-size: 14px; letter-spacing: 0.45em; text-transform: uppercase; color: var(--accent); margin-top: 10px; opacity: 0; }
+    #announce.show #announce-main { animation: ann 3s ease-out forwards; }
+    #announce.show #announce-sub { animation: ann 3s 0.15s ease-out forwards; }
+    @keyframes ann { 0% { opacity: 0; transform: translateY(14px); } 12% { opacity: 1; transform: translateY(0); } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* damage vignette & direction */
+    #damage-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 19; opacity: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(160, 10, 5, 0.55) 100%); transition: opacity 0.25s; }
+    #lowhp-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 19; opacity: 0; background: radial-gradient(ellipse at center, transparent 38%, rgba(120, 0, 0, 0.7) 100%); }
+    .dmg-dir { position: fixed; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; pointer-events: none; z-index: 22; opacity: 0; }
+    .dmg-dir::before { content: ""; position: absolute; left: 50%; top: -46px; width: 64px; height: 22px; margin-left: -32px; background: radial-gradient(ellipse at 50% 100%, rgba(255, 60, 40, 0.9), transparent 70%); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+
+    /* scope */
+    #scope-overlay { position: fixed; inset: 0; z-index: 23; pointer-events: none; display: none; }
+    #scope-overlay.active { display: block; }
+    #scope-overlay .scope-black { position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 31%, rgba(0,0,0,0.985) 33.5%); }
+    #scope-overlay .scope-ring { position: absolute; left: 50%; top: 50%; width: 66vmin; height: 66vmin; margin: -33vmin 0 0 -33vmin; border: 2px solid rgba(0,0,0,0.9); border-radius: 50%; box-shadow: inset 0 0 60px rgba(0,0,0,0.75); }
+    #scope-overlay .scope-cross-v { position: absolute; left: 50%; top: 50%; width: 1.5px; height: 66vmin; margin: -33vmin 0 0 -0.75px; background: rgba(0,0,0,0.85); }
+    #scope-overlay .scope-cross-h { position: absolute; left: 50%; top: 50%; height: 1.5px; width: 66vmin; margin: -0.75px 0 0 -33vmin; background: rgba(0,0,0,0.85); }
+    #scope-overlay .scope-dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: rgba(255,60,40,0.95); border-radius: 50%; }
+
+    /* ADS red-dot / holo reticle for non-sniper weapons */
+    #ads-reticle { position: fixed; inset: 0; z-index: 23; pointer-events: none; opacity: 0; transition: opacity 0.1s ease; }
+    #ads-reticle.active { opacity: 1; }
+    #ads-reticle .rd-ring { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border: 1.5px solid rgba(255, 60, 40, 0.55); border-radius: 50%; box-shadow: 0 0 8px rgba(255,60,40,0.35), inset 0 0 10px rgba(0,0,0,0.35); }
+    #ads-reticle .rd-dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: rgba(255, 48, 32, 0.98); border-radius: 50%; box-shadow: 0 0 6px 1px rgba(255, 60, 40, 0.9); }
+    #ads-reticle .rd-tick { position: absolute; left: 50%; top: 50%; background: rgba(255, 60, 40, 0.7); }
+    #ads-reticle .rd-t { width: 2px; height: 10px; margin: -40px 0 0 -1px; }
+    #ads-reticle .rd-b { width: 2px; height: 10px; margin: 30px 0 0 -1px; }
+    #ads-reticle .rd-l { width: 10px; height: 2px; margin: -1px 0 0 -40px; }
+    #ads-reticle .rd-r { width: 10px; height: 2px; margin: -1px 0 0 30px; }
+
+    /* interact / objective hint */
+    #hint { position: fixed; bottom: 130px; left: 0; right: 0; text-align: center; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(232,236,239,0.85); text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity 0.2s; }
+    #hint.show { opacity: 1; }
+
+    /* death screen */
+    #death-title { font-size: clamp(34px, 6vw, 70px); font-weight: 900; letter-spacing: 0.24em; color: var(--danger); text-transform: uppercase; text-shadow: 0 0 40px rgba(255, 75, 62, 0.4); margin-bottom: 8px; }
+    #death-stats { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 12px 40px; margin: 26px 0 34px; font-size: 14px; }
+    #death-stats .ds-l { color: rgba(232,236,239,0.55); text-transform: uppercase; font-size: 11px; letter-spacing: 0.2em; }
+    #death-stats .ds-v { font-family: "Consolas", monospace; font-size: 24px; font-weight: 700; color: var(--accent); }
+
+    #pause-title { font-size: clamp(28px, 4.5vw, 48px); font-weight: 900; letter-spacing: 0.32em; color: #fff; text-transform: uppercase; margin-bottom: 34px; }
+
+    #loading-text { font-size: 13px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--accent); animation: blink 1.2s infinite; }
+
+    .footer-note { position: fixed; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 11px; letter-spacing: 0.25em; color: rgba(232,236,239,0.3); text-transform: uppercase; }
+
+    /* flash on explosion / muzzle */
+    #screen-flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 24; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- ================= HUD ================= -->
+  <div id="hud">
+    <div id="crosshair">
+      <div class="ch-line ch-t"></div>
+      <div class="ch-line ch-b"></div>
+      <div class="ch-line ch-l"></div>
+      <div class="ch-line ch-r"></div>
+      <div class="ch-dot"></div>
+    </div>
+    <div id="hitmarker">
+      <div class="hm" style="transform: translate(-14px,-9px) rotate(45deg)"></div>
+      <div class="hm" style="transform: translate(4px,-9px) rotate(-45deg)"></div>
+      <div class="hm" style="transform: translate(-14px,7px) rotate(-45deg)"></div>
+      <div class="hm" style="transform: translate(4px,7px) rotate(45deg)"></div>
+    </div>
+
+    <div id="score-block" class="mono">
+      <div class="row"><span class="lbl">Skor</span><span class="num" id="score-num">0</span></div>
+      <div class="row"><span class="lbl">Öldürme</span><span class="num" id="kills-num">0</span></div>
+      <div class="row"><span class="lbl">Kalan</span><span class="num" id="enemies-num">0</span></div>
+    </div>
+
+    <div id="minimap-wrap"><canvas id="minimap" width="150" height="150"></canvas></div>
+    <div id="killfeed"></div>
+
+    <div id="compass"><div id="compass-strip"></div></div>
+    <div id="compass-center"></div>
+
+    <div id="health-block">
+      <div id="health-label"><span>ZIRH / SAĞLIK</span><span id="health-num">100</span></div>
+      <div id="health-bar-wrap"><div id="health-bar"></div></div>
+    </div>
+
+    <div id="ammo-block">
+      <div id="weapon-name">M4 TAARRUZ</div>
+      <div id="ammo-count"><span id="ammo-mag">30</span><span id="ammo-reserve"> / 120</span></div>
+      <div id="fire-mode">TAM OTOMATİK</div>
+      <div id="grenade-count">✚ EL BOMBASI ×3 [G]</div>
+      <div id="reload-hint">R — ŞARJÖR DEĞİŞTİR</div>
+    </div>
+
+    <div id="announce"><div id="announce-main"></div><div id="announce-sub"></div></div>
+    <div id="hint"></div>
+  </div>
+
+  <div id="damage-vignette"></div>
+  <div id="lowhp-vignette"></div>
+  <div id="screen-flash"></div>
+
+  <div id="scope-overlay">
+    <div class="scope-black"></div>
+    <div class="scope-ring"></div>
+    <div class="scope-cross-v"></div>
+    <div class="scope-cross-h"></div>
+    <div class="scope-dot"></div>
+  </div>
+
+  <div id="ads-reticle">
+    <div class="rd-ring"></div>
+    <div class="rd-tick rd-t"></div>
+    <div class="rd-tick rd-b"></div>
+    <div class="rd-tick rd-l"></div>
+    <div class="rd-tick rd-r"></div>
+    <div class="rd-dot"></div>
+  </div>
+
+  <!-- ================= MENUS ================= -->
+  <div id="menu-main" class="overlay">
+    <div class="title-block">
+      <div class="game-title">STRIKE<span> POINT</span></div>
+      <div class="game-subtitle">Gündüz Operasyonu — Sahayı Ele Geçir</div>
+    </div>
+    <div class="menu-buttons">
+      <button class="menu-btn primary" id="btn-start">▶&nbsp; Göreve Başla</button>
+      <button class="menu-btn" id="btn-controls">Kontroller</button>
+      <button class="menu-btn" id="btn-settings">Ayarlar</button>
+    </div>
+    <div class="footer-note">WebGL · Three.js · Ses açık oynayın</div>
+  </div>
+
+  <div id="menu-controls" class="overlay hidden">
+    <div class="panel">
+      <h2>Kontroller</h2>
+      <div class="controls-grid">
+        <span class="key">W A S D</span><span class="desc">Hareket</span>
+        <span class="key">MOUSE</span><span class="desc">Bakış / Nişan</span>
+        <span class="key">SOL TIK</span><span class="desc">Ateş</span>
+        <span class="key">SAĞ TIK</span><span class="desc">Nişan al (ADS)</span>
+        <span class="key">SHIFT</span><span class="desc">Koş (sprint)</span>
+        <span class="key">SHIFT + C</span><span class="desc">Kayarak süzül (slide)</span>
+        <span class="key">SPACE</span><span class="desc">Zıpla</span>
+        <span class="key">C</span><span class="desc">Eğil / çömel</span>
+        <span class="key">R</span><span class="desc">Şarjör değiştir</span>
+        <span class="key">F</span><span class="desc">Silahı incele</span>
+        <span class="key">G</span><span class="desc">El bombası fırlat</span>
+        <span class="key">1 – 6</span><span class="desc">Silah seç</span>
+        <span class="key">7</span><span class="desc">Karambit (sol tık: kesme · sağ tık: saplama)</span>
+        <span class="key">TEKER</span><span class="desc">Silah değiştir</span>
+        <span class="key">0</span><span class="desc">Görevi anında yeniden başlat</span>
+        <span class="key">ESC</span><span class="desc">Duraklat</span>
+      </div>
+      <div class="back-row"><button class="menu-btn" data-back>Geri</button></div>
+    </div>
+  </div>
+
+  <div id="menu-settings" class="overlay hidden">
+    <div class="panel">
+      <h2>Ayarlar</h2>
+      <div class="setting-row">
+        <label>Fare Hassasiyeti</label>
+        <input type="range" id="set-sens" min="0.2" max="3" step="0.1" value="1" />
+        <span class="val" id="set-sens-val">1.0</span>
+      </div>
+      <div class="setting-row">
+        <label>Görüş Alanı (FOV)</label>
+        <input type="range" id="set-fov" min="60" max="110" step="1" value="80" />
+        <span class="val" id="set-fov-val">80</span>
+      </div>
+      <div class="setting-row">
+        <label>Ses Seviyesi</label>
+        <input type="range" id="set-vol" min="0" max="1" step="0.05" value="0.7" />
+        <span class="val" id="set-vol-val">70%</span>
+      </div>
+      <div class="setting-row">
+        <label>Grafik Kalitesi</label>
+        <select id="set-quality">
+          <option value="low">Düşük</option>
+          <option value="medium">Orta</option>
+          <option value="high" selected>Yüksek</option>
+        </select>
+      </div>
+      <div class="back-row"><button class="menu-btn" data-back>Geri</button></div>
+    </div>
+  </div>
+
+  <div id="menu-pause" class="overlay hidden">
+    <div id="pause-title">Duraklatıldı</div>
+    <div class="menu-buttons">
+      <button class="menu-btn primary" id="btn-resume">Devam Et</button>
+      <button class="menu-btn" id="btn-pause-settings">Ayarlar</button>
+      <button class="menu-btn" id="btn-quit">Ana Menü</button>
+    </div>
+  </div>
+
+  <div id="menu-death" class="overlay hidden">
+    <div id="death-title">Görev Başarısız</div>
+    <div class="game-subtitle" id="death-wave-sub">Sahada düştün</div>
+    <div id="death-stats">
+      <div><div class="ds-l">Skor</div><div class="ds-v" id="ds-score">0</div></div>
+      <div><div class="ds-l">Öldürme</div><div class="ds-v" id="ds-kills">0</div></div>
+      <div><div class="ds-l">Headshot</div><div class="ds-v" id="ds-hs">0</div></div>
+      <div><div class="ds-l">İsabet %</div><div class="ds-v" id="ds-acc">0%</div></div>
+    </div>
+    <div class="menu-buttons">
+      <button class="menu-btn primary" id="btn-retry">Tekrar Dene</button>
+      <button class="menu-btn" id="btn-death-quit">Ana Menü</button>
+    </div>
+  </div>
+
+  <div id="loading" class="overlay hidden"><div id="loading-text">Bölge hazırlanıyor…</div></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
