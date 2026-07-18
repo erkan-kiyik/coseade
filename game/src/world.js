@@ -339,12 +339,15 @@ export class World {
       [52, 52, 28, 18, 4, '#6f6a66'],
       [-18, -60, 16, 14, 3, '#736c60'],
       [22, 62, 18, 14, 3, '#6d6862'],
-      [64, 8, 14, 22, 2, '#7a7264'],
-      [-64, -8, 14, 20, 2, '#6e6960'],
     ];
     for (let i = 0; i < buildings.length; i++) {
       this._buildStructure(...buildings[i], i);
     }
+
+    // enterable warehouses on the east/west flanks — walkable interiors with
+    // shelving, crates and a sun-lit skylight, doors facing the courtyard
+    this._buildWarehouse(64, 8, 16, 24, -1);
+    this._buildWarehouse(-64, -8, 16, 22, 1);
 
     // ----- shipping containers -----
     const containerColors = ['#8a3b2a', '#2a5a7a', '#3d6b3a', '#7a6a2a', '#5a3a6a'];
@@ -652,6 +655,107 @@ export class World {
     g.traverse((m) => { if (m.isMesh) this.raycastMeshes.push(m); });
     this.scene.add(g);
     this.addCollider(x, h / 2, z, w, h, d);
+  }
+
+  // An enterable industrial warehouse. Each wall is its own collider so the
+  // interior is genuinely walkable: a roller-door opening faces the courtyard,
+  // a skylight gap in the roof lets real sunlight in, and inside are shelving
+  // racks, crate stacks and hanging light fixtures. Enemies can hold it.
+  // doorSide: -1 = door on the -x wall, +1 = door on the +x wall.
+  _buildWarehouse(x, z, w, d, doorSide) {
+    const wallH = 5.6, wallT = 0.35;
+    const doorW = 3.2, doorH = 3.6;
+    const wallMat = new THREE.MeshStandardMaterial({ map: containerTexture('#6d7276'), roughness: 0.7, metalness: 0.3 });
+    const roofMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#4d4a44'), roughness: 0.96 });
+    const floorMat = new THREE.MeshStandardMaterial({ map: concreteTexture('#8a857a'), roughness: 0.95 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x54595f, roughness: 0.55, metalness: 0.5 });
+    const crateMat = new THREE.MeshStandardMaterial({ map: crateTexture(), roughness: 0.9 });
+
+    // door wall: two segments flanking the opening + a header above it
+    const doorX = x + doorSide * (w / 2);
+    const segZ = (d - doorW) / 2;
+    this._solidBox(wallT, wallH, segZ, wallMat, doorX, wallH / 2, z - (doorW / 2 + segZ / 2), {});
+    this._solidBox(wallT, wallH, segZ, wallMat, doorX, wallH / 2, z + (doorW / 2 + segZ / 2), {});
+    this._solidBox(wallT, wallH - doorH, doorW, wallMat, doorX, doorH + (wallH - doorH) / 2, z, {});
+    // rolled-up door drum above the opening + jamb trims
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, doorW, 10), steelMat);
+    drum.rotation.x = Math.PI / 2;
+    drum.position.set(doorX - doorSide * 0.3, doorH + 0.25, z);
+    drum.castShadow = true;
+    this.scene.add(drum);
+
+    // remaining three walls
+    this._solidBox(wallT, wallH, d, wallMat, x - doorSide * (w / 2), wallH / 2, z, {});
+    this._solidBox(w, wallH, wallT, wallMat, x, wallH / 2, z - d / 2, {});
+    this._solidBox(w, wallH, wallT, wallMat, x, wallH / 2, z + d / 2, {});
+
+    // roof: two slabs with a central skylight gap running along z, so real
+    // sunlight falls into the middle of the interior
+    const gap = 1.5;
+    const slabW = (w - gap) / 2;
+    this._solidBox(slabW, 0.25, d + 0.4, roofMat, x - (gap / 2 + slabW / 2), wallH + 0.12, z, {});
+    this._solidBox(slabW, 0.25, d + 0.4, roofMat, x + (gap / 2 + slabW / 2), wallH + 0.12, z, {});
+    // roof vents
+    for (const oz of [-d * 0.28, d * 0.28]) {
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.7, 8), steelMat);
+      vent.position.set(x - gap / 2 - slabW / 2, wallH + 0.6, z + oz);
+      vent.castShadow = true;
+      this.scene.add(vent);
+    }
+
+    // interior concrete floor slab (visual + bullet impacts)
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w - 0.2, 0.06, d - 0.2), floorMat);
+    floor.position.set(x, 0.03, z);
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+    this.raycastMeshes.push(floor);
+
+    // shelving racks along both long walls, loaded with crates
+    for (const side of [-1, 1]) {
+      const rz = z + side * (d / 2 - 1.1);
+      const rackL = Math.min(8, w - 4);
+      // uprights + two shelf levels
+      for (const ox of [-rackL / 2, 0, rackL / 2]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 2.3, 0.09), steelMat);
+        post.position.set(x + ox, 1.15, rz);
+        post.castShadow = true;
+        this.scene.add(post);
+      }
+      for (const sy of [0.75, 1.65]) {
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(rackL, 0.07, 0.95), steelMat);
+        shelf.position.set(x, sy, rz);
+        shelf.castShadow = true; shelf.receiveShadow = true;
+        this.scene.add(shelf);
+        this.raycastMeshes.push(shelf);
+        for (let ci = 0; ci < 3; ci++) {
+          const cs = 0.55 + Math.random() * 0.2;
+          const crate = new THREE.Mesh(new THREE.BoxGeometry(cs, cs, 0.7), crateMat);
+          crate.position.set(x + (ci - 1) * rackL * 0.3, sy + cs / 2 + 0.04, rz);
+          crate.rotation.y = (Math.random() - 0.5) * 0.2;
+          crate.castShadow = true;
+          this.scene.add(crate);
+          this.raycastMeshes.push(crate);
+        }
+      }
+      this.addCollider(x, 1.15, rz, rackL, 2.3, 1.0);
+    }
+
+    // crate stack in the back corner (cover inside the building)
+    const cx = x - doorSide * (w / 2 - 1.6), cz = z - d / 2 + 1.6;
+    this._solidBox(1.25, 1.25, 1.25, crateMat, cx, 0.63, cz, { rotY: 0.2 });
+    this._solidBox(1.25, 1.25, 1.25, crateMat, cx + doorSide * 1.4, 0.63, cz + 0.2, { rotY: -0.3 });
+    this._solidBox(1.1, 1.1, 1.1, crateMat, cx + doorSide * 0.7, 1.85, cz + 0.1, { rotY: 0.5 });
+
+    // hanging light fixtures (bright emissive strips under the roof)
+    const fixtureMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffedc2, emissiveIntensity: 1.4, roughness: 0.4 });
+    for (const oz of [-d * 0.25, d * 0.25]) {
+      const fixture = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.32), fixtureMat);
+      fixture.position.set(x, wallH - 0.55, z + oz);
+      this.scene.add(fixture);
+      const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45, 5), steelMat);
+      cable.position.set(x, wallH - 0.28, z + oz);
+      this.scene.add(cable);
+    }
   }
 
   // scatter foliage, cover and street dressing so the compound feels lived-in

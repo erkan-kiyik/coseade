@@ -263,6 +263,8 @@ export class Enemy {
     this.lastKnownPlayerPos = null;
     this.walkPhase = Math.random() * 10;
     this.crouchAmt = 0;
+    this.reactStagger = 0;
+    this.staggerLean = 0;
     this.dead = false;
     this.deathT = 0;
     this.removeAfter = null;
@@ -514,6 +516,14 @@ export class Enemy {
       }
     }
 
+    // hit reaction: a fresh wound briefly stops the advance and rocks the body
+    if (this.reactStagger > 0) {
+      this.reactStagger -= dt;
+      moveSpeed *= 0.15;
+    }
+    this.staggerLean = (this.staggerLean || 0) +
+      (((this.reactStagger > 0) ? 1 : 0) - (this.staggerLean || 0)) * Math.min(1, dt * 12);
+
     let moved = false;
     if (targetPos) {
       const dir = targetPos.clone().sub(this.pos);
@@ -581,6 +591,7 @@ export class Enemy {
 
     this.model.position.copy(this.pos);
     this.model.rotation.y = this.yaw;
+    this.model.rotation.x = -0.12 * (this.staggerLean || 0); // recoil from the hit
 
     if (moved) this.walkPhase += dt * moveSpeed * 3.2;
     // hunker down a little while holding a firing position — reads as taking

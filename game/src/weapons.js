@@ -760,6 +760,26 @@ export class WeaponSystem {
 
   isMelee() { return this.current.def.mode === 'melee'; }
 
+  // full refill + cancel any in-flight animation state; used on match restart
+  resetAll() {
+    for (const w of this.weapons) {
+      w.mag = w.def.magSize;
+      w.reserve = w.def.reserveStart;
+    }
+    this.reloading = false;
+    this.reloadT = 0;
+    this.inspectT = 0;
+    this.meleeT = 0;
+    this.pumping = 0;
+    this.switching = 0;
+    this.cooldown = 0;
+    this.throwT = 0;
+    this.emptyReload = false;
+    this.triggerHeld = false;
+    this.wantAds = false;
+    this.onAmmoChange && this.onAmmoChange();
+  }
+
   // knife swing — returns true if a new swing started (main.js does the hit test).
   // heavy = stab (slower, more damage window), else slash.
   meleeSwing(heavy) {

@@ -646,15 +646,27 @@ const ENEMY_POSTS = [
   { x: 0, z: -34, type: 'assault', r: 8 },      // central sandbag line N
   { x: 12, z: 30, type: 'rusher', r: 9 },       // central courtyard S
   { x: -34, z: 8, type: 'assault', r: 8 },      // W flank sandbags
-  { x: 48, z: 4, type: 'heavy', r: 6 },         // E flank
-  { x: -14, z: -14, type: 'rusher', r: 11 },    // mid roamer
-  { x: 18, z: 12, type: 'assault', r: 9 },      // mid roamer
+  { x: 62, z: 8, type: 'heavy', r: 4 },         // inside the east warehouse
+  { x: -62, z: -8, type: 'rusher', r: 4 },      // inside the west warehouse
+  { x: 28, z: 24, type: 'assault', r: 9 },      // mid roamer
 ];
+
+// enemies never start near the player: any post closer than this to the
+// player's spawn is pushed radially out to the safe ring.
+const SAFE_SPAWN_DIST = 24;
+const PLAYER_START = { x: 0, z: 6 };
 
 function deployEnemies() {
   const difficulty = 1.35; // single consistent skill level (no ramping waves)
   for (const post of ENEMY_POSTS) {
-    const sp = new THREE.Vector3(post.x, 0, post.z);
+    let sx = post.x, sz = post.z;
+    const dp = Math.hypot(sx - PLAYER_START.x, sz - PLAYER_START.z);
+    if (dp < SAFE_SPAWN_DIST && dp > 0.01) {
+      const k = SAFE_SPAWN_DIST / dp;
+      sx = PLAYER_START.x + (sx - PLAYER_START.x) * k;
+      sz = PLAYER_START.z + (sz - PLAYER_START.z) * k;
+    }
+    const sp = new THREE.Vector3(sx, 0, sz);
     const e = new Enemy(scene, world, effects, audio, sp, difficulty, {
       type: post.type,
       guardPos: sp.clone(),
@@ -786,6 +798,11 @@ function setKeyState(code, down) {
 
 addEventListener('keydown', (e) => {
   setKeyState(e.code, true);
+  // 0 restarts the match instantly, both mid-run and from the death screen
+  if (e.code === 'Digit0' && (G.state === 'playing' || G.state === 'dead')) {
+    restartMatch();
+    return;
+  }
   if (G.state !== 'playing') return;
   if (e.code === 'KeyR') weapons.startReload();
   if (e.code === 'KeyF') weapons.playInspect();
@@ -874,6 +891,18 @@ async function startGame() {
   announceText('SAHAYI TEMİZLE', 'Bölgeyi ele geçir — düşman devriyeleri yerleşmiş durumda', 4000);
 }
 
+// tear down and redeploy without going through the menu — bound to the 0 key
+function restartMatch() {
+  hideOverlay(menuDeath);
+  resetGameState();
+  hud.classList.add('visible');
+  G.state = 'playing';
+  if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+  deployEnemies();
+  announceText('GÖREV YENİDEN BAŞLADI', 'Sahayı temizle', 2500);
+  updateHealthHud();
+}
+
 function resetGameState() {
   enemies.forEach((e) => e.destroy());
   enemies = [];
@@ -891,6 +920,7 @@ function resetGameState() {
   player.vel.set(0, 0, 0);
   player.yaw = Math.PI;
   player.pitch = 0;
+  weapons.resetAll();
   updateGrenadeHud();
   updateAmmoHud();
 }
