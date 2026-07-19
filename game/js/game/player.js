@@ -1,0 +1,521 @@
+// Player: movement + full weapon handling. Every weapon state from the spec
+// is here — idle sway, walk/run/sprint blending, jump/land settle, fire with
+// recoil springs and shell ejection, tactical + empty reloads with animated
+// magazine and bolt rack, inspect, equip/unequip, and the knife's quick /
+// heavy slashes. All transitions are spring- or envelope-blended.
+
+import {
+  clamp, lerp, damp, rand, randSpread, easeOutCubic, easeInOutQuad, TAU,
+} from '../engine/math.js';
+import { newWeaponState, computePose, weaponAnchor, weaponPoint, toWorld } from './rig.js';
+import { drawSoldier } from './rig.js';
+
+const RUN = 300, SPRINT = 450, ACCEL = 2400, JUMP = -900;
+
+export class Player {
+  constructor(parts, shadow, weapons, world, fx, cam, audio, hud) {
+    this.parts = parts; this.shadow = shadow;
+    this.world = world; this.fx = fx; this.cam = cam;
+    this.audio = audio; this.hud = hud;
+
+    this.x = 260; this.y = 0; // y set by spawn
+    this.vx = 0; this.vy = 0;
+    this.halfW = 10; this.h = 126;
+    this.onGround = false; this.airTime = 0;
+    this.facing = 1;
+    this.aimLocal = 0; this.aimSmooth = 0; this.aimWorld = 0;
+    this.gaitPhase = 0; this.speedNorm = 0;
+    this.breathT = rand(0, 9); this.lean = 0;
+    this.crouchSpring = 0; this.crouchVel = 0;
+    this.hurtT = 0; this.deadT = 0;
+
+    this.hp = 100; this.maxHp = 100;
+    this.stamina = 100; this.sprinting = false; this.sprintBlend = 0;
+    this.kills = 0; this.shots = 0; this.hits = 0;
+    this.lastHurtT = -99; this.lastShotT = -99;
+    this.time = 0;
+
+    this.arsenal = {
+      rifle: { wpn: weapons.rifle, ws: newWeaponState(), mag: weapons.rifle.magSize, reserve: weapons.rifle.reserve },
+      pistol: { wpn: weapons.pistol, ws: newWeaponState(), mag: weapons.pistol.magSize, reserve: weapons.pistol.reserve },
+      knife: { wpn: weapons.knife, ws: newWeaponState() },
+    };
+    this.current = 'rifle';
+    this.pendingSwitch = null;
+
+    this.fireCd = 0;
+    this.recoilAccum = 0;
+    this.reload = null;       // {t,T,empty,fired:{s0,s1,s2},dropped}
+    this.inspectT = -1;
+    this.equipT = 0.01;       // start with a raise
+    this.unequipT = -1;
+    this.slash = null;        // {t,T,heavy,hitDone}
+    this.footPrev = 0;
+    this.visSpread = 0;
+  }
+
+  get cur() { return this.arsenal[this.current]; }
+
+  // ---------------------------------------------------------------- update
+
+  update(dt, ctx) {
+    this.time += dt;
+    const { input, enemies, game } = ctx;
+
+    if (this.deadT > 0) {
+      this.deadT += dt;
+      this.world.moveEntity(this, dt);
+      this.vx = damp(this.vx, 0, 8, dt);
+      this.integrateSprings(dt);
+      return;
+    }
+
+    // ---- aim & facing
+    const vw = ctx.vw, vh = ctx.vh;
+    const m = this.cam.screenToWorld(input.mouse.x, input.mouse.y, vw, vh);
+    const ox = this.x, oy = this.y - 95;
+    this.aimWorld = Math.atan2(m.y - oy, m.x - ox);
+    const strike = this.slash && this.slash.t / this.slash.T > 0.25;
+    if (!strike) this.facing = m.x >= this.x ? 1 : -1;
+    const raw = this.facing === 1
+      ? this.aimWorld
+      : Math.atan2(Math.sin(this.aimWorld), -Math.cos(this.aimWorld));
+    this.aimLocal = clamp(raw, -1.15, 1.2);
+    this.aimSmooth = damp(this.aimSmooth, this.aimLocal, 15, dt);
+
+    // ---- movement
+    const mx = input.moveX;
+    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload;
+    this.sprinting = wantSprint;
+    this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 7, dt);
+    const top = lerp(RUN, SPRINT, this.sprintBlend);
+    const target = mx * top;
+    const rate = this.onGround ? ACCEL : ACCEL * 0.45;
+    this.vx = this.vx > target
+      ? Math.max(target, this.vx - rate * dt)
+      : Math.min(target, this.vx + rate * dt);
+
+    if (input.jump && this.onGround) {
+      this.vy = JUMP;
+      this.onGround = false;
+      this.fx.landDust(this.x, this.y, false);
+      this.cam.landBounce(-1.4);
+    }
+
+    const landed = this.world.moveEntity(this, dt);
+    if (landed > 200) {
+      this.crouchVel += landed / 950;
+      this.fx.landDust(this.x, this.y, landed > 750);
+      this.cam.landBounce(clamp(landed * 0.004, 0.8, 4.2));
+      if (landed > 1000) this.hurt(Math.floor((landed - 1000) / 40), 0);
+    }
+    this.airTime = this.onGround ? 0 : this.airTime + dt;
+
+    // gait, lean, breathing
+    const sp = Math.abs(this.vx);
+    this.gaitPhase += sp * dt / 23;
+    this.speedNorm = sp / SPRINT;
+    this.lean = damp(this.lean, (this.vx / SPRINT) * 0.15 * this.facing, 6, dt);
+    this.breathT += dt;
+
+    // footsteps
+    if (this.onGround && sp > 50) {
+      const s = Math.sin(this.gaitPhase);
+      if (s > 0 !== this.footPrev > 0) this.fx.footstep(this.x, this.y, Math.sign(this.vx), this.speedNorm);
+      this.footPrev = s;
+    }
+
+    // stamina + slow out-of-combat regen
+    if (this.sprinting) this.stamina = Math.max(0, this.stamina - 24 * dt);
+    else this.stamina = Math.min(100, this.stamina + 16 * dt);
+    if (this.time - this.lastHurtT > 6 && this.hp > 0) {
+      this.hp = Math.min(this.maxHp, this.hp + 3.5 * dt);
+    }
+    this.hurtT = Math.max(0, this.hurtT - dt);
+
+    this.integrateSprings(dt);
+    this.updateWeapon(dt, input, enemies, game);
+    this.hud.update(this);
+  }
+
+  integrateSprings(dt) {
+    // landing crouch spring
+    this.crouchVel += -this.crouchSpring * 120 * dt;
+    this.crouchVel *= Math.exp(-10 * dt);
+    this.crouchSpring = Math.max(0, this.crouchSpring + this.crouchVel * dt * 34);
+  }
+
+  // ------------------------------------------------------------- weapons
+
+  switchTo(slot) {
+    if (slot === this.current || this.pendingSwitch) return;
+    this.pendingSwitch = slot;
+    this.unequipT = 0;
+    this.reload = null;
+    this.inspectT = -1;
+    this.audio.equip();
+  }
+
+  updateWeapon(dt, input, enemies, game) {
+    const cur = this.cur;
+    const { wpn, ws } = cur;
+
+    // slot selection
+    if (input.hit('Digit1')) this.switchTo('rifle');
+    if (input.hit('Digit2')) this.switchTo('pistol');
+    if (input.hit('Digit3')) this.switchTo('knife');
+
+    // recoil springs
+    ws.recoilVel += -ws.recoil * 240 * dt;
+    ws.recoilVel *= Math.exp(-14 * dt);
+    ws.recoil = Math.max(0, ws.recoil + ws.recoilVel * dt * 44);
+    ws.recoilRotVel += -ws.recoilRot * 260 * dt;
+    ws.recoilRotVel *= Math.exp(-13 * dt);
+    ws.recoilRot += ws.recoilRotVel * dt * 40;
+    ws.flashT = Math.max(0, ws.flashT - dt * 14);
+    ws.boltBack = Math.max(0, ws.boltBack - dt * 9);
+    ws.slideBack = Math.max(0, ws.slideBack - dt * 10);
+    this.fireCd -= dt;
+    this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.09);
+
+    // baseline pose modifiers
+    let offX = 0, offY = 0, rot = 0;
+    // idle sway + breathing
+    rot += Math.sin(this.breathT * 1.7) * 0.014 * (1 - this.speedNorm);
+    offY += Math.sin(this.breathT * 1.7 + 1) * 0.4;
+    // locomotion bob
+    offY += Math.abs(Math.sin(this.gaitPhase)) * 1.5 * this.speedNorm;
+    offX += Math.sin(this.gaitPhase * 0.5) * 0.6 * this.speedNorm;
+    // airborne raise / falling drop
+    if (!this.onGround) {
+      rot += clamp(this.vy * 0.00028, -0.16, 0.22);
+      offY += clamp(-this.vy * 0.002, -2, 2);
+    }
+    // landing dip
+    offY += this.crouchSpring * 3;
+    // sprint carry
+    const sb = this.sprintBlend;
+    rot += sb * 0.82;
+    offX -= sb * 2.4;
+    offY += sb * 1.6;
+    // weapon aim lag (weapon trails the aim slightly)
+    rot += (this.aimSmooth - this.aimLocal) * 0.55;
+
+    // ---- switch timelines
+    if (this.pendingSwitch !== null) {
+      this.unequipT += dt;
+      const T = 0.2;
+      const k = clamp(this.unequipT / T, 0, 1);
+      rot += k * 1.1; offY += k * 14;
+      if (k >= 1) {
+        this.current = this.pendingSwitch;
+        this.pendingSwitch = null;
+        this.equipT = 0;
+        this.audio.equip();
+      }
+      this.applyWs(ws, offX, offY, rot);
+      return;
+    }
+    if (this.equipT >= 0) {
+      this.equipT += dt;
+      const T = 0.34;
+      const k = clamp(this.equipT / T, 0, 1);
+      const e = 1 - easeOutCubic(k);
+      rot += e * 1.1; offY += e * 15;
+      if (k >= 1) this.equipT = -1;
+    }
+
+    if (wpn.kind === 'melee') {
+      this.updateKnife(dt, input, enemies, ws, rot, offX, offY);
+      return;
+    }
+
+    // ---- inspect
+    if (input.hit('KeyF') && !this.reload && this.equipT < 0 && this.onGround && !this.sprinting) {
+      this.inspectT = 0;
+      this.audio.equip();
+    }
+    if (this.inspectT >= 0) {
+      this.inspectT += dt;
+      const T = 2.3, k = this.inspectT / T;
+      if (k >= 1 || input.mouse.down || this.sprinting) this.inspectT = -1;
+      else {
+        const w1 = easeInOutQuad(clamp(k / 0.3, 0, 1));
+        const w2 = easeInOutQuad(clamp((k - 0.35) / 0.3, 0, 1));
+        const w3 = easeInOutQuad(clamp((k - 0.75) / 0.25, 0, 1));
+        rot += -0.72 * w1 + 1.35 * w2 - 0.63 * w3;
+        offX += -2.4 * w1 + 2 * w2;
+        offY += -2.2 * w1 + 2.2 * w3 - w2;
+      }
+    }
+
+    // ---- reload
+    if (input.hit('KeyR') && !this.reload && cur.mag < wpn.magSize && cur.reserve > 0 && this.equipT < 0) {
+      this.startReload(cur);
+    }
+    if (this.reload) {
+      const r = this.reload;
+      r.t += dt;
+      const k = clamp(r.t / r.T, 0, 1);
+      // weapon dips and tilts toward the body
+      rot += Math.sin(Math.min(k, 0.92) * Math.PI) * 0.34;
+      offY += Math.sin(k * Math.PI) * 2;
+      // mag out
+      if (k < 0.3) {
+        const e = easeInOutQuad(k / 0.3);
+        ws.magOffY = e * 15; ws.magRot = e * 0.45;
+        ws.magHand = k > 0.08;
+        if (!r.s0 && k > 0.1) { r.s0 = true; this.audio.reload(0); }
+      } else if (k < 0.45) {
+        if (!r.dropped) {
+          r.dropped = true;
+          ws.magVisible = false;
+          const pose = computePose(this);
+          const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
+          const mp = toWorld(this, weaponPoint(wa, wpn.magPos));
+          this.fx.magDrop(mp.x, mp.y, this.facing);
+        }
+        ws.magHand = true;
+      } else if (k < 0.66) {
+        const e = 1 - easeOutCubic((k - 0.45) / 0.21);
+        ws.magVisible = true;
+        ws.magOffY = e * 15; ws.magRot = e * -0.3;
+        ws.magHand = true;
+        if (!r.s1 && k > 0.6) {
+          r.s1 = true; this.audio.reload(1);
+          const need = wpn.magSize - cur.mag;
+          const take = Math.min(need, cur.reserve);
+          cur.mag += take; cur.reserve -= take;
+        }
+      } else {
+        ws.magOffY = 0; ws.magRot = 0; ws.magHand = false;
+        if (r.empty) {
+          const bk = clamp((k - 0.7) / 0.3, 0, 1);
+          ws.boltBack = Math.sin(bk * Math.PI);
+          if (!r.s2 && k > 0.78) { r.s2 = true; this.audio.reload(2); }
+        }
+      }
+      if (k >= 1) this.reload = null;
+    }
+
+    // ---- firing
+    const wantFire = wpn.auto ? input.mouse.down : input.mouse.clicked;
+    const canFire = !this.reload && this.equipT < 0 && this.fireCd <= 0 && this.sprintBlend < 0.55;
+    if (wantFire && this.sprinting) this.sprinting = false;
+    if (wantFire && canFire) {
+      if (cur.mag <= 0) {
+        this.audio.dryFire();
+        this.fireCd = 0.25;
+        if (cur.reserve > 0) this.startReload(cur);
+      } else {
+        this.fire(cur, enemies, game);
+      }
+    }
+    // auto-reload hint handled by HUD
+
+    this.visSpread = wpn.spread + this.speedNorm * 0.045 + (this.onGround ? 0 : 0.05) + this.recoilAccum;
+    this.applyWs(ws, offX, offY, rot);
+  }
+
+  applyWs(ws, offX, offY, rot) {
+    ws.offX = offX; ws.offY = offY; ws.rot = rot + (this.reloadRotHold || 0);
+  }
+
+  startReload(cur) {
+    const empty = cur.mag <= 0;
+    this.reload = { t: 0, T: empty ? cur.wpn.reloadEmptyT : cur.wpn.reloadT, empty, s0: false, s1: false, s2: false, dropped: false };
+    this.inspectT = -1;
+  }
+
+  fire(cur, enemies, game) {
+    const { wpn, ws } = cur;
+    cur.mag--;
+    this.shots++;
+    this.fireCd = 60 / wpn.rpm;
+    this.lastShotT = this.time;
+
+    // resolve muzzle in world space
+    const pose = computePose(this);
+    const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
+    const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
+    const ejl = toWorld(this, weaponPoint(wa, wpn.eject));
+    let ang = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
+    ang += randSpread(this.visSpread) - this.recoilAccum * 0.5 * this.facing;
+
+    // hitscan
+    const range = 1500;
+    const ex = mzl.x + Math.cos(ang) * range;
+    const ey = mzl.y + Math.sin(ang) * range;
+    const wHit = this.world.raycast(mzl.x, mzl.y, ex, ey);
+    let bestT = wHit ? wHit.t : 1;
+    let hitEnemy = null, headshot = false;
+    for (const e of enemies) {
+      if (e.deadT > 0) continue;
+      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
+      if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
+    }
+    const hx = mzl.x + (ex - mzl.x) * bestT;
+    const hy = mzl.y + (ey - mzl.y) * bestT;
+
+    if (hitEnemy) {
+      headshot = hy < hitEnemy.y - 108;
+      const dmg = wpn.dmg * (headshot ? 1.9 : 1);
+      this.hits++;
+      hitEnemy.damage(dmg, Math.sign(ex - mzl.x), this);
+      this.fx.blood(hx, hy, Math.sign(ex - mzl.x));
+      this.hud.hitmark(hitEnemy.hp <= 0);
+    } else if (wHit && wHit.tag === 'barrel') {
+      game.damageBarrel(wHit.ref, wpn.dmg);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+    } else if (wHit) {
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+    }
+
+    // presentation
+    ws.flashT = 1;
+    ws.flashIdx = (Math.random() * wpn.flashes.length) | 0;
+    ws.flashScale = rand(0.85, 1.25);
+    ws.recoilVel += wpn.recoilKick * 3;
+    ws.recoilRotVel -= wpn.recoilRot * 26;
+    if (wpn.bolt) ws.boltBack = 1;
+    if (wpn.slide) ws.slideBack = 1;
+    this.recoilAccum = Math.min(0.09, this.recoilAccum + 0.013);
+    this.cam.recoil(wpn.camKick);
+    this.cam.addTrauma(wpn.camTrauma);
+    this.audio.shot(wpn.shotSound);
+    this.fx.muzzle(mzl.x, mzl.y, ang);
+    this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy);
+    this.fx.casing(ejl.x, ejl.y, this.facing, wpn.casingSize);
+  }
+
+  // ------------------------------------------------------------- knife
+
+  updateKnife(dt, input, enemies, ws, rot, offX, offY) {
+    const wpn = this.cur.wpn;
+    // rest pose w/ breathing + sprint pump
+    let ang = 0.42 + Math.sin(this.breathT * 1.9) * 0.05;
+    let reach = 25 + Math.sin(this.breathT * 1.9 + 1) * 0.8;
+    let wrist = 0.34;
+    ang += this.sprintBlend * 0.5;
+    reach -= this.sprintBlend * 4;
+    // gait pump
+    ang += Math.sin(this.gaitPhase) * 0.08 * this.speedNorm;
+
+    if (this.equipT >= 0) {
+      const e = 1 - easeOutCubic(clamp(this.equipT / 0.34, 0, 1));
+      ang += e * 1.4; reach -= e * 8;
+    }
+
+    // inspect: turn the blade over
+    if (input.hit('KeyF') && !this.slash) { this.inspectT = 0; this.audio.equip(); }
+    if (this.inspectT >= 0) {
+      this.inspectT += dt;
+      const k = this.inspectT / 2;
+      if (k >= 1 || input.mouse.clicked) this.inspectT = -1;
+      else {
+        const w1 = easeInOutQuad(clamp(k / 0.35, 0, 1));
+        const w2 = easeInOutQuad(clamp((k - 0.5) / 0.35, 0, 1));
+        ang += -0.75 * w1 + 0.75 * w2;
+        wrist += 2.6 * w1 - 2.6 * w2;
+        reach -= 6 * w1 * (1 - w2);
+      }
+    }
+
+    if (!this.slash && (input.mouse.clicked || input.mouse.rdown)) {
+      const heavy = input.mouse.rdown;
+      this.slash = { t: 0, T: heavy ? wpn.heavyT : wpn.swingT, heavy, hitDone: false, sounded: false };
+      this.inspectT = -1;
+    }
+    if (this.slash) {
+      const s = this.slash;
+      s.t += dt;
+      const k = clamp(s.t / s.T, 0, 1);
+      const windEnd = 0.32, strikeEnd = 0.62;
+      const back = s.heavy ? -1.65 : -1.05;
+      const fwd = s.heavy ? 1.5 : 1.2;
+      if (k < windEnd) {
+        const e = easeInOutQuad(k / windEnd);
+        ang = lerp(0.42, back, e); reach = lerp(25, 20, e); wrist = 0.5;
+      } else if (k < strikeEnd) {
+        const e = easeOutCubic((k - windEnd) / (strikeEnd - windEnd));
+        ang = lerp(back, fwd, e);
+        reach = lerp(20, s.heavy ? 38 : 34, Math.sin(e * Math.PI));
+        wrist = lerp(0.5, -0.1, e);
+        if (!s.sounded) {
+          s.sounded = true;
+          this.audio.swish(s.heavy);
+          this.fx.slash(this.x, this.y - 92, back * 0.8, fwd * 0.8, s.heavy ? 52 : 44, this.facing);
+          if (s.heavy) this.vx += this.facing * 260;
+        }
+        if (!s.hitDone && e > 0.35) {
+          s.hitDone = true;
+          this.knifeHit(enemies, s.heavy);
+        }
+      } else {
+        const e = easeInOutQuad((k - strikeEnd) / (1 - strikeEnd));
+        ang = lerp(fwd, 0.42, e); reach = lerp(34, 25, e); wrist = lerp(-0.1, 0.34, e);
+      }
+      if (k >= 1) this.slash = null;
+    }
+
+    ws.knifeAng = ang; ws.knifeReach = reach; ws.knifeWrist = wrist;
+    this.visSpread = 0;
+    this.applyWs(ws, offX, offY, rot);
+  }
+
+  knifeHit(enemies, heavy) {
+    const wpn = this.cur.wpn;
+    let hit = false;
+    for (const e of enemies) {
+      if (e.deadT > 0) continue;
+      const dx = (e.x - this.x) * this.facing;
+      const dy = Math.abs((e.y - 70) - (this.y - 70));
+      if (dx > 2 && dx < wpn.range && dy < 70) {
+        e.damage(heavy ? wpn.dmgHeavy : wpn.dmg, this.facing, this, true);
+        this.fx.blood(e.x - this.facing * 6, e.y - 92, this.facing);
+        this.hud.hitmark(e.hp <= 0);
+        hit = true;
+      }
+    }
+    if (hit) this.audio.stab();
+  }
+
+  // ------------------------------------------------------------- damage
+
+  hurt(dmg, dirX) {
+    if (this.deadT > 0 || dmg <= 0) return;
+    this.hp -= dmg;
+    this.hurtT = 0.4;
+    this.lastHurtT = this.time;
+    this.audio.hurt();
+    this.cam.addTrauma(0.34);
+    this.hud.damageFlash(this.hp / this.maxHp);
+    this.fx.blood(this.x, this.y - 90, dirX);
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.deadT = 0.001;
+      this.cam.addTrauma(0.7);
+    }
+  }
+
+  draw(g) {
+    const cur = this.cur;
+    drawSoldier(g, this.parts, this.shadow, this, { wpn: cur.wpn, ws: cur.ws });
+  }
+}
+
+// segment (p + t*d, t∈[0,1]) vs AABB — returns entry t or null
+export function segVsBox(px, py, dx, dy, bx, by, bw, bh) {
+  let tmin = 0, tmax = 1;
+  for (let axis = 0; axis < 2; axis++) {
+    const o = axis ? py : px, d = axis ? dy : dx;
+    const lo = axis ? by : bx, hi = axis ? by + bh : bx + bw;
+    if (Math.abs(d) < 1e-6) { if (o < lo || o > hi) return null; continue; }
+    let t1 = (lo - o) / d, t2 = (hi - o) / d;
+    if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  return tmin;
+}

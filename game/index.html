@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>CINDERFALL // SECTOR 9</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- In-game HUD (DOM for crisp text) -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="objective">
+        <span class="obj-label">OBJECTIVE</span>
+        <span id="obj-text">ELIMINATE ALL HOSTILES</span>
+        <span id="obj-count">0 / 0</span>
+      </div>
+    </div>
+    <div class="hud-bl">
+      <div class="callsign">SGT. "VANDAL" &nbsp;//&nbsp; 3RD RECON</div>
+      <div class="bar-row">
+        <span class="bar-ico">HP</span>
+        <div class="bar"><div id="hp-fill" class="bar-fill hp"></div></div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-ico">ST</span>
+        <div class="bar slim"><div id="st-fill" class="bar-fill st"></div></div>
+      </div>
+    </div>
+    <div class="hud-br">
+      <div id="weapon-name">VK-77 "VANDAL"</div>
+      <div class="ammo-row">
+        <span id="ammo-mag">30</span>
+        <span class="ammo-div">/</span>
+        <span id="ammo-res">120</span>
+      </div>
+      <div id="reload-hint" class="hidden">RELOADING</div>
+      <div class="slots">
+        <span id="slot-1" class="slot active">1 RIFLE</span>
+        <span id="slot-2" class="slot">2 SIDEARM</span>
+        <span id="slot-3" class="slot">3 KNIFE</span>
+      </div>
+    </div>
+    <div id="hitmark"></div>
+    <div id="damage-flash"></div>
+    <div id="vignette"></div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading" class="overlay">
+    <div class="ov-inner">
+      <div class="title-small">CINDERFALL</div>
+      <div class="load-label" id="load-label">PAINTING ASSETS…</div>
+      <div class="load-bar"><div id="load-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu" class="overlay hidden">
+    <div class="ov-inner menu-inner">
+      <div class="title-kicker">SECTOR 9 &nbsp;//&nbsp; CINDER WORKS DISTRICT</div>
+      <h1 class="title">CINDERFALL</h1>
+      <div class="title-sub">A 2D TACTICAL OPERATION</div>
+      <button id="btn-deploy" class="btn primary">DEPLOY</button>
+      <div class="controls-grid">
+        <span>A / D</span><span>MOVE</span>
+        <span>SPACE</span><span>JUMP</span>
+        <span>SHIFT</span><span>SPRINT</span>
+        <span>MOUSE</span><span>AIM / FIRE</span>
+        <span>R</span><span>RELOAD</span>
+        <span>1 / 2 / 3</span><span>RIFLE / SIDEARM / KNIFE</span>
+        <span>F</span><span>INSPECT WEAPON</span>
+        <span>ESC</span><span>PAUSE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="overlay dim hidden">
+    <div class="ov-inner">
+      <div class="title-small">OPERATION PAUSED</div>
+      <button id="btn-resume" class="btn primary">RESUME</button>
+      <button id="btn-restart" class="btn">RESTART MISSION</button>
+      <button id="btn-quit" class="btn">ABORT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- End screens -->
+  <div id="end" class="overlay dim hidden">
+    <div class="ov-inner">
+      <div id="end-title" class="title-small">SECTOR CLEARED</div>
+      <div id="end-detail" class="end-detail"></div>
+      <button id="btn-redeploy" class="btn primary">REDEPLOY</button>
+      <button id="btn-menu" class="btn">RETURN TO MENU</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

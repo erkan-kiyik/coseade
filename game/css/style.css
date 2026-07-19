@@ -1,0 +1,162 @@
+/* CINDERFALL — HUD & menu styling. DOM text stays vector-crisp at any DPI. */
+
+:root {
+  --amber: #d9b36c;
+  --amber-dim: rgba(217, 179, 108, 0.55);
+  --ink: #e8e4da;
+  --ink-dim: rgba(232, 228, 218, 0.55);
+  --panel: rgba(12, 14, 16, 0.55);
+  --panel-line: rgba(217, 179, 108, 0.35);
+  --red: #c2453a;
+  --font: "Bahnschrift", "Barlow Condensed", "Arial Narrow", "Liberation Sans Narrow", Arial, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #07090c;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { position: fixed; inset: 0; }
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: none; }
+
+.hidden { display: none !important; }
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+
+.hud-top {
+  position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+  text-align: center;
+}
+.objective {
+  display: flex; gap: 14px; align-items: baseline;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-left: 3px solid var(--amber);
+  padding: 8px 18px;
+  letter-spacing: 0.18em; font-size: 13px;
+  backdrop-filter: blur(3px);
+}
+.obj-label { color: var(--amber); font-weight: 700; }
+#obj-text { color: var(--ink-dim); }
+#obj-count { color: var(--ink); font-weight: 700; }
+
+.hud-bl { position: absolute; left: 28px; bottom: 26px; width: 300px; }
+.callsign {
+  font-size: 11px; letter-spacing: 0.22em; color: var(--ink-dim);
+  margin-bottom: 8px;
+}
+.bar-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.bar-ico { font-size: 10px; letter-spacing: 0.15em; color: var(--amber-dim); width: 18px; }
+.bar {
+  flex: 1; height: 12px;
+  background: rgba(10, 12, 14, 0.7);
+  border: 1px solid rgba(217, 179, 108, 0.28);
+  padding: 2px;
+}
+.bar.slim { height: 8px; }
+.bar-fill { height: 100%; width: 100%; transition: width 0.15s ease-out; }
+.bar-fill.hp { background: linear-gradient(90deg, #9caf7a, #c9d6a3); box-shadow: 0 0 8px rgba(180, 200, 140, 0.35); }
+.bar-fill.hp.low { background: linear-gradient(90deg, #a3423a, #d0665a); }
+.bar-fill.st { background: linear-gradient(90deg, #7d8e9c, #b6c4cf); }
+
+.hud-br { position: absolute; right: 28px; bottom: 26px; text-align: right; }
+#weapon-name { font-size: 13px; letter-spacing: 0.24em; color: var(--amber); margin-bottom: 2px; }
+.ammo-row { line-height: 1; }
+#ammo-mag { font-size: 46px; font-weight: 700; letter-spacing: 0.04em; }
+.ammo-div { font-size: 22px; color: var(--ink-dim); margin: 0 4px; }
+#ammo-res { font-size: 20px; color: var(--ink-dim); }
+#reload-hint {
+  font-size: 11px; letter-spacing: 0.3em; color: var(--amber);
+  animation: blink 0.7s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0.25; } }
+.slots { margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end; }
+.slot {
+  font-size: 10px; letter-spacing: 0.14em; padding: 4px 8px;
+  border: 1px solid rgba(232, 228, 218, 0.18); color: var(--ink-dim);
+  background: rgba(10, 12, 14, 0.45);
+}
+.slot.active { border-color: var(--amber); color: var(--amber); }
+
+#hitmark {
+  position: absolute; left: 50%; top: 50%;
+  width: 24px; height: 24px; transform: translate(-50%, -50%) rotate(45deg);
+  opacity: 0; pointer-events: none;
+}
+#hitmark::before, #hitmark::after {
+  content: ""; position: absolute; background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+#hitmark::before { left: 11px; top: 0; width: 2px; height: 24px; }
+#hitmark::after { left: 0; top: 11px; width: 24px; height: 2px; }
+#hitmark.show { animation: hit 0.22s ease-out; }
+@keyframes hit {
+  0% { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(1.25); }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(45deg) scale(0.85); }
+}
+
+#damage-flash {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(150, 30, 20, 0.55) 100%);
+  transition: opacity 0.35s ease-out;
+}
+#vignette {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(4, 5, 8, 0.5) 100%);
+}
+
+/* ---------- Overlays ---------- */
+.overlay {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+}
+.overlay.dim { background: rgba(5, 7, 10, 0.72); backdrop-filter: blur(2px); }
+.ov-inner { text-align: center; max-width: 560px; padding: 40px; }
+
+.title-kicker { font-size: 13px; letter-spacing: 0.42em; color: var(--amber-dim); margin-bottom: 14px; }
+.title {
+  font-size: 84px; font-weight: 700; letter-spacing: 0.14em;
+  color: var(--ink);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.6), 0 0 34px rgba(217, 179, 108, 0.22);
+}
+.title-sub { font-size: 14px; letter-spacing: 0.5em; color: var(--ink-dim); margin: 10px 0 34px; }
+.title-small { font-size: 30px; font-weight: 700; letter-spacing: 0.28em; margin-bottom: 26px; }
+
+.btn {
+  display: block; width: 260px; margin: 10px auto;
+  padding: 13px 0; cursor: pointer;
+  font-family: var(--font); font-size: 14px; letter-spacing: 0.32em;
+  color: var(--ink); background: rgba(14, 17, 20, 0.65);
+  border: 1px solid rgba(232, 228, 218, 0.22);
+  transition: all 0.15s ease;
+}
+.btn:hover { border-color: var(--amber); color: var(--amber); background: rgba(30, 26, 18, 0.7); }
+.btn.primary { border-color: var(--amber); color: var(--amber); }
+.btn.primary:hover { background: var(--amber); color: #14120c; }
+
+.controls-grid {
+  margin-top: 36px;
+  display: grid; grid-template-columns: auto auto; gap: 6px 22px;
+  justify-content: center; text-align: left;
+  font-size: 11px; letter-spacing: 0.18em;
+}
+.controls-grid span:nth-child(odd) { color: var(--amber-dim); text-align: right; }
+.controls-grid span:nth-child(even) { color: var(--ink-dim); }
+
+.end-detail { font-size: 13px; letter-spacing: 0.22em; color: var(--ink-dim); margin-bottom: 30px; line-height: 2; }
+
+/* Loading */
+#loading .load-label { font-size: 11px; letter-spacing: 0.3em; color: var(--ink-dim); margin-bottom: 12px; }
+.load-bar {
+  width: 300px; height: 4px; margin: 0 auto;
+  background: rgba(232, 228, 218, 0.12);
+}
+#load-fill { height: 100%; width: 0%; background: var(--amber); transition: width 0.12s linear; }
