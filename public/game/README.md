@@ -10,11 +10,15 @@ skeletal-animation rig, dynamic lighting and a cinematic camera.
 
 ## Running
 
-The game is a fully static app — serve the `game/` directory with any static
-file server and open it in a modern browser (Chromium/Firefox/Safari):
+The game is a fully static app. It lives in `public/game/` so the repo's
+existing Next.js + Vercel deployment serves it automatically at
+**`/game/index.html`** — every Vercel preview of a PR is a playable build.
+
+It is also completely standalone — serve the directory with any static file
+server and open it in a modern browser (Chromium/Firefox/Safari):
 
 ```bash
-cd game
+cd public/game
 python3 -m http.server 8901
 # → http://localhost:8901
 ```
@@ -42,7 +46,7 @@ review.
 ## Project structure
 
 ```
-game/
+public/game/
 ├── index.html               app shell + DOM HUD (crisp vector text)
 ├── css/style.css            military UI styling, overlays, hitmarker
 └── js/
@@ -123,6 +127,6 @@ game/
   per-frame work is `drawImage` compositing, pooled particles with caps,
   view-culled lights, and a fixed 60 Hz simulation step with a clamped
   accumulator (no spiral-of-death, tab-switch safe).
-- **Static hosting.** Deploy the `game/` folder to any static host (GitHub
-  Pages, Netlify, an S3 bucket, or the `public/` dir of the Next.js app in
-  this repo). There is no server-side surface to attack.
+- **Static hosting.** The folder deploys with the repo's Next.js app (files
+  under `public/` are served verbatim) and works on any static host (GitHub
+  Pages, Netlify, an S3 bucket). There is no server-side surface to attack.
