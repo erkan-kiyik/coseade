@@ -38,10 +38,21 @@ review.
 | Shift | Sprint |
 | Mouse | Aim / fire (hold for full-auto) |
 | R | Reload (tactical or empty — different animations) |
-| 1 / 2 / 3 | VK-77 rifle / C-9 sidearm / TALON-7 knife |
-| Right mouse | Heavy slash (knife) |
+| 1 / 2 / 3 / 4 | VK-77 rifle / C-9 sidearm / TALON-7 knife / P-12 SMG (unlocked at level 3) |
+| Left / right mouse | Knife: quick / heavy slash |
 | F | Inspect weapon |
 | Esc | Pause |
+
+## Endless campaign & progression
+
+There is no final level. Clearing every hostile in a stage rolls a fresh,
+procedurally generated stage (building line, cover, prop dressing, enemy
+spawns, loot, weather) with slightly sharper, more coordinated AI — the
+operator's health, ammo, XP and unlocks carry over. Only going down ends the
+run. Kills, headshots, accuracy, longest survival and games played are
+tracked and persisted (`localStorage`) across sessions; leveling up unlocks
+weapon finishes, the P-12 "WASP" SMG, a TALON-7 blade variant, an armor
+cosmetic/cosmetic operator skin and armor plate capacity.
 
 ## Project structure
 
@@ -51,7 +62,8 @@ public/game/
 ├── css/style.css            military UI styling, overlays, hitmarker
 └── js/
     ├── main.js              boot, game states, fixed-timestep loop,
-    │                        lighting/bloom/grading composite, ambient FX
+    │                        lighting/bloom/grading composite, ambient FX,
+    │                        stage progression, detection meter, XP wiring
     ├── engine/              reusable, game-agnostic systems
     │   ├── math.js          lerp/damp/easing, seeded RNG, noise, 2-bone IK
     │   ├── input.js         keyboard + mouse state with per-frame edges
@@ -62,18 +74,24 @@ public/game/
     │   ├── paint.js         hi-res sprite factory, palette, gradients,
     │   │                    grunge/scratches/AO/rim-light brushes
     │   ├── soldier.js       soldier part atlases (2 uniform variants)
-    │   ├── weapons.js       original weapon designs + stats + flashes
+    │   ├── weapons.js       original weapon designs + stats + flashes +
+    │   │                    unlockable finishes + P-12 "WASP" SMG
     │   ├── environment.js   props, facades, dock, ground strip
     │   └── background.js    sky, clouds, far skyline, mid factory line
     └── game/                gameplay
         ├── rig.js           skeletal poser: gait, breathing, arm IK onto
         │                    weapon grips, weapon/mag/bolt/flash drawing
-        ├── world.js         level data, AABB physics, raycasts, decals,
-        │                    parallax composite, light list
-        ├── player.js        movement + full weapon state machine
-        ├── enemy.js         patrol/alert/engage AI, bursts, reloads
+        ├── world.js         stage-1 hand-authored level + procedural stage
+        │                    generator, AABB physics, raycasts, decals,
+        │                    cover points, pickups, weather, light list
+        ├── player.js        movement + weapon state machine, armor, melee
+        │                    cooldowns, hazards, pickups, directional damage
+        ├── enemy.js         vision-cone/hearing awareness FSM (patrol →
+        │                    suspicious → search → alert → combat/retreat),
+        │                    cover-seeking, squad alerts, melee shove
+        ├── progression.js   XP/levels, lifetime stats, unlock table
         ├── fx.js            tracers, timed lights, slashes, explosions
-        └── hud.js           DOM HUD controller
+        └── hud.js           DOM HUD: bars, detection meter, XP, toasts
 ```
 
 ## How the art direction is enforced in code
@@ -105,6 +123,16 @@ public/game/
   additive radial lights) is multiplied over the scene; a second emissive map
   is blurred and screened back for bloom. Muzzle flashes, explosions, lamp
   flicker and window glow are all dynamic lights.
+- **Real occlusion, not just proximity.** Enemy vision is a facing-aligned
+  cone plus a shorter wide-angle peripheral cone, both gated by the same
+  `hasLineOfSight` raycast the weapons use — a shooter behind a container is
+  genuinely hidden, not just far away. Cover points are generated from the
+  level's own collider list, so cover always matches what's actually solid.
+- **Every stage still hand-painted, just assembled differently.** The
+  procedural stage generator (`world.js`) composes stages 2+ from the exact
+  same painters as stage 1 (`environment.js`, `background.js`) — only their
+  placement, counts and palette variants are randomized per a seeded RNG, so
+  the "no generic/placeholder art" standard holds at any stage number.
 
 ## Security & best practices
 
@@ -127,6 +155,11 @@ public/game/
   per-frame work is `drawImage` compositing, pooled particles with caps,
   view-culled lights, and a fixed 60 Hz simulation step with a clamped
   accumulator (no spiral-of-death, tab-switch safe).
+- **Minimal, non-sensitive persistence.** Progression (`progression.js`)
+  writes only gameplay counters — level, XP, kill/accuracy stats, unlock
+  flags — to a single namespaced `localStorage` key. No PII, no cookies, no
+  network calls; storage failures (private browsing, disabled storage) are
+  caught and degrade to an in-memory, session-only fallback.
 - **Static hosting.** The folder deploys with the repo's Next.js app (files
   under `public/` are served verbatim) and works on any static host (GitHub
   Pages, Netlify, an S3 bucket). There is no server-side surface to attack.

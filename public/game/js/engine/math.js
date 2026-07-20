@@ -16,6 +16,14 @@ export function angleLerp(a, b, t) {
   return a + d * t;
 }
 
+// Shortest signed angle from a to b, in (-PI, PI].
+export function angleDiff(a, b) {
+  let d = (b - a) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+}
+
 export const dist = (x0, y0, x1, y1) => Math.hypot(x1 - x0, y1 - y0);
 
 export const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);

@@ -134,6 +134,27 @@ class AudioSys {
 
   ui() { this._tone({ freq: 640, dur: 0.05, gain: 0.07, type: 'triangle' }); }
 
+  // ---- awareness / progression ----
+  detectionBeep(state) {
+    if (state === 'suspicious') this._tone({ freq: 720, dur: 0.09, gain: 0.09, type: 'triangle' });
+    else if (state === 'searching') this._tone({ freq: 560, dur: 0.1, gain: 0.11, type: 'triangle' });
+    else if (state === 'detected') { this._tone({ freq: 880, dur: 0.1, gain: 0.14, type: 'square' }); this._tone({ freq: 660, dur: 0.1, gain: 0.1, type: 'square', t0: 0.08 }); }
+    else if (state === 'combat') { this._tone({ freq: 980, dur: 0.08, gain: 0.16, type: 'square' }); this._tone({ freq: 980, dur: 0.08, gain: 0.14, type: 'square', t0: 0.12 }); }
+    else this._tone({ freq: 420, dur: 0.12, gain: 0.07, type: 'sine' });
+  }
+
+  pickup(kind) {
+    const f0 = kind === 'health' ? 480 : kind === 'armor' ? 380 : 560;
+    this._tone({ freq: f0, f1: f0 * 1.8, dur: 0.14, gain: 0.16, type: 'triangle' });
+    this._tone({ freq: f0 * 2, f1: f0 * 3, dur: 0.1, gain: 0.08, type: 'sine', t0: 0.06 });
+  }
+
+  levelUp() {
+    this._tone({ freq: 520, dur: 0.12, gain: 0.18, type: 'triangle' });
+    this._tone({ freq: 660, dur: 0.14, gain: 0.16, type: 'triangle', t0: 0.1 });
+    this._tone({ freq: 880, dur: 0.22, gain: 0.16, type: 'triangle', t0: 0.2 });
+  }
+
   startAmbience() {
     if (!this.ctx || this.ambientOn) return;
     this.ambientOn = true;

@@ -40,10 +40,10 @@ function speckle(g, x, y, w, h, n = 60) {
 // rail, skeleton stock, canted iron + red-dot. Painted in weapon space:
 // origin (0,0) = trigger-hand grip point, muzzle faces +x.
 
-function paintRifleBody(variant) {
+function paintRifleBody(variant, finish) {
   const dark = variant === 'phantom';
-  const rec = dark ? '#2c2e33' : COL.gunmetal;
-  const poly = dark ? '#232529' : COL.polymer;
+  const rec = (finish && finish.rec) || (dark ? '#2c2e33' : COL.gunmetal);
+  const poly = (finish && finish.poly) || (dark ? '#232529' : COL.polymer);
   // box: x -20..+40 (60), y -12..+8 (20); anchor at (20,12) inside sprite.
   return makeSprite(60, 20, 20, 12, (g) => {
     g.translate(20, 12);  // move origin to grip point
@@ -223,12 +223,14 @@ function paintBolt() {
 }
 
 // ============================ C-9 "CORVID" ============================
-function paintPistolBody() {
+function paintPistolBody(finish) {
+  const gripCol = (finish && finish.grip) || '#2a2c30';
+  const frameCol = (finish && finish.frame) || '#303236';
   // box x -7..+11, y -8..+7; anchor grip at (0,0) → sprite anchor (7,8)
   return makeSprite(18, 15, 7, 8, (g) => {
     g.translate(7, 8);
     // grip with stippling
-    g.fillStyle = polymer(g, -1, 7, '#2a2c30');
+    g.fillStyle = polymer(g, -1, 7, gripCol);
     g.beginPath();
     g.moveTo(-1.8, -1.4);
     g.lineTo(-4.2, 5.2);
@@ -241,7 +243,7 @@ function paintPistolBody() {
       g.fillRect(-3.4 + rng() * 4.6, 0.5 + rng() * 5, 0.5, 0.5);
     }
     // frame + trigger guard
-    g.fillStyle = polymer(g, -3, 0, '#303236');
+    g.fillStyle = polymer(g, -3, 0, frameCol);
     g.beginPath();
     g.moveTo(-2.4, -2.8);
     g.lineTo(8.8, -2.8);
@@ -355,6 +357,151 @@ function paintKnife() {
   });
 }
 
+// ============================ P-12 "WASP" (SMG) ============================
+// Original compact submachine gun: stamped-steel receiver, folding stock,
+// stubby handguard, straight box mag. Same grip-point convention as the
+// rifle (origin = trigger-hand grip, muzzle at +x).
+function paintSmgBody(finish) {
+  const rec = (finish && finish.rec) || '#3a3d42';
+  const poly = (finish && finish.poly) || '#26282b';
+  // box x -14..+24 (38), y -9..+7 (16); anchor (14,9)
+  return makeSprite(40, 17, 14, 9, (g) => {
+    g.translate(14, 9);
+    // folding stock (thin wire-frame, collapsed)
+    g.strokeStyle = shade(rec, -0.2); g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(-3, -4.6); g.lineTo(-12.6, -3.4);
+    g.quadraticCurveTo(-14.4, -3.2, -14.2, -0.6);
+    g.lineTo(-14.4, 3.4); g.lineTo(-12.4, 3.2); g.lineTo(-11.8, -0.4);
+    g.lineTo(-3, -1.2);
+    g.stroke();
+    g.fillStyle = shade(rec, -0.3);
+    rr(g, -15, -1.6, 2.4, 5.4, 0.8); g.fill();
+
+    // lower receiver + grip
+    g.fillStyle = metal(g, -5, 3.6, rec);
+    g.beginPath();
+    g.moveTo(-3.4, -5.2);
+    g.lineTo(8.6, -5.2);
+    g.lineTo(8.6, -0.2);
+    g.lineTo(4.4, 0.6);
+    g.lineTo(0.6, 0.2);
+    g.lineTo(-3.4, -0.4);
+    g.closePath(); g.fill();
+    g.fillStyle = polymer(g, -0.6, 7, poly);
+    g.beginPath();
+    g.moveTo(-0.8, -0.8);
+    g.quadraticCurveTo(-2.2, 3, -3.6, 5.8);
+    g.quadraticCurveTo(-3.8, 7, -2, 7);
+    g.quadraticCurveTo(-0.2, 6.8, 0.4, 4.4);
+    g.lineTo(1.4, -0.4);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.35;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath(); g.moveTo(-1.4 - i * 0.7, 1.2 + i * 1.4); g.lineTo(0.4 - i * 0.6, 1.6 + i * 1.4); g.stroke();
+    }
+    g.strokeStyle = shade(rec, -0.15); g.lineWidth = 0.9;
+    g.beginPath(); g.moveTo(1.2, 0); g.quadraticCurveTo(3.4, 2.8, 5.6, 0.4); g.stroke();
+
+    // upper receiver, straight box mag well
+    g.fillStyle = metal(g, -8.2, -4.8, shade(rec, 0.04));
+    rr(g, -4, -8.4, 18, 3.6, 0.7); g.fill();
+    g.fillStyle = '#101114';
+    rr(g, 5, -6, 4.6, 2.2, 0.5); g.fill();
+    // stubby handguard
+    g.fillStyle = polymer(g, -7.6, -3, shade(poly, 0.05));
+    rr(g, 8.6, -7.8, 10.5, 5, 1.2); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    for (let x = 9.4; x < 18.4; x += 1.5) g.fillRect(x, -8.2, 0.8, 0.8);
+    // short barrel + compensator
+    g.fillStyle = metal(g, -5.4, -3.2, shade(rec, -0.06));
+    g.fillRect(19, -5, 5.4, 1.8);
+    g.fillStyle = metal(g, -6, -2.6, rec);
+    rr(g, 22.6, -5.6, 3.2, 3, 0.7); g.fill();
+    g.fillStyle = '#0e0f11';
+    g.fillRect(23.4, -5.9, 0.8, 3.6);
+    // rear sight + mini dot rail
+    g.fillStyle = metal(g, -10.6, -8.2, '#26282c');
+    rr(g, -3.2, -10.4, 6, 2.4, 0.6); g.fill();
+    g.fillStyle = '#ff5a48';
+    g.fillRect(0.6, -9.5, 0.6, 0.6);
+
+    g.fillStyle = 'rgba(210,218,228,0.28)';
+    g.font = '1.5px monospace';
+    g.fillText('P-12', -3, -6);
+    scratches(g, -13, -8, 36, 12, rng, { n: 20, color: 'rgba(200,208,220,0.15)' });
+    grunge(g, -14, -8.5, 38, 15, rng, { n: 50, dark: 0.1, light: 0.04 });
+    speckle(g, 8.6, -7.6, 11, 5, 28);
+    g.strokeStyle = 'rgba(255,215,165,0.22)'; g.lineWidth = 0.5;
+    g.beginPath(); g.moveTo(-4, -8.5); g.lineTo(14, -8.5); g.stroke();
+  });
+}
+function paintSmgMag() {
+  // straight box mag; anchor at top (feed) point.
+  return makeSprite(7, 15, 3.5, 1, (g) => {
+    g.translate(3.5, 1);
+    g.fillStyle = lingrad(g, -3, 0, 3, 0, [
+      [0, shade(COL.polymer, 0.1)], [0.5, '#26282b'], [1, shade('#26282b', -0.3)],
+    ]);
+    rr(g, -2.6, 0, 5.2, 12.6, 0.8); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.4;
+    for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(-2.6, i * 3); g.lineTo(2.6, i * 3); g.stroke(); }
+    g.fillStyle = shade('#26282b', -0.35);
+    rr(g, -2.9, 11.6, 5.8, 2.2, 0.6); g.fill();
+    g.strokeStyle = 'rgba(255,215,165,0.16)'; g.lineWidth = 0.5;
+    g.beginPath(); g.moveTo(2.7, 1); g.lineTo(2.7, 11); g.stroke();
+    speckle(g, -2.6, 0, 5.2, 12, 20);
+  });
+}
+
+// ============================ "RAVAGE" bowie (knife finish) ============
+// Alternate blade geometry for the TALON-7 grip: straight clip-point bowie
+// with a blackened Cerakote finish, unlocked as a knife variant.
+function paintKnifeBowie() {
+  return makeSprite(22, 9, 6, 4.5, (g) => {
+    g.translate(6, 4.5);
+    g.fillStyle = lingrad(g, 0, -2.6, 0, 2.8, [
+      [0, '#2a2c26'], [0.5, '#1e201a'], [1, '#121310'],
+    ]);
+    g.beginPath();
+    g.moveTo(-0.8, -2.2);
+    g.lineTo(-4.6, -1.9);
+    g.quadraticCurveTo(-6.2, -1.6, -5.8, 0.2);
+    g.quadraticCurveTo(-5.6, 2.2, -3.8, 2.2);
+    g.lineTo(-0.4, 2.4);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 0.4;
+    for (let i = 0; i < 4; i++) {
+      g.beginPath(); g.moveTo(-4.6 + i * 1.1, -1.8); g.lineTo(-4.2 + i * 1.1, 2.1); g.stroke();
+    }
+    g.fillStyle = '#0e0f0d';
+    g.beginPath(); g.arc(-4.7, 0.2, 0.7, 0, Math.PI * 2); g.fill();
+    g.fillStyle = lingrad(g, 0, -3.2, 0, 3.2, [[0, '#3c3e40'], [1, '#18191b']]);
+    rr(g, -0.9, -3, 1.6, 6, 0.6); g.fill();
+    // straight clip-point blade, blackened
+    g.fillStyle = lingrad(g, 0, -2.6, 0, 2.2, [
+      [0, '#4c4e50'], [0.4, '#33353a'], [1, '#1c1d20'],
+    ]);
+    g.beginPath();
+    g.moveTo(0.7, -2.4);
+    g.lineTo(11.4, -2.3);
+    g.quadraticCurveTo(14.6, -1.2, 16.4, 0.3);
+    g.quadraticCurveTo(11.5, 1.2, 6, 1.7);
+    g.quadraticCurveTo(2.8, 1.9, 0.7, 1.7);
+    g.closePath(); g.fill();
+    g.fillStyle = lingrad(g, 0, 0.2, 0, 1.9, [[0, 'rgba(150,155,160,0.6)'], [1, 'rgba(90,95,100,0.1)']]);
+    g.beginPath();
+    g.moveTo(1, 1); g.quadraticCurveTo(6, 1.3, 11.4, 0.5); g.quadraticCurveTo(14, -0.3, 16.1, 0.3);
+    g.quadraticCurveTo(11.5, 1.3, 6, 1.75); g.quadraticCurveTo(2.8, 1.95, 1, 1.75);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 0.5;
+    g.beginPath(); g.moveTo(2, -1.4); g.lineTo(10.6, -1.4); g.stroke();
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    for (let i = 0; i < 5; i++) g.fillRect(1 + i * 0.7, -3, 0.35, 0.7);
+    scratches(g, 1, -2.2, 14, 4, rng, { n: 6, color: 'rgba(160,168,178,0.22)' });
+  });
+}
+
 // ---- muzzle flash sprites (painted hot-core star flashes) ----
 function paintFlash(seed) {
   const frng = makeRng(seed);
@@ -395,12 +542,39 @@ function paintFlash(seed) {
 
 // ============================ definitions ============================
 
+// Recoil pattern multipliers: cycles per consecutive shot (reset after a
+// firing pause), giving each weapon a repeatable, learnable kick signature
+// instead of pure randomness. Values scale the base recoilRot/recoilKick.
+const PATTERN_RIFLE = [0.7, 0.85, 1.0, 1.12, 1.2, 1.1, 0.95, 1.15, 1.25, 1.05];
+const PATTERN_PISTOL = [1.15, 0.75, 0.95, 0.8];
+const PATTERN_SMG = [0.55, 0.65, 0.78, 0.7, 0.6, 0.82, 0.9, 0.68];
+
 export function buildWeapons() {
   const flashes = [paintFlash(11), paintFlash(23), paintFlash(37)];
+
+  const rifleBody = paintRifleBody('ranger');
+  const rifleFinishes = {
+    default: rifleBody,
+    urban: paintRifleBody('ranger', { rec: '#3c4750', poly: '#2b3640' }),
+    cinder: paintRifleBody('ranger', { rec: '#4a2e26', poly: '#38221c' }),
+  };
+  const pistolBody = paintPistolBody();
+  const pistolFinishes = {
+    default: pistolBody,
+    desert: paintPistolBody({ grip: '#5c4f3a', frame: '#6b5c42' }),
+  };
+  const knifeBody = paintKnife();
+  const knifeFinishes = {
+    default: knifeBody,
+    ravage: paintKnifeBowie(),
+  };
+  const smgBody = paintSmgBody();
+
   return {
     rifle: {
       id: 'rifle', name: 'VK-77 "VANDAL"', slot: 1, kind: 'gun',
-      body: paintRifleBody('ranger'), mag: paintRifleMag('ranger'), bolt: paintBolt(),
+      body: rifleBody, finishes: rifleFinishes, finish: 'default',
+      mag: paintRifleMag('ranger'), bolt: paintBolt(),
       flashes,
       // attachment points in weapon space (origin = trigger-hand grip)
       gripA: { x: 0, y: 0.6 },            // trigger hand
@@ -411,8 +585,9 @@ export function buildWeapons() {
       boltPos: { x: 6.6, y: -6.6 },
       shoulder: { x: -13, y: -4 },        // stock contact → weapon anchor offset
       // stats
-      auto: true, rpm: 690, dmg: 26, spread: 0.028, pellets: 1,
-      recoilKick: 3.4, recoilRot: 0.055, camKick: 2.6, camTrauma: 0.14,
+      auto: true, rpm: 690, dmg: 26, spread: 0.024, pellets: 1,
+      recoilKick: 2.0, recoilRot: 0.032, camKick: 1.35, camTrauma: 0.075,
+      recoilPattern: PATTERN_RIFLE,
       magSize: 30, reserve: 120,
       reloadT: 2.1, reloadEmptyT: 2.75,
       shotSound: 'rifle', casingSize: 4.6,
@@ -420,23 +595,46 @@ export function buildWeapons() {
     },
     pistol: {
       id: 'pistol', name: 'C-9 "CORVID"', slot: 2, kind: 'gun',
-      body: paintPistolBody(), slide: paintPistolSlide(), flashes,
+      body: pistolBody, finishes: pistolFinishes, finish: 'default',
+      slide: paintPistolSlide(), flashes,
       gripA: { x: 0, y: 0.8 },
       gripB: { x: 2.6, y: 1.8 },          // support hand cups front of grip
       muzzle: { x: 12.4, y: -4.2 },
       eject: { x: 4.4, y: -5 },
       magPos: { x: -2.2, y: 4 },
       shoulder: { x: 4, y: -1 },
-      auto: false, rpm: 380, dmg: 34, spread: 0.02, pellets: 1,
-      recoilKick: 2.6, recoilRot: 0.09, camKick: 1.8, camTrauma: 0.1,
+      auto: false, rpm: 380, dmg: 34, spread: 0.017, pellets: 1,
+      recoilKick: 1.6, recoilRot: 0.052, camKick: 0.95, camTrauma: 0.055,
+      recoilPattern: PATTERN_PISTOL,
       magSize: 12, reserve: 48,
       reloadT: 1.65, reloadEmptyT: 2.1,
       shotSound: 'pistol', casingSize: 3.4,
       aimHeight: -4,
     },
+    smg: {
+      id: 'smg', name: 'P-12 "WASP"', slot: 4, kind: 'gun',
+      body: smgBody, finishes: null, finish: 'default',
+      mag: paintSmgMag(), bolt: paintBolt(),
+      flashes,
+      gripA: { x: 0, y: 0.4 },
+      gripB: { x: 12, y: -6.4 },
+      muzzle: { x: 26, y: -4.8 },
+      eject: { x: 6.4, y: -5.4 },
+      magPos: { x: 1.5, y: 0.5 },
+      boltPos: { x: 3, y: -6.8 },
+      shoulder: { x: -9, y: -3 },
+      auto: true, rpm: 950, dmg: 15, spread: 0.034, pellets: 1,
+      recoilKick: 1.5, recoilRot: 0.026, camKick: 1.0, camTrauma: 0.06,
+      recoilPattern: PATTERN_SMG,
+      magSize: 35, reserve: 140,
+      reloadT: 1.8, reloadEmptyT: 2.3,
+      shotSound: 'pistol', casingSize: 3.6,
+      aimHeight: -4.2,
+      unlockLevel: 3,
+    },
     knife: {
       id: 'knife', name: 'TALON-7', slot: 3, kind: 'melee',
-      body: paintKnife(),
+      body: knifeBody, finishes: knifeFinishes, finish: 'default',
       gripA: { x: -2.6, y: 0 },
       dmg: 55, dmgHeavy: 95,
       range: 46, arc: 1.1,

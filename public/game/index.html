@@ -17,8 +17,15 @@
         <span class="obj-label">OBJECTIVE</span>
         <span id="obj-text">ELIMINATE ALL HOSTILES</span>
         <span id="obj-count">0 / 0</span>
+        <span id="stage-label" class="stage-label">STAGE 1</span>
+      </div>
+      <div id="det-bar" class="det-bar">
+        <span class="det-ico">THREAT</span>
+        <div class="bar det-track"><div id="det-fill" class="bar-fill det"></div></div>
+        <span id="det-label" class="det-label">HIDDEN</span>
       </div>
     </div>
+    <div id="notify" class="notify"></div>
     <div class="hud-bl">
       <div class="callsign">SGT. "VANDAL" &nbsp;//&nbsp; 3RD RECON</div>
       <div class="bar-row">
@@ -28,6 +35,14 @@
       <div class="bar-row">
         <span class="bar-ico">ST</span>
         <div class="bar slim"><div id="st-fill" class="bar-fill st"></div></div>
+      </div>
+      <div class="bar-row hidden" id="armor-row">
+        <span class="bar-ico">AR</span>
+        <div class="bar slim"><div id="armor-fill" class="bar-fill armor"></div></div>
+      </div>
+      <div class="xp-row">
+        <span id="lvl-label" class="lvl-label">LVL 1</span>
+        <div class="bar xp-track"><div id="xp-fill" class="bar-fill xp"></div></div>
       </div>
     </div>
     <div class="hud-br">
@@ -39,11 +54,15 @@
       </div>
       <div id="reload-hint" class="hidden">RELOADING</div>
       <div class="slots">
-        <span id="slot-1" class="slot active">1 RIFLE</span>
-        <span id="slot-2" class="slot">2 SIDEARM</span>
-        <span id="slot-3" class="slot">3 KNIFE</span>
+        <span id="slot-1" class="slot active"><canvas id="slot-1-icon" class="slot-icon"></canvas>1 RIFLE</span>
+        <span id="slot-2" class="slot"><canvas id="slot-2-icon" class="slot-icon"></canvas>2 SIDEARM</span>
+        <span id="slot-3" class="slot"><canvas id="slot-3-icon" class="slot-icon"></canvas>3 KNIFE</span>
+        <span id="slot-4" class="slot hidden"><canvas id="slot-4-icon" class="slot-icon"></canvas>4 SMG</span>
       </div>
     </div>
+    <div id="dmg-left" class="dmg-dir left"></div>
+    <div id="dmg-right" class="dmg-dir right"></div>
+    <div id="dmg-omni" class="dmg-dir omni"></div>
     <div id="hitmark"></div>
     <div id="damage-flash"></div>
     <div id="vignette"></div>
@@ -72,6 +91,8 @@
         <span>MOUSE</span><span>AIM / FIRE</span>
         <span>R</span><span>RELOAD</span>
         <span>1 / 2 / 3</span><span>RIFLE / SIDEARM / KNIFE</span>
+        <span>4</span><span>SMG (WHEN UNLOCKED)</span>
+        <span>RIGHT-CLICK</span><span>HEAVY MELEE</span>
         <span>F</span><span>INSPECT WEAPON</span>
         <span>ESC</span><span>PAUSE</span>
       </div>

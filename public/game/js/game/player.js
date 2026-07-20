@@ -30,16 +30,21 @@ export class Player {
     this.hurtT = 0; this.deadT = 0;
 
     this.hp = 100; this.maxHp = 100;
+    this.armor = 0; this.maxArmor = 0;
     this.stamina = 100; this.sprinting = false; this.sprintBlend = 0;
-    this.kills = 0; this.shots = 0; this.hits = 0;
+    this.kills = 0; this.headshots = 0; this.shots = 0; this.hits = 0;
     this.lastHurtT = -99; this.lastShotT = -99;
+    this.stunT = 0;
     this.time = 0;
 
+    this.weapons = weapons;   // base defs, for finish/unlock lookups
     this.arsenal = {
       rifle: { wpn: weapons.rifle, ws: newWeaponState(), mag: weapons.rifle.magSize, reserve: weapons.rifle.reserve },
       pistol: { wpn: weapons.pistol, ws: newWeaponState(), mag: weapons.pistol.magSize, reserve: weapons.pistol.reserve },
       knife: { wpn: weapons.knife, ws: newWeaponState() },
+      smg: { wpn: weapons.smg, ws: newWeaponState(), mag: weapons.smg.magSize, reserve: weapons.smg.reserve },
     };
+    this.smgUnlocked = false;
     this.current = 'rifle';
     this.pendingSwitch = null;
 
@@ -84,13 +89,15 @@ export class Player {
     this.aimSmooth = damp(this.aimSmooth, this.aimLocal, 15, dt);
 
     // ---- movement
+    this.stunT = Math.max(0, this.stunT - dt);
+    const stunMul = this.stunT > 0 ? 0.3 : 1;
     const mx = input.moveX;
-    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload;
+    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload && this.stunT <= 0;
     this.sprinting = wantSprint;
     this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 7, dt);
-    const top = lerp(RUN, SPRINT, this.sprintBlend);
+    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul;
     const target = mx * top;
-    const rate = this.onGround ? ACCEL : ACCEL * 0.45;
+    const rate = (this.onGround ? ACCEL : ACCEL * 0.45) * stunMul;
     this.vx = this.vx > target
       ? Math.max(target, this.vx - rate * dt)
       : Math.min(target, this.vx + rate * dt);
@@ -133,6 +140,32 @@ export class Player {
     }
     this.hurtT = Math.max(0, this.hurtT - dt);
 
+    // environmental hazards: open flame / sparking cable emitters burn on contact
+    this.hazardT = (this.hazardT || 0) - dt;
+    for (const em of this.world.emitters) {
+      if (em.kind !== 'fire' && em.kind !== 'sparks') continue;
+      const d = Math.hypot(this.x - em.x, (this.y - 70) - em.y);
+      if (d < 34 && this.hazardT <= 0) {
+        this.hazardT = 0.5;
+        this.hurt(em.kind === 'fire' ? 4 : 8, 0, em.x);
+      }
+    }
+
+    // loot pickups
+    const got = this.world.collectPickup(this.x, this.y);
+    if (got) {
+      if (got.kind === 'health') this.hp = Math.min(this.maxHp, this.hp + 35);
+      else if (got.kind === 'armor') this.armor = Math.min(this.maxArmor, this.armor + 25);
+      else {
+        for (const slot of ['rifle', 'pistol', 'smg']) {
+          const s = this.arsenal[slot];
+          if (s) s.reserve = Math.min(s.wpn.reserve, s.reserve + Math.round(s.wpn.reserve * 0.35));
+        }
+      }
+      this.audio.pickup(got.kind);
+      this.hud.notify(got.kind === 'health' ? 'MEDKIT RECOVERED' : got.kind === 'armor' ? 'ARMOR PLATE RECOVERED' : 'AMMO RESUPPLIED');
+    }
+
     this.integrateSprings(dt);
     this.updateWeapon(dt, input, enemies, game);
     this.hud.update(this);
@@ -146,6 +179,15 @@ export class Player {
   }
 
   // ------------------------------------------------------------- weapons
+
+  // Applies an unlocked cosmetic finish (palette swap) to one weapon slot
+  // without mutating the shared base weapon def other entities reference.
+  applyFinish(slot, finishKey) {
+    const base = this.weapons[slot];
+    if (!base || !base.finishes || !base.finishes[finishKey]) return;
+    const cur = this.arsenal[slot];
+    cur.wpn = finishKey === 'default' ? base : { ...base, body: base.finishes[finishKey], finish: finishKey };
+  }
 
   switchTo(slot) {
     if (slot === this.current || this.pendingSwitch) return;
@@ -164,6 +206,7 @@ export class Player {
     if (input.hit('Digit1')) this.switchTo('rifle');
     if (input.hit('Digit2')) this.switchTo('pistol');
     if (input.hit('Digit3')) this.switchTo('knife');
+    if (input.hit('Digit4') && this.smgUnlocked) this.switchTo('smg');
 
     // recoil springs
     ws.recoilVel += -ws.recoil * 240 * dt;
@@ -226,7 +269,7 @@ export class Player {
     }
 
     if (wpn.kind === 'melee') {
-      this.updateKnife(dt, input, enemies, ws, rot, offX, offY);
+      this.updateKnife(dt, input, enemies, ws, rot, offX, offY, game);
       return;
     }
 
@@ -361,9 +404,13 @@ export class Player {
       headshot = hy < hitEnemy.y - 108;
       const dmg = wpn.dmg * (headshot ? 1.9 : 1);
       this.hits++;
+      if (headshot) this.headshots++;
+      const killed = hitEnemy.hp <= dmg;
       hitEnemy.damage(dmg, Math.sign(ex - mzl.x), this);
       this.fx.blood(hx, hy, Math.sign(ex - mzl.x));
-      this.hud.hitmark(hitEnemy.hp <= 0);
+      this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
+      if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
+      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
     } else if (wHit && wHit.tag === 'barrel') {
       game.damageBarrel(wHit.ref, wpn.dmg);
       this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
@@ -375,8 +422,14 @@ export class Player {
     ws.flashT = 1;
     ws.flashIdx = (Math.random() * wpn.flashes.length) | 0;
     ws.flashScale = rand(0.85, 1.25);
-    ws.recoilVel += wpn.recoilKick * 3;
-    ws.recoilRotVel -= wpn.recoilRot * 26;
+    // recoil pattern: repeatable per-weapon signature, resets after a pause
+    if (this.time - (ws.lastFireT || -99) > 0.28) ws.shotIndex = 0;
+    ws.lastFireT = this.time;
+    const pat = wpn.recoilPattern;
+    const patMul = pat ? pat[ws.shotIndex % pat.length] : 1;
+    ws.shotIndex = (ws.shotIndex || 0) + 1;
+    ws.recoilVel += wpn.recoilKick * 3 * patMul;
+    ws.recoilRotVel -= wpn.recoilRot * 26 * patMul;
     if (wpn.bolt) ws.boltBack = 1;
     if (wpn.slide) ws.slideBack = 1;
     this.recoilAccum = Math.min(0.09, this.recoilAccum + 0.013);
@@ -390,7 +443,7 @@ export class Player {
 
   // ------------------------------------------------------------- knife
 
-  updateKnife(dt, input, enemies, ws, rot, offX, offY) {
+  updateKnife(dt, input, enemies, ws, rot, offX, offY, game) {
     const wpn = this.cur.wpn;
     // rest pose w/ breathing + sprint pump
     let ang = 0.42 + Math.sin(this.breathT * 1.9) * 0.05;
@@ -421,10 +474,13 @@ export class Player {
       }
     }
 
-    if (!this.slash && (input.mouse.clicked || input.mouse.rdown)) {
+    this.meleeCd = Math.max(0, (this.meleeCd || 0) - dt);
+    if (!this.slash && this.meleeCd <= 0 && (input.mouse.clicked || (input.mouse.rdown && this.stamina > 15))) {
       const heavy = input.mouse.rdown;
       this.slash = { t: 0, T: heavy ? wpn.heavyT : wpn.swingT, heavy, hitDone: false, sounded: false };
       this.inspectT = -1;
+      if (heavy) this.stamina = Math.max(0, this.stamina - 18);
+      this.meleeCd = heavy ? 0.12 : 0.06;
     }
     if (this.slash) {
       const s = this.slash;
@@ -449,7 +505,7 @@ export class Player {
         }
         if (!s.hitDone && e > 0.35) {
           s.hitDone = true;
-          this.knifeHit(enemies, s.heavy);
+          this.knifeHit(enemies, s.heavy, game);
         }
       } else {
         const e = easeInOutQuad((k - strikeEnd) / (1 - strikeEnd));
@@ -463,7 +519,7 @@ export class Player {
     this.applyWs(ws, offX, offY, rot);
   }
 
-  knifeHit(enemies, heavy) {
+  knifeHit(enemies, heavy, game) {
     const wpn = this.cur.wpn;
     let hit = false;
     for (const e of enemies) {
@@ -471,9 +527,14 @@ export class Player {
       const dx = (e.x - this.x) * this.facing;
       const dy = Math.abs((e.y - 70) - (this.y - 70));
       if (dx > 2 && dx < wpn.range && dy < 70) {
-        e.damage(heavy ? wpn.dmgHeavy : wpn.dmg, this.facing, this, true);
+        const dmg = heavy ? wpn.dmgHeavy : wpn.dmg;
+        this.hits++;
+        const killed = e.hp <= dmg;
+        e.damage(dmg, this.facing, this, true);
         this.fx.blood(e.x - this.facing * 6, e.y - 92, this.facing);
-        this.hud.hitmark(e.hp <= 0);
+        this.hud.hitmark(killed ? 'kill' : 'hit');
+        if (killed) this.hud.notify('HOSTILE ELIMINATED — MELEE');
+        if (game && game.onPlayerHit) game.onPlayerHit(false, killed);
         hit = true;
       }
     }
@@ -482,15 +543,24 @@ export class Player {
 
   // ------------------------------------------------------------- damage
 
-  hurt(dmg, dirX) {
+  hurt(dmg, dirX, sourceX) {
     if (this.deadT > 0 || dmg <= 0) return;
-    this.hp -= dmg;
+    // armor soaks a share of incoming damage before health
+    let toHp = dmg;
+    if (this.armor > 0) {
+      const absorb = Math.min(this.armor, dmg * 0.6);
+      this.armor = Math.max(0, this.armor - absorb);
+      toHp = dmg - absorb;
+    }
+    this.hp -= toHp;
     this.hurtT = 0.4;
     this.lastHurtT = this.time;
+    this.stunT = Math.max(this.stunT, dmg > 14 ? 0.16 : 0.06);
     this.audio.hurt();
-    this.cam.addTrauma(0.34);
+    this.cam.addTrauma(clamp(0.15 + dmg * 0.009, 0.15, 0.4));
     this.hud.damageFlash(this.hp / this.maxHp);
     this.fx.blood(this.x, this.y - 90, dirX);
+    this.hud.damageDirection(sourceX === undefined ? 0 : sourceX - this.x, sourceX === undefined);
     if (this.hp <= 0) {
       this.hp = 0;
       this.deadT = 0.001;

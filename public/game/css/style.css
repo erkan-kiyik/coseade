@@ -32,7 +32,7 @@ html, body {
 
 .hud-top {
   position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
-  text-align: center;
+  text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .objective {
   display: flex; gap: 14px; align-items: baseline;
@@ -46,6 +46,42 @@ html, body {
 .obj-label { color: var(--amber); font-weight: 700; }
 #obj-text { color: var(--ink-dim); }
 #obj-count { color: var(--ink); font-weight: 700; }
+.stage-label { color: var(--amber-dim); font-weight: 700; padding-left: 12px; border-left: 1px solid var(--panel-line); }
+
+/* ---------- detection meter ---------- */
+.det-bar {
+  display: flex; gap: 10px; align-items: center;
+  background: var(--panel); border: 1px solid var(--panel-line);
+  padding: 5px 14px; font-size: 10px; letter-spacing: 0.2em;
+  backdrop-filter: blur(3px);
+  --det-color: #7fae6e;
+}
+.det-ico { color: var(--ink-dim); }
+.det-track { width: 140px; height: 6px; }
+.bar-fill.det { background: var(--det-color); transition: width 0.25s ease-out, background 0.3s; box-shadow: 0 0 8px var(--det-color); }
+#det-label { color: var(--det-color); font-weight: 700; min-width: 72px; text-align: left; }
+.det-bar.det-hidden { --det-color: #7fae6e; }
+.det-bar.det-suspicious { --det-color: #d9c25a; }
+.det-bar.det-searching { --det-color: #d98a3f; }
+.det-bar.det-detected { --det-color: #d0554a; }
+.det-bar.det-combat { --det-color: #ff3b30; animation: det-flash 0.5s steps(2) infinite; }
+.det-bar.pulse { animation: det-pulse 0.4s ease-out; }
+@keyframes det-flash { 50% { opacity: 0.55; } }
+@keyframes det-pulse { 0% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+.notify {
+  font-size: 12px; letter-spacing: 0.28em; color: var(--amber);
+  background: var(--panel); border: 1px solid var(--panel-line);
+  padding: 0 16px; opacity: 0; max-height: 0; overflow: hidden;
+  transition: opacity 0.2s;
+}
+.notify.show { animation: notify-pop 2.2s ease-out; }
+@keyframes notify-pop {
+  0% { opacity: 0; max-height: 0; padding: 0 16px; }
+  8% { opacity: 1; max-height: 30px; padding: 7px 16px; }
+  78% { opacity: 1; max-height: 30px; padding: 7px 16px; }
+  100% { opacity: 0; max-height: 30px; padding: 7px 16px; }
+}
 
 .hud-bl { position: absolute; left: 28px; bottom: 26px; width: 300px; }
 .callsign {
@@ -65,6 +101,12 @@ html, body {
 .bar-fill.hp { background: linear-gradient(90deg, #9caf7a, #c9d6a3); box-shadow: 0 0 8px rgba(180, 200, 140, 0.35); }
 .bar-fill.hp.low { background: linear-gradient(90deg, #a3423a, #d0665a); }
 .bar-fill.st { background: linear-gradient(90deg, #7d8e9c, #b6c4cf); }
+.bar-fill.armor { background: linear-gradient(90deg, #6c8798, #a9c1cd); box-shadow: 0 0 8px rgba(120, 160, 180, 0.35); }
+
+.xp-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.lvl-label { font-size: 10px; letter-spacing: 0.15em; color: var(--amber-dim); width: 40px; }
+.xp-track { flex: 1; height: 5px; }
+.bar-fill.xp { background: linear-gradient(90deg, #b08a3f, var(--amber)); box-shadow: 0 0 6px rgba(217, 179, 108, 0.4); }
 
 .hud-br { position: absolute; right: 28px; bottom: 26px; text-align: right; }
 #weapon-name { font-size: 13px; letter-spacing: 0.24em; color: var(--amber); margin-bottom: 2px; }
@@ -79,11 +121,13 @@ html, body {
 @keyframes blink { 50% { opacity: 0.25; } }
 .slots { margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end; }
 .slot {
+  display: flex; align-items: center; gap: 5px;
   font-size: 10px; letter-spacing: 0.14em; padding: 4px 8px;
   border: 1px solid rgba(232, 228, 218, 0.18); color: var(--ink-dim);
   background: rgba(10, 12, 14, 0.45);
 }
 .slot.active { border-color: var(--amber); color: var(--amber); }
+.slot-icon { width: 22px; height: 14px; opacity: 0.85; }
 
 #hitmark {
   position: absolute; left: 50%; top: 50%;
@@ -97,10 +141,30 @@ html, body {
 #hitmark::before { left: 11px; top: 0; width: 2px; height: 24px; }
 #hitmark::after { left: 0; top: 11px; width: 24px; height: 2px; }
 #hitmark.show { animation: hit 0.22s ease-out; }
+#hitmark.headshot::before, #hitmark.headshot::after { background: #ffcf5c; box-shadow: 0 0 8px rgba(255, 207, 92, 0.9); }
+#hitmark.kill::before, #hitmark.kill::after { background: #ff4a3a; box-shadow: 0 0 9px rgba(255, 74, 58, 0.95); }
+#hitmark.headshot.show { animation: hit-big 0.28s ease-out; }
+#hitmark.kill.show { animation: hit-big 0.3s ease-out; }
 @keyframes hit {
   0% { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(1.25); }
   100% { opacity: 0; transform: translate(-50%, -50%) rotate(45deg) scale(0.85); }
 }
+@keyframes hit-big {
+  0% { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(1.6); }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(45deg) scale(0.9); }
+}
+
+/* ---------- directional damage indicators ---------- */
+.dmg-dir { position: absolute; opacity: 0; pointer-events: none; }
+.dmg-dir.left, .dmg-dir.right {
+  top: 0; bottom: 0; width: 160px;
+  background: linear-gradient(90deg, rgba(190, 40, 30, 0.55), rgba(190, 40, 30, 0));
+}
+.dmg-dir.left { left: 0; }
+.dmg-dir.right { right: 0; transform: scaleX(-1); }
+.dmg-dir.omni { inset: 0; background: radial-gradient(ellipse at center, rgba(190, 40, 30, 0.4) 0%, transparent 70%); }
+.dmg-dir.show { animation: dmg-dir-fade 0.55s ease-out; }
+@keyframes dmg-dir-fade { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 #damage-flash {
   position: absolute; inset: 0; opacity: 0;

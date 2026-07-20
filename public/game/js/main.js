@@ -14,8 +14,9 @@ import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
 import { FX } from './game/fx.js';
 import { Player } from './game/player.js';
-import { Enemy } from './game/enemy.js';
+import { Enemy, getGlobalDetection } from './game/enemy.js';
 import { Hud } from './game/hud.js';
+import { Progression, UNLOCKS } from './game/progression.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -94,6 +95,7 @@ async function boot() {
   hud.setLoad(0.9, 'CALIBRATING OPTICS…');
   await raf();
   game = new Game();
+  if (DEMO) window.__game = game;  // scripted-screenshot / test hook only
   hud.setLoad(1, 'READY');
   await raf();
   if (DEMO) game.deploy();
@@ -103,15 +105,6 @@ async function boot() {
 
 // ------------------------------------------------------------------ game
 
-const ENEMY_SPAWNS = [
-  { x: 1080, min: 980, max: 1225, y: GROUND_Y - 40 },
-  { x: 1650, min: 1440, max: 1690, y: GROUND_Y },
-  { x: 2320, min: 2200, max: 2520, y: GROUND_Y },
-  { x: 2950, min: 2760, max: 3050, y: GROUND_Y },
-  { x: 3500, min: 3380, max: 3690, y: GROUND_Y },
-  { x: 4080, min: 3960, max: 4140, y: GROUND_Y - 40 },
-];
-
 class Game {
   constructor() {
     this.world = assets.world;
@@ -119,12 +112,15 @@ class Game {
     this.cam.zoom = parseFloat(params.get('zoom')) || 1.25;
     this.particles = new Particles();
     this.fx = new FX(this.particles, audio, this.cam, this.world);
+    this.progression = new Progression();
     this.state = 'menu';
     this.time = 0;
     this.menuPanT = 0;
     this.emitT = { fire: 0, sparks: rand(1, 3), ash: 0 };
     this.endDelay = 0;
     this.chainQueue = [];
+    this.stage = 1;
+    this._prevDetState = 'hidden';
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
@@ -135,23 +131,94 @@ class Game {
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
 
-  reset() {
-    this.player = new Player(assets.ranger, assets.shadow, assets.weapons, this.world, this.fx, this.cam, audio, hud);
-    this.player.x = 260; this.player.y = GROUND_Y;
-    this.enemies = ENEMY_SPAWNS.map((s) => {
+  spawnEnemiesForStage() {
+    const diff = clamp(this.stage - 1, 0, 8);
+    this.enemies = this.world.enemySpawns.map((s) => {
       const e = new Enemy(assets.phantom, assets.shadow, assets.weapons.rifle, this.world, this.fx, audio, s.x, s.min, s.max);
       e.y = s.y;
+      e.difficulty = diff;
+      e.maxHp = 100 + Math.min(60, diff * 5);
+      e.hp = e.maxHp;
       return e;
     });
+  }
+
+  // Re-applies every unlock the player has already earned (across sessions)
+  // to a freshly-constructed Player instance.
+  applyAllUnlocks() {
+    for (const u of UNLOCKS) if (this.progression.isUnlocked(u.id)) this.applyUnlock(u);
+    hud.setSlot4Visible(this.player.smgUnlocked);
+  }
+
+  applyUnlock(u) {
+    if (u.id === 'smg') this.player.smgUnlocked = true;
+    else if (u.id === 'armor25') this.player.maxArmor = Math.max(this.player.maxArmor, 25);
+    else if (u.id === 'armor50') this.player.maxArmor = Math.max(this.player.maxArmor, 50);
+    else if (u.id === 'rifleFinishUrban') this.player.applyFinish('rifle', 'urban');
+    else if (u.id === 'rifleFinishCinder') this.player.applyFinish('rifle', 'cinder');
+    else if (u.id === 'pistolFinishDesert') this.player.applyFinish('pistol', 'desert');
+    else if (u.id === 'knifeRavage') this.player.applyFinish('knife', 'ravage');
+    else if (u.id === 'phantomSkin') this.player.parts = assets.phantom;
+  }
+
+  // Awards XP, applies any newly-earned unlocks and shows a toast. Returns
+  // true if it displayed a level-up toast (so callers can avoid clobbering
+  // it with a lower-priority message on the same frame).
+  handleLevelUp(res) {
+    if (!res.leveledUp) return false;
+    audio.levelUp();
+    for (const u of res.newUnlocks) this.applyUnlock(u);
+    hud.setSlot4Visible(this.player.smgUnlocked);
+    const extra = res.newUnlocks.length ? ' — ' + res.newUnlocks.map((u) => u.label).join(', ') : '';
+    hud.notify(`LEVEL UP — ${res.newLevel}${extra}`);
+    return true;
+  }
+
+  onPlayerHit(headshot, killed) {
+    if (!killed) return;
+    this.progression.recordKill(headshot);
+    const res = this.progression.addXp(10 + (headshot ? 15 : 0));
+    this.handleLevelUp(res);
+  }
+
+  reset() {
+    this.stage = 1;
+    this.world.regenerate(1);
+    this.player = new Player(assets.ranger, assets.shadow, assets.weapons, this.world, this.fx, this.cam, audio, hud);
+    this.player.x = 260; this.player.y = GROUND_Y;
+    this.applyAllUnlocks();
+    hud.setWeaponIcons(this.player.arsenal);
+    this.spawnEnemiesForStage();
     this.particles.pool.length = 0;
     this.fx.tracers.length = 0; this.fx.lights.length = 0; this.fx.slashes.length = 0;
-    this.world.decalG.clearRect(0, 0, this.world.decalCv.width, this.world.decalCv.height);
-    for (const b of this.world.barrels) { b.alive = true; b.hp = 30; }
     this.chainQueue.length = 0;
     this.endDelay = 0;
     this.startTime = this.time;
     this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
     hud.setObjective(0, this.enemies.length);
+    hud.setStage(this.stage);
+    hud.setProgress(this.progression.data.level, this.progression.xpProgress());
+  }
+
+  // Called when every hostile in the current stage is down: the campaign is
+  // endless, so this rolls a fresh procedurally-generated stage rather than
+  // ending the run. Player health/ammo/XP/unlocks carry over.
+  nextStage() {
+    this.stage++;
+    this.world.regenerate(this.stage);
+    this.spawnEnemiesForStage();
+    this.player.x = 260; this.player.y = GROUND_Y; this.player.vx = 0; this.player.vy = 0;
+    this.player.onGround = false;
+    this.particles.pool.length = 0;
+    this.fx.tracers.length = 0; this.fx.lights.length = 0; this.fx.slashes.length = 0;
+    this.chainQueue.length = 0;
+    this.endDelay = 0;
+    this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
+    hud.setObjective(0, this.enemies.length);
+    hud.setStage(this.stage);
+    const res = this.progression.addXp(50 + this.stage * 5);
+    const leveled = this.handleLevelUp(res);
+    if (!leveled) hud.notify(`STAGE ${this.stage} — HOSTILES INBOUND`);
   }
 
   deploy() {
@@ -182,7 +249,7 @@ class Game {
       if (d < hurtRadius) {
         const dmg = Math.round(lerp(95, 15, d / hurtRadius));
         const dir = Math.sign(ent.x - b.x) || 1;
-        if (isPlayer) ent.hurt(dmg, dir); else ent.damage(dmg, dir, this.player);
+        if (isPlayer) ent.hurt(dmg, dir, b.x); else ent.damage(dmg, dir, this.player);
         ent.vx += dir * lerp(420, 90, d / hurtRadius);
         ent.vy -= lerp(260, 40, d / hurtRadius);
         ent.onGround = false;
@@ -245,29 +312,38 @@ class Game {
     const kills = this.enemies.filter((e) => e.deadT > 0).length;
     hud.setObjective(kills, this.enemies.length);
 
+    const det = getGlobalDetection(this.enemies);
+    hud.setDetection(det.state, det.value);
+    if (det.state !== this._prevDetState) { this._prevDetState = det.state; audio.detectionBeep(det.state); }
+    hud.setProgress(this.progression.data.level, this.progression.xpProgress());
+
     this.cam.follow(p.x, p.y - 60, Math.cos(p.aimWorld), dt);
     this.cam.update(dt, p.sprinting, Math.abs(p.vx) > 60);
 
     if (this.state === 'play') {
       if (p.deadT > 0) {
         this.endDelay += dt;
-        if (this.endDelay > 2.4) this.finish(false);
-      } else if (kills === this.enemies.length) {
+        if (this.endDelay > 2.4) this.finish();
+      } else if (this.enemies.length > 0 && kills === this.enemies.length) {
         this.endDelay += dt;
-        if (this.endDelay > 1.6) this.finish(true);
+        if (this.endDelay > 1.6) this.nextStage();
       }
     }
     input.endFrame();
   }
 
-  finish(win) {
+  finish() {
     const p = this.player;
     const acc = p.shots ? Math.round((p.hits / p.shots) * 100) : 0;
     const t = Math.round(this.time - this.startTime);
-    hud.end(win, [
-      `HOSTILES ELIMINATED — ${p.kills}`,
+    this.progression.recordShots(p.shots, p.hits);
+    this.progression.recordRun(this.stage, t);
+    hud.end([
+      `STAGE REACHED — ${this.stage}`,
+      `HOSTILES ELIMINATED — ${p.kills} &nbsp;(${p.headshots} HEADSHOTS)`,
       `ACCURACY — ${acc}%`,
       `MISSION TIME — ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`,
+      `OPERATOR LEVEL — ${this.progression.data.level}`,
     ].join('<br>'));
     this.setState('end');
   }
