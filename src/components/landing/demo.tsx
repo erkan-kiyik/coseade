@@ -62,7 +62,7 @@ export function Demo() {
             Watch AI transform <span className="gradient-text">boring into brilliant</span>
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            Real examples of how LinkedBoost rewrites your profile content.
+            Real examples of how Coseade rewrites your profile content.
           </p>
         </motion.div>
 
@@ -115,7 +115,7 @@ export function Demo() {
                   </div>
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-500">
-                      After — LinkedBoost AI
+                      After — Coseade AI
                     </div>
                     <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm font-medium leading-relaxed">
                       {typed}

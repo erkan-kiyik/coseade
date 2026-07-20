@@ -25,7 +25,7 @@ function headers() {
     "Content-Type": "application/json",
     // Optional but recommended by OpenRouter for analytics/rate-limit routing
     "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-    "X-Title": "LinkedBoost AI",
+    "X-Title": "Coseade AI",
   };
 }
 

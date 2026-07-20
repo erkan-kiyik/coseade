@@ -32,7 +32,7 @@ const faqs = [
   {
     question: "Will recruiters know I used AI?",
     answer:
-      "No. LinkedBoost generates suggestions grounded in your real experience — you review, personalize, and approve everything before it goes on your profile. The output is a stronger version of your story, not a generic template.",
+      "No. Coseade generates suggestions grounded in your real experience — you review, personalize, and approve everything before it goes on your profile. The output is a stronger version of your story, not a generic template.",
   },
 ];
 

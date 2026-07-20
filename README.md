@@ -1,4 +1,4 @@
-# LinkedBoost AI 🚀
+# Coseade AI 🚀
 
 **Optimize your LinkedIn profile with AI — get recruiter-ready in under 60 seconds.**
 
@@ -36,7 +36,7 @@ A production-ready SaaS application that analyzes LinkedIn profiles, scores them
 
 ```bash
 git clone <this-repo>
-cd linkedboost-ai
+cd coseade
 npm install
 ```
 

@@ -10,7 +10,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <Rocket className="h-4 w-4" />
         </span>
         <span className="text-xl tracking-tight">
-          LinkedBoost <span className="gradient-text">AI</span>
+          Coseade <span className="gradient-text">AI</span>
         </span>
       </Link>
       <div className="glass-strong relative w-full max-w-md rounded-3xl p-8 shadow-2xl shadow-violet-500/10">

@@ -48,7 +48,7 @@ export function Navbar() {
               <Rocket className="h-4 w-4" />
             </span>
             <span className="text-lg tracking-tight">
-              LinkedBoost <span className="gradient-text">AI</span>
+              Coseade <span className="gradient-text">AI</span>
             </span>
           </Link>
 
