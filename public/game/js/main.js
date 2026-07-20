@@ -7,7 +7,7 @@ import { Input } from './engine/input.js';
 import { Camera } from './engine/camera.js';
 import { Particles, K, burstSparks, puffSmoke } from './engine/particles.js';
 import { audio } from './engine/audio.js';
-import { clamp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
+import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
 import { makeCanvas } from './art/paint.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
@@ -74,6 +74,22 @@ class DemoDriver {
 const input = new Input(canvas);
 const demoDriver = DEMO ? new DemoDriver() : null;
 
+// scripted input for the deploy cinematic: walks the operator in from
+// off-screen, aiming forward, never firing. Driven by Game.updateIntro().
+class CutsceneDriver {
+  constructor() {
+    this.walk = false;
+    this.mouse = { x: 0, y: 0, down: false, clicked: false, rdown: false };
+  }
+  tick() { this.mouse.x = vw * 0.68; this.mouse.y = vh * 0.5; }
+  get moveX() { return this.walk ? 1 : 0; }
+  get jump() { return false; }
+  get sprint() { return false; }
+  hit() { return false; }
+  down() { return false; }
+  endFrame() {}
+}
+
 // ------------------------------------------------------------------ boot
 
 const assets = {};
@@ -121,6 +137,11 @@ class Game {
     this.chainQueue = [];
     this.stage = 1;
     this._prevDetState = 'hidden';
+    // the full walk-in cinematic only plays once per session (and never in
+    // ?demo=1, which scripts input assuming control right after deploy)
+    this.introShown = DEMO;
+    this.introBeats = new Set();
+    this.introEnding = false;
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
@@ -222,10 +243,103 @@ class Game {
   }
 
   deploy() {
-    this.reset();
-    this.setState('play');
-    audio.resume();
-    audio.startAmbience();
+    hud.sceneFade(() => {
+      this.reset();
+      if (!this.introShown) {
+        this.introShown = true;
+        this.startIntro();
+      } else {
+        this.setState('play');
+        audio.resume();
+        audio.startAmbience();
+      }
+    });
+  }
+
+  // ------------------------------------------------------ deploy cinematic
+
+  startIntro() {
+    const p = this.player;
+    p.x = 260 - 560; p.y = GROUND_Y;
+    p.vx = 0; p.vy = 0; p.onGround = false; p.facing = 1;
+    this.cutscene = new CutsceneDriver();
+    this.introT = 0;
+    this.introBeats.clear();
+    this.introEnding = false;
+    this.cam.zoom = 0.95;
+    this.cam.follow(p.x + 140, p.y - 60, 0, 0, true);
+    hud.showCine(true);
+    hud.showSkipHint(true);
+    this.setState('intro');
+  }
+
+  // Runs a short scripted walk-in: the operator advances from off-screen
+  // to the play spawn mark while a three-beat mission briefing fades in,
+  // camera dollies wide-to-tight. Any key or click fast-forwards straight
+  // to the hand-off. Only the timeline lives here — movement, animation
+  // and rendering all go through the real Player/Camera update paths.
+  updateIntro(dt) {
+    // once the hand-off has started (skip or natural end) the scene freezes
+    // and waits for the sceneFade callback to flip state — never re-enter
+    // the timeline below, or a late skip could race the scheduled finish.
+    // The caller (update()) always runs input.endFrame() after this returns.
+    if (this.introEnding) return;
+
+    this.introT += dt;
+    const t = this.introT;
+    const cs = this.cutscene;
+
+    if (input.pressed.size > 0 || input.mouse.clicked) {
+      this.introEnding = true;
+      this.finishIntro();
+      return;
+    }
+
+    cs.walk = t > 0.15 && t < 3.0;
+    cs.tick();
+
+    const beat = (id, at, fn) => {
+      if (t > at && !this.introBeats.has(id)) { this.introBeats.add(id); fn(); }
+    };
+    beat('b1', 0.25, () => hud.setIntroText(
+      'SECTOR 9 — CINDER WORKS DISTRICT',
+      'Comms went dark three days ago, the moment the powerplant did.'
+    ));
+    beat('b2', 2.0, () => hud.setIntroText(
+      'SGT. "VANDAL" — 3RD RECON',
+      'An unmarked force has dug into the foundries and isn’t answering hails.'
+    ));
+    beat('b3', 3.8, () => hud.setIntroText(
+      undefined,
+      'One operator, in first. No backup — no extraction until the sector’s dark for good.'
+    ));
+    beat('b4', 5.6, () => hud.hideIntroText());
+
+    if (t > 6.2) {
+      this.introEnding = true;
+      this.finishIntro();
+      return;
+    }
+
+    this.player.update(dt, { input: cs, enemies: [], game: this, vw, vh });
+    this.cam.zoom = damp(this.cam.zoom, t < 3.0 ? 0.95 : 1.25, 1.6, dt);
+    this.cam.follow(this.player.x, this.player.y - 60, 0, dt);
+    this.cam.update(dt, false, Math.abs(this.player.vx) > 40);
+  }
+
+  finishIntro() {
+    hud.hideIntroText();
+    hud.showSkipHint(false);
+    hud.sceneFade(() => {
+      hud.showCine(false);
+      const p = this.player;
+      p.x = 260; p.vx = 0; p.vy = 0; p.facing = 1;
+      this.cam.zoom = parseFloat(params.get('zoom')) || 1.25;
+      this.cam.follow(p.x, p.y - 60, 0, 0, true);
+      this.setState('play');
+      audio.resume();
+      audio.startAmbience();
+    });
   }
 
   setState(s) {
@@ -295,6 +409,12 @@ class Game {
       this.cam.follow(px, GROUND_Y - 80, 0, dt);
       this.cam.update(dt, false, false);
       for (const e of this.enemies) e.update(dt, null, this);
+      input.endFrame();
+      return;
+    }
+
+    if (this.state === 'intro') {
+      this.updateIntro(dt);
       input.endFrame();
       return;
     }

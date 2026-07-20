@@ -31,6 +31,8 @@ export class Hud {
       xpFill: $('xp-fill'), lvlLabel: $('lvl-label'),
       notify: $('notify'),
       endTitle: $('end-title'), endDetail: $('end-detail'),
+      cineBars: $('cine-bars'), introKicker: $('intro-kicker'), introLine: $('intro-line'),
+      introSkip: $('intro-skip'), sceneFade: $('scene-fade'),
     };
     this._lastAmmo = null;
     this._lastDetState = null;
@@ -195,6 +197,47 @@ export class Hud {
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
+  }
+
+  // ---- deploy cinematic: letterbox bars, briefing text, dip-to-black cuts
+
+  showCine(on) {
+    this.el.cineBars.classList.toggle('active', on);
+  }
+
+  // Pass undefined for either argument to leave that line as-is (so a later
+  // beat can update only the briefing line while the kicker stays put).
+  setIntroText(kicker, line) {
+    if (kicker !== undefined) {
+      this.el.introKicker.textContent = kicker;
+      this.el.introKicker.classList.toggle('show', kicker.length > 0);
+    }
+    if (line !== undefined) {
+      this.el.introLine.textContent = line;
+      this.el.introLine.classList.toggle('show', line.length > 0);
+    }
+  }
+
+  hideIntroText() {
+    this.el.introKicker.classList.remove('show');
+    this.el.introLine.classList.remove('show');
+  }
+
+  showSkipHint(on) {
+    this.el.introSkip.classList.toggle('show', on);
+  }
+
+  // Dips the screen to black, runs `onBlack` at the peak (to swap state,
+  // snap the camera, etc. without a visible pop), then fades back in.
+  sceneFade(onBlack) {
+    const el = this.el.sceneFade;
+    el.style.transition = 'opacity 0.22s ease-in';
+    el.style.opacity = '1';
+    setTimeout(() => {
+      onBlack();
+      el.style.transition = 'opacity 0.4s ease-out';
+      requestAnimationFrame(() => { el.style.opacity = '0'; });
+    }, 220);
   }
 
   // The campaign is endless — the only way a run ends is the operator going
