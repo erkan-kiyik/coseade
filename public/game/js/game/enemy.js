@@ -339,7 +339,7 @@ export class Enemy {
             this.updateReload(dt, ws);
           } else if (this.mag <= 0) {
             this.reload = { t: 0, T: 2.5, s0: false, s1: false, s2: false, dropped: false };
-          } else if (this.flinchT <= 0 && this.alertT > 0.4) {
+          } else if (this.flinchT <= 0 && this.engagedT > 0.18) {
             if (this.burstLeft > 0) {
               if (this.shotCd <= 0) this.fireShot(player);
             } else {

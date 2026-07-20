@@ -208,18 +208,20 @@ export class Player {
     if (input.hit('Digit3')) this.switchTo('knife');
     if (input.hit('Digit4') && this.smgUnlocked) this.switchTo('smg');
 
-    // recoil springs
-    ws.recoilVel += -ws.recoil * 240 * dt;
-    ws.recoilVel *= Math.exp(-14 * dt);
+    // recoil springs — stiffer restoring force + heavier damping so the
+    // weapon snaps back to center quickly and settles smoothly (no bounce)
+    ws.recoilVel += -ws.recoil * 340 * dt;
+    ws.recoilVel *= Math.exp(-20 * dt);
     ws.recoil = Math.max(0, ws.recoil + ws.recoilVel * dt * 44);
-    ws.recoilRotVel += -ws.recoilRot * 260 * dt;
-    ws.recoilRotVel *= Math.exp(-13 * dt);
+    ws.recoilRotVel += -ws.recoilRot * 360 * dt;
+    ws.recoilRotVel *= Math.exp(-19 * dt);
     ws.recoilRot += ws.recoilRotVel * dt * 40;
     ws.flashT = Math.max(0, ws.flashT - dt * 14);
     ws.boltBack = Math.max(0, ws.boltBack - dt * 9);
     ws.slideBack = Math.max(0, ws.slideBack - dt * 10);
     this.fireCd -= dt;
-    this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.09);
+    // aim-drift bloom recovers faster → tighter sustained accuracy
+    this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.17);
 
     // baseline pose modifiers
     let offX = 0, offY = 0, rot = 0;
@@ -383,7 +385,7 @@ export class Player {
     const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
     const ejl = toWorld(this, weaponPoint(wa, wpn.eject));
     let ang = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
-    ang += randSpread(this.visSpread) - this.recoilAccum * 0.5 * this.facing;
+    ang += randSpread(this.visSpread) - this.recoilAccum * 0.32 * this.facing;
 
     // hitscan
     const range = 1500;
@@ -428,11 +430,11 @@ export class Player {
     const pat = wpn.recoilPattern;
     const patMul = pat ? pat[ws.shotIndex % pat.length] : 1;
     ws.shotIndex = (ws.shotIndex || 0) + 1;
-    ws.recoilVel += wpn.recoilKick * 3 * patMul;
-    ws.recoilRotVel -= wpn.recoilRot * 26 * patMul;
+    ws.recoilVel += wpn.recoilKick * 2.1 * patMul;
+    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul;
     if (wpn.bolt) ws.boltBack = 1;
     if (wpn.slide) ws.slideBack = 1;
-    this.recoilAccum = Math.min(0.09, this.recoilAccum + 0.013);
+    this.recoilAccum = Math.min(0.05, this.recoilAccum + 0.008);
     this.cam.recoil(wpn.camKick);
     this.cam.addTrauma(wpn.camTrauma);
     this.audio.shot(wpn.shotSound);
