@@ -14,6 +14,12 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "4mb",
     },
   },
+  async rewrites() {
+    return [
+      { source: "/game", destination: "/game/index.html" },
+      { source: "/game/", destination: "/game/index.html" },
+    ];
+  },
   async headers() {
     return [
       {
