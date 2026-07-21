@@ -182,6 +182,17 @@ class AudioSys {
   }
 
   ui() { this._tone({ freq: 640, dur: 0.05, gain: 0.07, type: 'triangle' }); }
+  // soft UI click / pop for menu taps
+  pop() {
+    this._tone({ freq: 520, f1: 900, dur: 0.05, gain: 0.06, type: 'sine' });
+    this._tone({ freq: 1400, dur: 0.03, gain: 0.03, type: 'triangle', t0: 0.01 });
+  }
+  // rising reward chime (claim / purchase / unlock)
+  reward() {
+    this._tone({ freq: 620, dur: 0.1, gain: 0.09, type: 'triangle' });
+    this._tone({ freq: 820, dur: 0.1, gain: 0.08, type: 'triangle', t0: 0.08 });
+    this._tone({ freq: 1240, dur: 0.16, gain: 0.08, type: 'sine', t0: 0.16 });
+  }
 
   // ---- awareness / progression ----
   detectionBeep(state) {
