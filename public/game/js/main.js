@@ -5,7 +5,7 @@
 
 import { Input } from './engine/input.js';
 import { Camera } from './engine/camera.js';
-import { Particles, K, burstSparks, puffSmoke } from './engine/particles.js';
+import { Particles, K, burstSparks, puffSmoke, columnSmoke, ventSmoke } from './engine/particles.js';
 import { audio } from './engine/audio.js';
 import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
 import { makeCanvas, drawSprite } from './art/paint.js';
@@ -539,8 +539,10 @@ class Game {
         color: `rgba(196,190,182,${rand(0.25, 0.5)})`,
       });
     }
-    // burn barrel
+    // industrial emitters — only tick sources within a screen of the camera
+    const near = vw * 0.9 + 260;
     for (const em of this.world.emitters) {
+      const onScreen = Math.abs(em.x - this.cam.x) < near;
       if (em.kind === 'fire') {
         E.fire -= dt;
         if (E.fire <= 0) {
@@ -550,9 +552,7 @@ class Game {
             vx: randSpread(14), vy: -rand(40, 90),
             life: rand(0.4, 1.1), size: rand(1.4, 2.8), drag: 1.5,
           });
-          if (Math.random() < 0.3) {
-            puffSmoke(this.particles, em.x, em.y - 8, 1, 'rgba(70,66,62,0.8)', { vy: -34, sizeMul: 0.8 });
-          }
+          if (Math.random() < 0.4) ventSmoke(this.particles, em.x, em.y - 10, -Math.PI / 2, 'soot', { sizeMul: 0.85 });
         }
       } else if (em.kind === 'sparks') {
         E.sparks -= dt;
@@ -561,6 +561,14 @@ class Game {
           burstSparks(this.particles, em.x, em.y, Math.PI / 2, 7, 0.7, 210);
           this.fx.addLight(em.x, em.y, 90, [180, 210, 255], 0.8, 0.12);
         }
+      } else if (em.kind === 'chimney') {
+        if (!onScreen) continue;
+        em.t -= dt;
+        if (em.t <= 0) { em.t = em.rate; columnSmoke(this.particles, em.x, em.y, em.tint); }
+      } else if (em.kind === 'vent') {
+        if (!onScreen) continue;
+        em.t -= dt;
+        if (em.t <= 0) { em.t = em.rate; ventSmoke(this.particles, em.x, em.y, em.dir, em.tint); }
       }
     }
   }
@@ -649,36 +657,50 @@ class Game {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(lightCv, 0, 0, canvas.width, canvas.height);
-    // bloom
+    // bloom — restrained: a tighter blur at lower gain reads as a soft light
+    // wrap rather than a hazy wash (reduced bloom / less visual noise)
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.6;
-    ctx.filter = 'blur(18px)';
+    ctx.globalAlpha = 0.42;
+    ctx.filter = 'blur(13px)';
     ctx.drawImage(glowCv, 0, 0, canvas.width, canvas.height);
     ctx.filter = 'none';
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // Cinematic colour grade: gentle warm-highlight / cool-shadow split with a
+  // balanced exposure, distant atmospheric haze and a soft vignette. Tuned
+  // down from the old pass to avoid oversaturation and heavy grain.
   grade() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // warm key push
+    const gy = vh / 2 + (GROUND_Y - this.cam.y) * this.cam.zoom;
+
+    // atmospheric haze band across the mid-distance (distant fog)
+    ctx.globalCompositeOperation = 'source-over';
+    const haze = ctx.createLinearGradient(0, gy - vh * 0.5, 0, gy);
+    haze.addColorStop(0, 'rgba(150,158,172,0)');
+    haze.addColorStop(1, 'rgba(150,158,172,0.05)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, vw, gy);
+
+    // warm highlight push (softened — less saturation)
     ctx.globalCompositeOperation = 'overlay';
-    ctx.fillStyle = 'rgba(255,176,108,0.09)';
+    ctx.fillStyle = 'rgba(255,180,112,0.055)';
     ctx.fillRect(0, 0, vw, vh);
     // cool shadow tint
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = 'rgba(52,72,120,0.12)';
+    ctx.fillStyle = 'rgba(48,68,116,0.10)';
     ctx.fillRect(0, 0, vw, vh);
-    // vignette
+    // vignette — softer, larger falloff
     ctx.globalCompositeOperation = 'source-over';
-    const v = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.44, vw / 2, vh / 2, Math.max(vw, vh) * 0.74);
+    const v = ctx.createRadialGradient(vw / 2, vh * 0.46, Math.min(vw, vh) * 0.5, vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
     v.addColorStop(0, 'rgba(5,6,10,0)');
-    v.addColorStop(1, 'rgba(4,5,9,0.36)');
+    v.addColorStop(1, 'rgba(4,5,9,0.3)');
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, vw, vh);
-    // film grain
+    // film grain — subtle
     ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = 0.05;
+    ctx.globalAlpha = 0.03;
     const ox = (Math.random() * 256) | 0, oy = (Math.random() * 256) | 0;
     for (let x = -ox; x < vw; x += 256) {
       for (let y = -oy; y < vh; y += 256) ctx.drawImage(grainCv, x, y);

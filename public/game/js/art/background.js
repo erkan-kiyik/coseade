@@ -196,6 +196,112 @@ function paintFar() {
   return cv;
 }
 
+// ---- industrial landmark silhouettes (drawn into the mid layer) ----------
+
+// Hyperboloid cooling tower: characteristic waisted profile, vertical ribbing,
+// a lit rim at the mouth and a faint standing steam wisp.
+function coolingTower(g, cx, baseY, h, w, col) {
+  const topY = baseY - h;
+  const waistY = topY + h * 0.62;
+  const rTop = w * 0.5, rWaist = w * 0.34, rBase = w * 0.5;
+  const profile = (side) => {
+    g.beginPath();
+    g.moveTo(cx - side * rBase, baseY);
+    g.quadraticCurveTo(cx - side * rWaist * 0.7, (baseY + waistY) / 2, cx - side * rWaist, waistY);
+    g.quadraticCurveTo(cx - side * rTop * 0.9, (waistY + topY) / 2, cx - side * rTop, topY);
+  };
+  g.fillStyle = lingrad(g, cx - rBase, 0, cx + rBase, 0, [
+    [0, shade(col, -0.28)], [0.4, shade(col, 0.08)], [0.6, col], [1, shade(col, -0.34)],
+  ]);
+  g.beginPath();
+  profile(1);
+  g.lineTo(cx + rTop, topY);
+  g.quadraticCurveTo(cx + rWaist * 0.9, (waistY + topY) / 2, cx + rWaist, waistY);
+  g.quadraticCurveTo(cx + rBase * 0.7, (baseY + waistY) / 2, cx + rBase, baseY);
+  g.closePath(); g.fill();
+  // vertical ribbing
+  g.strokeStyle = 'rgba(0,0,0,0.14)'; g.lineWidth = 1.5;
+  for (let i = -3; i <= 3; i++) {
+    const fx = i / 3;
+    g.beginPath();
+    g.moveTo(cx + fx * rBase, baseY);
+    g.quadraticCurveTo(cx + fx * rWaist * 0.85, waistY, cx + fx * rTop, topY);
+    g.stroke();
+  }
+  // lit mouth rim + shadowed throat
+  g.fillStyle = shade(col, 0.22);
+  g.beginPath(); g.ellipse(cx, topY, rTop, rTop * 0.16, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(10,10,14,0.55)';
+  g.beginPath(); g.ellipse(cx, topY + 2, rTop * 0.8, rTop * 0.12, 0, 0, Math.PI * 2); g.fill();
+  // standing steam
+  g.fillStyle = 'rgba(200,204,210,0.10)';
+  for (let s = 0; s < 5; s++) {
+    g.beginPath();
+    g.arc(cx + Math.sin(s * 1.7) * rTop * 0.4, topY - 20 - s * 26, rTop * (0.55 - s * 0.05), 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+// Telescopic gasometer: banded cylinder in an external lattice guide frame.
+function gasHolder(g, cx, baseY, h, w, col) {
+  const topY = baseY - h, r = w * 0.5;
+  g.fillStyle = lingrad(g, cx - r, 0, cx + r, 0, [
+    [0, shade(col, -0.3)], [0.45, col], [1, shade(col, -0.36)],
+  ]);
+  rrRect(g, cx - r, topY + 14, w, h - 14, 4); g.fill();
+  // domed crown
+  g.beginPath(); g.ellipse(cx, topY + 14, r, 16, 0, Math.PI, 0); g.fill();
+  // telescopic bands
+  g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 2;
+  for (let i = 1; i < 4; i++) {
+    const yy = topY + 14 + (h - 14) * (i / 4);
+    g.beginPath(); g.moveTo(cx - r, yy); g.lineTo(cx + r, yy); g.stroke();
+  }
+  // external lattice guide columns
+  g.strokeStyle = 'rgba(40,40,50,0.85)'; g.lineWidth = 3;
+  for (const s of [-1, 1]) {
+    g.beginPath(); g.moveTo(cx + s * (r + 6), baseY); g.lineTo(cx + s * (r + 6), topY - 8); g.stroke();
+  }
+  g.lineWidth = 1.4; g.strokeStyle = 'rgba(40,40,50,0.6)';
+  for (let i = 0; i < 7; i++) {
+    const yy = topY - 8 + (h) * (i / 7);
+    g.beginPath(); g.moveTo(cx - r - 6, yy); g.lineTo(cx + r + 6, yy + 18); g.stroke();
+  }
+}
+
+// Tower crane: mast + horizontal jib + counter-jib with a hanging load line.
+function towerCrane(g, x, topY, h) {
+  g.fillStyle = '#2e2d38';
+  g.fillRect(x, topY, 7, h);                       // mast
+  g.fillRect(x - 130, topY - 6, 300, 7);           // jib + counter-jib
+  g.fillStyle = '#26252f';
+  g.fillRect(x - 150, topY - 20, 26, 20);          // counterweight
+  g.strokeStyle = 'rgba(46,45,56,0.9)'; g.lineWidth = 2;
+  for (let i = 0; i < 9; i++) {                     // jib lattice
+    g.beginPath(); g.moveTo(x + 10 + i * 18, topY - 5); g.lineTo(x + 20 + i * 18, topY + 8); g.stroke();
+  }
+  // hoist line + hook
+  g.fillStyle = '#2e2d38';
+  g.fillRect(x + 120, topY, 1.6, 60);
+  g.fillRect(x + 116, topY + 60, 10, 6);
+  // mast bracing
+  g.strokeStyle = 'rgba(46,45,56,0.8)'; g.lineWidth = 1.6;
+  for (let i = 0; i < Math.floor(h / 26); i++) {
+    g.beginPath(); g.moveTo(x, topY + i * 26); g.lineTo(x + 7, topY + (i + 1) * 26); g.stroke();
+  }
+}
+
+// small rounded-rect helper (kept local to avoid touching shared paint utils)
+function rrRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
 // ---------------- mid factory line ----------------
 function paintMid() {
   const W = 2048, H = 760;
@@ -304,6 +410,14 @@ function paintMid() {
     g.lineTo(gx + 14 + i * 54, gy);
     g.stroke();
   }
+
+  // ---- landmark structures: cooling towers, a gasometer, tower crane ----
+  // Placed by hand at spread positions (not a uniform loop) so the skyline
+  // has recognisable, non-repeating silhouettes.
+  coolingTower(g, W * 0.08, baseY, 300, 150, bodyCol(0.35));
+  coolingTower(g, W * 0.86, baseY, 250, 128, bodyCol(0.5));
+  gasHolder(g, W * 0.58, baseY, 168, 150, bodyCol(0.42));
+  towerCrane(g, W * 0.7, baseY - 250, 250);
 
   // atmosphere: haze wash rising from the base
   g.fillStyle = lingrad(g, 0, H - 380, 0, H, [

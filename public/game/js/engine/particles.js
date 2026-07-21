@@ -18,6 +18,8 @@ export class Particles {
     this.max = max;
     this.onImpact = null;   // (kind, x, y, vx, vy) => void
     this.solidAt = () => false;
+    this.time = 0;
+    this.wind = 0;          // smooth gusty crosswind, drives smoke drift
   }
 
   spawn(kind, o) {
@@ -42,6 +44,9 @@ export class Particles {
   }
 
   update(dt) {
+    this.time += dt;
+    // gusty wind: two out-of-phase sines so it never obviously loops
+    this.wind = Math.sin(this.time * 0.24) * 12 + Math.sin(this.time * 0.083 + 1.3) * 20;
     const pool = this.pool;
     for (let i = pool.length - 1; i >= 0; i--) {
       const p = pool[i];
@@ -52,6 +57,12 @@ export class Particles {
       if (p.drag) { const d = Math.exp(-p.drag * dt); p.vx *= d; p.vy *= d; }
       if (p.kind === K.ASH || p.kind === K.EMBER) {
         p.vx += Math.sin(p.age * 1.7 + p.seed) * 14 * dt;
+      } else if (p.kind === K.SMOKE || p.kind === K.MUZZLE_SMOKE) {
+        // turbulence (curl-ish drift) + wind push, scaled by remaining life so
+        // rising columns wander and shear apart instead of marching uniformly
+        const turb = p.turb || 22;
+        p.vx += Math.sin(p.age * 1.9 + p.seed) * turb * dt + this.wind * (p.windMul || 1) * dt;
+        p.vy += Math.cos(p.age * 1.5 + p.seed * 1.7) * turb * 0.45 * dt;
       }
       const nx = p.x + p.vx * dt;
       const ny = p.y + p.vy * dt;
@@ -100,7 +111,7 @@ export class Particles {
           g.fill();
           break;
         }
-        case K.SMOKE: case K.MUZZLE_SMOKE: case K.DUST: {
+        case K.DUST: {
           const r = Math.max(0.5, p.size);
           const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
           grad.addColorStop(0, p.color);
@@ -110,6 +121,37 @@ export class Particles {
           g.beginPath();
           g.arc(p.x, p.y, r, 0, TAU);
           g.fill();
+          break;
+        }
+        case K.SMOKE: case K.MUZZLE_SMOKE: {
+          // volumetric puff: parse rgb once, then two soft layers (a wide,
+          // faint body + a denser core) with a soft fade-in so nothing pops
+          if (!p._rgb) {
+            const m = /(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(p.color);
+            p._rgb = m ? [+m[1], +m[2], +m[3]] : [140, 140, 145];
+          }
+          const [cr, cg, cb] = p._rgb;
+          const r = Math.max(0.5, p.size);
+          const fin = t < 0.14 ? t / 0.14 : 1;                 // grow-in
+          const fout = t > 0.5 ? 1 - (t - 0.5) / 0.5 : 1;      // gradual dissipation
+          const base = clamp(p.alpha * fin * fout, 0, 1);
+          if (base <= 0.01) break;
+          // wide faint body
+          let grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+          grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.5)`);
+          grad.addColorStop(0.55, `rgba(${cr},${cg},${cb},0.22)`);
+          grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          g.fillStyle = grad;
+          g.globalAlpha = base * 0.6;
+          g.beginPath(); g.arc(p.x, p.y, r, 0, TAU); g.fill();
+          // denser offset core for internal density variation
+          const ox = Math.cos(p.seed) * r * 0.18, oy = Math.sin(p.seed) * r * 0.18;
+          grad = g.createRadialGradient(p.x + ox, p.y + oy, 0, p.x + ox, p.y + oy, r * 0.6);
+          grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.75)`);
+          grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          g.fillStyle = grad;
+          g.globalAlpha = base * 0.7;
+          g.beginPath(); g.arc(p.x + ox, p.y + oy, r * 0.6, 0, TAU); g.fill();
           break;
         }
         case K.CASING: {
@@ -173,8 +215,55 @@ export function puffSmoke(ps, x, y, n, color = 'rgba(140,140,145,0.85)', opts = 
       size: rand(4, 9) * (opts.sizeMul || 1),
       grow: rand(14, 30) * (opts.growMul || 1),
       drag: 1.6, color, alpha: opts.alpha || 0.75,
+      turb: opts.turb, windMul: opts.windMul,
     });
   }
+}
+
+// Slow-rising industrial smoke column (chimneys / stacks). Large soft puffs
+// that grow, drift on the wind and dissipate over several seconds. `tint`
+// selects the source colour: grey exhaust, black soot, white steam, etc.
+const SMOKE_TINT = {
+  exhaust: [92, 90, 96],   // dirty grey industrial exhaust
+  soot:    [46, 44, 46],   // black smoke from burning debris
+  steam:   [188, 190, 196],// pale water-vapour plume
+  chem:    [120, 126, 108],// sickly chemical haze
+  dust:    [120, 108, 92], // brown dust / dry vent
+};
+
+export function columnSmoke(ps, x, y, tint = 'exhaust', opts = {}) {
+  const c = SMOKE_TINT[tint] || SMOKE_TINT.exhaust;
+  const ji = 0.5 + Math.random() * 0.5;   // per-puff density variance
+  ps.spawn(K.SMOKE, {
+    x: x + randSpread(6), y: y + randSpread(4),
+    vx: randSpread(10) + (opts.vx || 0),
+    vy: -(rand(24, 44)) * (opts.rise || 1),
+    life: rand(3.4, 6.2) * (opts.lifeMul || 1),
+    size: rand(14, 26) * (opts.sizeMul || 1),
+    grow: rand(26, 46),
+    drag: 0.5,
+    color: `rgba(${c[0]},${c[1]},${c[2]},1)`,
+    alpha: (opts.alpha || 0.5) * ji,
+    turb: opts.turb || 26,
+    windMul: opts.windMul || 1.4,
+  });
+}
+
+// Short sharp exhaust burst (vents, damaged machinery) — faster, lower, denser.
+export function ventSmoke(ps, x, y, dir = 0, tint = 'exhaust', opts = {}) {
+  const c = SMOKE_TINT[tint] || SMOKE_TINT.exhaust;
+  ps.spawn(K.SMOKE, {
+    x, y,
+    vx: Math.cos(dir) * rand(20, 60) + randSpread(14),
+    vy: Math.sin(dir) * rand(20, 60) - rand(8, 24),
+    life: rand(1.2, 2.6) * (opts.lifeMul || 1),
+    size: rand(6, 12) * (opts.sizeMul || 1),
+    grow: rand(20, 38),
+    drag: 1.1,
+    color: `rgba(${c[0]},${c[1]},${c[2]},1)`,
+    alpha: opts.alpha || 0.6,
+    turb: 30, windMul: 1,
+  });
 }
 
 export function kickDust(ps, x, y, dir, n = 5) {

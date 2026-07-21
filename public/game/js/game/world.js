@@ -181,6 +181,13 @@ export class World {
     L(2390, GY - 30, 150, [255, 150, 60], 0.85, 0.8);
     // shorted cable sparking above the road
     this.emitters.push({ kind: 'sparks', x: 3506, y: GY - 132 });
+    // industrial smoke sources: rooftop stacks rising over the sector + a
+    // couple of ground vents. Hand-placed for the authored opening stage.
+    this.emitters.push({ kind: 'chimney', x: 760, y: GY - 260, tint: 'exhaust', rate: 0.3, t: 0 });
+    this.emitters.push({ kind: 'chimney', x: 2980, y: GY - 300, tint: 'soot', rate: 0.34, t: 0.15 });
+    this.emitters.push({ kind: 'chimney', x: 4180, y: GY - 230, tint: 'steam', rate: 0.26, t: 0.3 });
+    this.emitters.push({ kind: 'vent', x: 1640, y: GY - 34, tint: 'exhaust', dir: 0, rate: 0.7, t: 0.2 });
+    this.emitters.push({ kind: 'vent', x: 3120, y: GY - 30, tint: 'dust', dir: Math.PI, rate: 0.85, t: 0.5 });
 
     // loot: a couple of resupply crates tucked near cover
     this.pickups.push({ x: 1145, y: GY - 40, kind: 'ammo', alive: true, bob: rand(0, 6) });
@@ -283,6 +290,31 @@ export class World {
     }
     if (rng.chance(0.5)) {
       this.emitters.push({ kind: 'sparks', x: rng.range(400, mapW - 400), y: GY - rng.range(110, 160) });
+    }
+    // -- industrial smoke sources: rooftop stacks (steady columns) + a couple
+    //    of ground vents / damaged machinery. Tints vary by source so plumes
+    //    read differently across the sector. Placed high so columns rise over
+    //    the rooftops without colliding with the play space.
+    const stackTints = ['exhaust', 'exhaust', 'soot', 'steam', 'chem'];
+    const stackCount = rng.int(2, 4);
+    for (let i = 0; i < stackCount; i++) {
+      this.emitters.push({
+        kind: 'chimney',
+        x: rng.range(200, mapW - 200),
+        y: GY - rng.range(150, 300),
+        tint: rng.pick(stackTints),
+        rate: rand(0.22, 0.4), t: rand(0, 0.4),
+      });
+    }
+    for (let i = 0; i < rng.int(1, 3); i++) {
+      this.emitters.push({
+        kind: 'vent',
+        x: rng.range(300, mapW - 300),
+        y: GY - rng.range(20, 70),
+        tint: rng.pick(['exhaust', 'dust', 'steam']),
+        dir: rng.pick([0, Math.PI]),
+        rate: rand(0.5, 1.0), t: rand(0, 0.6),
+      });
     }
 
     // -- loot: scattered resupply crates, more on higher stages --
