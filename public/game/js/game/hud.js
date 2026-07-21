@@ -28,7 +28,7 @@ export class Hud {
       hitmark: $('hitmark'), damage: $('damage-flash'),
       dmgLeft: $('dmg-left'), dmgRight: $('dmg-right'), dmgOmni: $('dmg-omni'),
       detBar: $('det-bar'), detFill: $('det-fill'), detLabel: $('det-label'),
-      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'),
+      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'), hudTokens: $('hud-tokens'),
       notify: $('notify'),
       endTitle: $('end-title'), endDetail: $('end-detail'),
       cineBars: $('cine-bars'), introKicker: $('intro-kicker'), introLine: $('intro-line'),
@@ -155,6 +155,10 @@ export class Hud {
   setProgress(level, xpFrac) {
     this.el.lvlLabel.textContent = `LVL ${level}`;
     this.el.xpFill.style.width = `${Math.round(xpFrac * 100)}%`;
+  }
+
+  setTokens(n) {
+    if (this.el.hudTokens) this.el.hudTokens.textContent = `◈ ${n}`;
   }
 
   setAimScreen(x, y) { this._aimX = x; this._aimY = y; }

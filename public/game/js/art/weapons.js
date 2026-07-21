@@ -297,7 +297,9 @@ function paintPistolSlide() {
 }
 
 // ============================ "TALON-7" KNIFE ============================
-function paintKnife() {
+function paintKnife(finish) {
+  // Optional energy finish: recolors the blade to an emissive edge (VOLT EDGE).
+  const blade = finish && finish.blade;
   // box x -6..+16, y -4..+4; anchor at grip center → (6,4)
   return makeSprite(22, 9, 6, 4.5, (g) => {
     g.translate(6, 4.5);
@@ -325,10 +327,15 @@ function paintKnife() {
     // guard
     g.fillStyle = lingrad(g, 0, -3.2, 0, 3.2, [[0, '#6a6f76'], [1, '#2c2f33']]);
     rr(g, -0.9, -3, 1.6, 6, 0.6); g.fill();
-    // blade: recurve tanto, satin finish
-    g.fillStyle = lingrad(g, 0, -3, 0, 2.4, [
-      [0, '#c9ced6'], [0.42, '#9aa1aa'], [0.55, '#585d64'], [1, '#3a3e44'],
-    ]);
+    // blade: recurve tanto — satin steel, or an emissive energy edge
+    g.fillStyle = blade
+      ? lingrad(g, 0, -3, 0, 2.4, [
+          [0, '#d6f6ff'], [0.4, blade], [0.62, shade(blade, -0.35)], [1, shade(blade, -0.6)],
+        ])
+      : lingrad(g, 0, -3, 0, 2.4, [
+          [0, '#c9ced6'], [0.42, '#9aa1aa'], [0.55, '#585d64'], [1, '#3a3e44'],
+        ]);
+    if (blade) { g.shadowColor = blade; g.shadowBlur = 5; }
     g.beginPath();
     g.moveTo(0.7, -2.6);
     g.lineTo(9.4, -2.9);                        // spine
@@ -336,8 +343,11 @@ function paintKnife() {
     g.quadraticCurveTo(11.5, 1.6, 7, 1.9);      // edge belly
     g.quadraticCurveTo(3, 2.2, 0.7, 1.9);
     g.closePath(); g.fill();
+    g.shadowBlur = 0;
     // edge grind highlight
-    g.fillStyle = lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(240,244,250,0.85)'], [1, 'rgba(160,168,178,0.15)']]);
+    g.fillStyle = blade
+      ? lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(235,252,255,0.95)'], [1, withA(blade, 0.3)]])
+      : lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(240,244,250,0.85)'], [1, 'rgba(160,168,178,0.15)']]);
     g.beginPath();
     g.moveTo(1, 1.1);
     g.quadraticCurveTo(7, 1.4, 11.4, 0.5);
@@ -557,18 +567,27 @@ export function buildWeapons() {
     default: rifleBody,
     urban: paintRifleBody('ranger', { rec: '#3c4750', poly: '#2b3640' }),
     cinder: paintRifleBody('ranger', { rec: '#4a2e26', poly: '#38221c' }),
+    arc: paintRifleBody('ranger', { rec: '#123742', poly: '#0c2731' }),   // ARC-9 energy
   };
   const pistolBody = paintPistolBody();
   const pistolFinishes = {
     default: pistolBody,
     desert: paintPistolBody({ grip: '#5c4f3a', frame: '#6b5c42' }),
+    onyx: paintPistolBody({ grip: '#161719', frame: '#1c1d1f' }),
+    gold: paintPistolBody({ grip: '#5a4718', frame: '#8a6f28' }),
   };
   const knifeBody = paintKnife();
   const knifeFinishes = {
     default: knifeBody,
     ravage: paintKnifeBowie(),
+    volt: paintKnife({ blade: '#38e0ff' }),   // VOLT EDGE energy blade
   };
   const smgBody = paintSmgBody();
+  const smgFinishes = {
+    default: smgBody,
+    viper: paintSmgBody({ rec: '#2c4a2e', poly: '#1b2e1c' }),
+    arc: paintSmgBody({ rec: '#123742', poly: '#0c2731' }),
+  };
 
   return {
     rifle: {
@@ -613,7 +632,7 @@ export function buildWeapons() {
     },
     smg: {
       id: 'smg', name: 'P-12 "WASP"', slot: 4, kind: 'gun',
-      body: smgBody, finishes: null, finish: 'default',
+      body: smgBody, finishes: smgFinishes, finish: 'default',
       mag: paintSmgMag(), bolt: paintBolt(),
       flashes,
       gripA: { x: 0, y: 0.4 },

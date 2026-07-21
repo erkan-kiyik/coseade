@@ -65,34 +65,82 @@ function paintSky() {
 }
 
 // ---------------- cloud bank (tiling strip) ----------------
+// Painted as soft cumulus banks: cool blue-grey crowns, warm sun-lit
+// undersides, a bright rim where the low sun grazes the base. Every puff is
+// drawn again shifted by ±W when it crosses a seam so the strip tiles with no
+// visible edge.
 function paintClouds() {
-  const W = 2048, H = 460;
+  const W = 2048, H = 520;
   const { cv, g } = makeCanvas(W, H);
   const rng = makeRng(808);
-  const puff = (x, y, r, warm, a) => {
-    g.fillStyle = radgrad(g, x, y, r, [
-      [0, withA(warm ? '#c4a78e' : '#8b90a4', a)],
-      [0.62, withA(warm ? '#a98a74' : '#767b8e', a * 0.45)],
-      [1, 'rgba(110,110,130,0)'],
-    ]);
-    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-  };
-  for (let c = 0; c < 6; c++) {
-    const cx = (c / 6) * W + rng.range(-80, 80);
-    const cy = rng.range(150, 330);
-    const spread = rng.range(140, 240);
-    const n = rng.int(8, 13);
-    for (let i = 0; i < n; i++) {
-      const px = cx + rng.range(-spread, spread);
-      const py = cy + rng.range(-26, 24) - Math.abs(px - cx) * 0.1;
-      const warm = py > cy + 2;      // undersides catch the sun
-      puff(((px % W) + W) % W, py, rng.range(46, 95), warm, rng.range(0.05, 0.12));
+
+  // wrap-aware soft blob: draws the puff plus a copy across whichever seam it
+  // overlaps, so a cloud straddling x=0 / x=W is continuous when tiled.
+  const blob = (x, y, rx, ry, stops) => {
+    for (const ox of [0, -W, W]) {
+      if (x + ox + rx < -4 || x + ox - rx > W + 4) continue;
+      g.fillStyle = radgrad(g, x + ox, y, rx, stops);
+      g.save();
+      g.translate(x + ox, y);
+      g.scale(1, ry / rx);
+      g.beginPath(); g.arc(0, 0, rx, 0, Math.PI * 2); g.fill();
+      g.restore();
     }
-    // lit underside stroke
-    g.fillStyle = withA('#e6b284', 0.07);
-    g.beginPath();
-    g.ellipse(cx, cy + 36, spread * 0.8, 14, 0, 0, Math.PI * 2);
-    g.fill();
+  };
+
+  // three depth rows: high faint wisps, then two denser cloud banks lower down
+  const rows = [
+    { count: 5, cy: [70, 150], spread: [150, 240], puffs: [7, 11], rr: [42, 78], crown: 0.16, base: 0.12 },
+    { count: 5, cy: [190, 300], spread: [180, 300], puffs: [9, 15], rr: [60, 120], crown: 0.30, base: 0.26 },
+    { count: 4, cy: [320, 430], spread: [200, 340], puffs: [10, 16], rr: [70, 140], crown: 0.40, base: 0.34 },
+  ];
+
+  for (const row of rows) {
+    for (let c = 0; c < row.count; c++) {
+      const cx = (c + rng.range(-0.35, 0.35)) / row.count * W;
+      const cy = rng.range(row.cy[0], row.cy[1]);
+      const spread = rng.range(row.spread[0], row.spread[1]);
+      const n = rng.int(row.puffs[0], row.puffs[1]);
+
+      // soft ambient body first (cool), so individual puffs sit in a mass
+      blob(((cx % W) + W) % W, cy, spread * 0.9, spread * 0.34, [
+        [0, withA('#8790a6', row.crown * 0.5)],
+        [0.7, withA('#6b7286', row.crown * 0.22)],
+        [1, 'rgba(90,96,116,0)'],
+      ]);
+
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1) - 0.5;                    // -0.5..0.5 across cloud
+        const px = cx + t * spread * 2;
+        const dome = -Math.cos(t * Math.PI) * spread * 0.22;   // rounded top
+        const py = cy + dome + rng.range(-12, 10);
+        const r = rng.range(row.rr[0], row.rr[1]) * (1 - Math.abs(t) * 0.35);
+        const wx = ((px % W) + W) % W;
+        const under = py > cy + spread * 0.02;
+        if (under) {
+          // warm sun-lit underside
+          blob(wx, py, r, r * 0.72, [
+            [0, withA('#d8b48c', row.base)],
+            [0.55, withA('#c1926e', row.base * 0.6)],
+            [1, 'rgba(150,120,110,0)'],
+          ]);
+        } else {
+          // cool shadowed crown
+          blob(wx, py, r, r * 0.78, [
+            [0, withA('#9aa2b6', row.crown)],
+            [0.55, withA('#7b8296', row.crown * 0.55)],
+            [1, 'rgba(105,112,132,0)'],
+          ]);
+        }
+      }
+
+      // bright rim where the low sun catches the cloud base
+      blob(((cx % W) + W) % W, cy + spread * 0.22, spread * 0.75, spread * 0.09, [
+        [0, withA('#f2c288', row.base * 0.7)],
+        [0.6, withA('#e0a066', row.base * 0.3)],
+        [1, 'rgba(210,150,100,0)'],
+      ]);
+    }
   }
   return cv;
 }

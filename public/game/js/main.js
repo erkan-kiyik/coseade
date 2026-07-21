@@ -8,7 +8,7 @@ import { Camera } from './engine/camera.js';
 import { Particles, K, burstSparks, puffSmoke } from './engine/particles.js';
 import { audio } from './engine/audio.js';
 import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
-import { makeCanvas } from './art/paint.js';
+import { makeCanvas, drawSprite } from './art/paint.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
@@ -17,6 +17,9 @@ import { Player } from './game/player.js';
 import { Enemy, getGlobalDetection } from './game/enemy.js';
 import { Hud } from './game/hud.js';
 import { Progression, UNLOCKS } from './game/progression.js';
+import { applyLoadout } from './game/meta.js';
+import { MetaUI } from './game/metaui.js';
+import { TouchControls } from './engine/touch.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -95,12 +98,43 @@ class CutsceneDriver {
 const assets = {};
 const raf = () => new Promise((r) => requestAnimationFrame(r));
 
+// Draws a catalog item's art into a menu canvas (weapon finish body, or the
+// operator head for skins). `item === null` renders the neutral STOCK marker.
+function previewItem(item, cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = cv.clientWidth || 96, H = cv.clientHeight || 48;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  if (!item) {
+    g.strokeStyle = 'rgba(150,150,160,0.4)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(W / 2 - 9, H / 2); g.lineTo(W / 2 + 9, H / 2); g.stroke();
+    return;
+  }
+  let spr = null;
+  if (item.apply.type === 'finish') {
+    const base = assets.weapons[item.apply.weapon];
+    spr = (base.finishes && base.finishes[item.apply.finish]) || base.body;
+  } else if (item.apply.type === 'operator') {
+    const parts = assets[item.apply.variant];
+    spr = parts && parts.head;
+  }
+  if (!spr) return;
+  const scale = Math.min((W * 0.84) / spr.w, (H * 0.84) / spr.h);
+  g.save();
+  g.translate(W / 2, H / 2);
+  drawSprite(g, spr, 0, 0, 0, scale, scale);
+  g.restore();
+}
+
 async function boot() {
   hud.show('loading');
   hud.setLoad(0.05, 'PAINTING OPERATORS…');
   await raf();
   assets.ranger = buildSoldier('ranger');
   assets.phantom = buildSoldier('phantom');
+  assets.nomad = buildSoldier('nomad');
   assets.shadow = makeShadowSprite();
   hud.setLoad(0.3, 'MACHINING WEAPONS…');
   await raf();
@@ -112,10 +146,21 @@ async function boot() {
   await raf();
   game = new Game();
   if (DEMO) window.__game = game;  // scripted-screenshot / test hook only
+
+  // meta screens (loadout / crates) + on-screen controls
+  game.metaUI = new MetaUI({
+    progression: game.progression,
+    previewItem,
+    audio,
+  });
+  game.metaUI.mount();
+  game.touch = new TouchControls(input, { force: params.has('touch') });
+  game.touch.mount();
+
   hud.setLoad(1, 'READY');
   await raf();
   if (DEMO) game.deploy();
-  else { hud.show('menu'); game.state = 'menu'; }
+  else { hud.show('menu'); game.state = 'menu'; game.metaUI.refresh(); }
   requestAnimationFrame(frame);
 }
 
@@ -197,7 +242,8 @@ class Game {
 
   onPlayerHit(headshot, killed) {
     if (!killed) return;
-    this.progression.recordKill(headshot);
+    this.progression.recordKill(headshot);   // also awards tokens
+    hud.setTokens(this.progression.tokens);
     const res = this.progression.addXp(10 + (headshot ? 15 : 0));
     this.handleLevelUp(res);
   }
@@ -208,6 +254,7 @@ class Game {
     this.player = new Player(assets.ranger, assets.shadow, assets.weapons, this.world, this.fx, this.cam, audio, hud);
     this.player.x = 260; this.player.y = GROUND_Y;
     this.applyAllUnlocks();
+    applyLoadout(this.player, this.progression, assets);   // equipped crate cosmetics win
     hud.setWeaponIcons(this.player.arsenal);
     this.spawnEnemiesForStage();
     this.particles.pool.length = 0;
@@ -219,6 +266,7 @@ class Game {
     hud.setObjective(0, this.enemies.length);
     hud.setStage(this.stage);
     hud.setProgress(this.progression.data.level, this.progression.xpProgress());
+    hud.setTokens(this.progression.tokens);
   }
 
   // Called when every hostile in the current stage is down: the campaign is
@@ -345,6 +393,8 @@ class Game {
   setState(s) {
     this.state = s;
     hud.show(s);
+    if (s === 'menu' && this.metaUI) this.metaUI.refresh();
+    if (this.touch) this.touch.setVisible(s === 'play');
   }
 
   damageBarrel(b, dmg) {

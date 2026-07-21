@@ -43,6 +43,7 @@
       <div class="xp-row">
         <span id="lvl-label" class="lvl-label">LVL 1</span>
         <div class="bar xp-track"><div id="xp-fill" class="bar-fill xp"></div></div>
+        <span id="hud-tokens" class="hud-tokens">◈ 0</span>
       </div>
     </div>
     <div class="hud-br">
@@ -77,25 +78,81 @@
     </div>
   </div>
 
-  <!-- Main menu -->
+  <!-- Main menu — mobile-first tabbed home -->
   <div id="menu" class="overlay hidden">
-    <div class="ov-inner menu-inner">
-      <div class="title-kicker">SECTOR 9 &nbsp;//&nbsp; CINDER WORKS DISTRICT</div>
-      <h1 class="title">CINDERFALL</h1>
-      <div class="title-sub">A 2D TACTICAL OPERATION</div>
-      <button id="btn-deploy" class="btn primary">DEPLOY</button>
-      <div class="controls-grid">
-        <span>A / D</span><span>MOVE</span>
-        <span>SPACE</span><span>JUMP</span>
-        <span>SHIFT</span><span>SPRINT</span>
-        <span>MOUSE</span><span>AIM / FIRE</span>
-        <span>R</span><span>RELOAD</span>
-        <span>1 / 2 / 3</span><span>RIFLE / SIDEARM / KNIFE</span>
-        <span>4</span><span>SMG (WHEN UNLOCKED)</span>
-        <span>RIGHT-CLICK</span><span>HEAVY MELEE</span>
-        <span>F</span><span>INSPECT WEAPON</span>
-        <span>ESC</span><span>PAUSE</span>
+    <div class="home">
+      <header class="home-top">
+        <div class="home-brand">CINDERFALL<span>SECTOR 9</span></div>
+        <div class="token-pill"><span class="token-ico">◈</span><span id="token-count">0</span></div>
+      </header>
+
+      <main class="home-body">
+        <!-- PLAY -->
+        <section id="tab-play" class="home-panel active">
+          <div class="hero">
+            <div class="hero-kicker">A 2D TACTICAL OPERATION</div>
+            <h1 class="hero-title">CINDERFALL</h1>
+            <div id="loadout-chips" class="loadout-chips"></div>
+            <button id="btn-deploy" class="btn primary big">DEPLOY</button>
+          </div>
+          <details class="controls-fold">
+            <summary>CONTROLS</summary>
+            <div class="controls-grid">
+              <span>A / D</span><span>MOVE</span>
+              <span>SPACE</span><span>JUMP</span>
+              <span>SHIFT</span><span>SPRINT</span>
+              <span>MOUSE</span><span>AIM / FIRE</span>
+              <span>R</span><span>RELOAD</span>
+              <span>1 / 2 / 3 / 4</span><span>WEAPONS</span>
+              <span>RIGHT-CLICK</span><span>HEAVY MELEE</span>
+              <span>ESC</span><span>PAUSE</span>
+            </div>
+            <div class="controls-note">On phones, on-screen controls appear automatically.</div>
+          </details>
+        </section>
+
+        <!-- LOADOUT -->
+        <section id="tab-loadout" class="home-panel">
+          <h2 class="panel-title">LOADOUT</h2>
+          <p class="panel-sub">Equip skins &amp; operators you've unlocked from crates.</p>
+          <div id="loadout-slots" class="loadout-list"></div>
+        </section>
+
+        <!-- CRATES -->
+        <section id="tab-crates" class="home-panel">
+          <h2 class="panel-title">SUPPLY CRATE</h2>
+          <div class="crate-hero">
+            <div class="crate-box"><div class="crate-lid"></div><div class="crate-glow"></div><span class="crate-mark">◈</span></div>
+            <button id="btn-open-crate" class="btn primary big">OPEN — <span id="crate-cost">120</span> ◈</button>
+            <div id="crate-msg" class="crate-msg"></div>
+          </div>
+          <div class="collection">
+            <div class="collection-head">COLLECTION <span id="collection-count"></span></div>
+            <div id="collection-grid" class="collection-grid"></div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="home-tabs">
+        <button class="home-tab active" data-tab="play"><span class="tab-ico">▶</span>PLAY</button>
+        <button class="home-tab" data-tab="loadout"><span class="tab-ico">◈</span>LOADOUT</button>
+        <button class="home-tab" data-tab="crates"><span class="tab-ico">▣</span>CRATES</button>
+      </nav>
+    </div>
+
+    <!-- Crate reveal overlay (CS-style horizontal reel) -->
+    <div id="crate-reveal" class="crate-reveal hidden">
+      <div class="reel-window">
+        <div id="reel-track" class="reel-track"></div>
+        <div class="reel-marker"></div>
       </div>
+      <div id="reveal-card" class="reveal-card hidden">
+        <div id="reveal-rarity" class="reveal-rarity"></div>
+        <div id="reveal-name" class="reveal-name"></div>
+        <div id="reveal-kind" class="reveal-kind"></div>
+        <div id="reveal-status" class="reveal-status"></div>
+      </div>
+      <button id="reveal-done" class="btn hidden">CONTINUE</button>
     </div>
   </div>
 
@@ -117,6 +174,15 @@
       <button id="btn-redeploy" class="btn primary">REDEPLOY</button>
       <button id="btn-menu" class="btn">RETURN TO MENU</button>
     </div>
+  </div>
+
+  <!-- On-screen touch controls (shown on touch devices during play) -->
+  <div id="touch">
+    <div id="tc-move" class="tc-stick left"><div class="tc-nub"></div><div class="tc-label">MOVE</div></div>
+    <div id="tc-aim" class="tc-stick right"><div class="tc-nub"></div><div class="tc-label">AIM / FIRE</div></div>
+    <button id="tc-jump" class="tc-btn tc-jump">JUMP</button>
+    <button id="tc-reload" class="tc-btn tc-reload">RELOAD</button>
+    <button id="tc-swap" class="tc-btn tc-swap">SWAP</button>
   </div>
 
   <!-- Deploy cinematic: letterbox bars + briefing text, driven by main.js -->

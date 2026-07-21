@@ -27,8 +27,17 @@ function defaultProgress() {
     totalKills: 0, totalHeadshots: 0, shotsTotal: 0, hitsTotal: 0,
     longestSurvivalStage: 0, longestSurvivalTime: 0, gamesPlayed: 0,
     unlocked: {},
+    // meta-economy: soft currency earned in combat, spent on crates
+    tokens: 0,
+    inventory: {},   // itemId -> true once owned (crate drops)
+    loadout: {},     // slotKey -> itemId currently equipped
+    cratesOpened: 0,
   };
 }
+
+// Tokens awarded per kill (headshots pay a premium).
+export const TOKENS_PER_KILL = 8;
+export const TOKENS_PER_HEADSHOT = 14;
 
 export class Progression {
   constructor() {
@@ -80,8 +89,39 @@ export class Progression {
   recordKill(headshot) {
     this.data.totalKills++;
     if (headshot) this.data.totalHeadshots++;
+    this.data.tokens += headshot ? TOKENS_PER_HEADSHOT : TOKENS_PER_KILL;
     this.save();
+    return this.data.tokens;
   }
+
+  // ---- token economy ----
+  get tokens() { return this.data.tokens; }
+
+  addTokens(n) { this.data.tokens += n; this.save(); return this.data.tokens; }
+
+  // Attempts to spend `n`; returns true and deducts on success, false if broke.
+  spendTokens(n) {
+    if (this.data.tokens < n) return false;
+    this.data.tokens -= n;
+    this.save();
+    return true;
+  }
+
+  // ---- inventory / loadout ----
+  owns(id) { return !!this.data.inventory[id]; }
+
+  grant(id) { this.data.inventory[id] = true; this.save(); }
+
+  // Equip an owned item into a loadout slot. Returns false if not owned.
+  equip(slotKey, id) {
+    if (id && !this.owns(id)) return false;
+    if (id === null) delete this.data.loadout[slotKey];
+    else this.data.loadout[slotKey] = id;
+    this.save();
+    return true;
+  }
+
+  equipped(slotKey) { return this.data.loadout[slotKey] || null; }
 
   recordShots(shots, hits) {
     this.data.shotsTotal += shots;
