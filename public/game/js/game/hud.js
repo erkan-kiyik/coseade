@@ -22,6 +22,7 @@ export class Hud {
       armorRow: $('armor-row'),
       ammoMag: $('ammo-mag'), ammoRes: $('ammo-res'),
       weaponName: $('weapon-name'), reloadHint: $('reload-hint'),
+      wpnMeter: $('wpn-meter'), wpnMeterFill: $('wpn-meter-fill'),
       slots: [$('slot-1'), $('slot-2'), $('slot-3'), $('slot-4')],
       slotIcons: [$('slot-1-icon'), $('slot-2-icon'), $('slot-3-icon'), $('slot-4-icon')],
       objCount: $('obj-count'), stageLabel: $('stage-label'),
@@ -159,6 +160,23 @@ export class Hud {
 
   setTokens(n) {
     if (this.el.hudTokens) this.el.hudTokens.textContent = `◈ ${n}`;
+  }
+
+  // Energy weapons: shows heat (yellow→red, flashes when overheated) or, for
+  // charge weapons, the current charge (cyan). Hidden for conventional guns.
+  setWeaponMeter(heat, overheated, charge) {
+    const el = this.el.wpnMeter, fill = this.el.wpnMeterFill;
+    if (!el) return;
+    const show = heat > 0.001 || charge > 0.001 || overheated;
+    el.classList.toggle('hidden', !show);
+    if (!show) return;
+    if (charge > 0.001) {
+      fill.style.width = `${Math.round(charge * 100)}%`;
+      fill.className = 'wpn-meter-fill charge';
+    } else {
+      fill.style.width = `${Math.round(heat * 100)}%`;
+      fill.className = 'wpn-meter-fill heat' + (overheated ? ' over' : '');
+    }
   }
 
   setAimScreen(x, y) { this._aimX = x; this._aimY = y; }

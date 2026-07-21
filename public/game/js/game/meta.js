@@ -55,16 +55,63 @@ export const CATALOG = [
     apply: { type: 'operator', variant: 'nomad' } },
 ];
 
-const BY_ID = Object.fromEntries(CATALOG.map((i) => [i.id, i]));
-export const itemById = (id) => BY_ID[id] || null;
-export const itemsForSlot = (slot) => CATALOG.filter((i) => i.slot === slot);
+// ---- weapon loadout: pick which weapon fills each arsenal slot. Weapons are
+// freely selectable (granted at boot), not crate loot. `arsenal` names the
+// slot in Player.arsenal the choice writes into. Rarity/tag are cosmetic.
+export const WEAPON_SLOTS = [
+  {
+    key: 'wpn_primary', label: 'PRIMARY', arsenal: 'rifle',
+    ids: ['rifle', 'battle', 'lmg', 'sniper', 'plasma', 'pulse', 'particle',
+      'lightning', 'cryo', 'flame', 'eshotgun', 'lasersmg', 'railgun', 'ion', 'emp', 'gravity'],
+  },
+  {
+    key: 'wpn_secondary', label: 'SIDEARM', arsenal: 'pistol',
+    ids: ['pistol', 'raygun', 'quantum'],
+  },
+  {
+    key: 'wpn_special', label: 'SPECIAL', arsenal: 'smg',
+    ids: ['smg', 'lasersmg', 'plasma', 'pulse', 'ion', 'railgun', 'flame',
+      'cryo', 'emp', 'gravity', 'particle', 'lightning', 'eshotgun'],
+  },
+];
 
-// Ordered list of loadout slots for the loadout UI.
+// rarity/tag lookup so weapon cards get coloured frames like cosmetics.
+const WEAPON_META = {
+  rifle: ['common'], pistol: ['common'], smg: ['common'], battle: ['common'], lmg: ['rare'],
+  sniper: ['rare'], raygun: ['legendary', 'ENERGY'], plasma: ['epic', 'ENERGY'],
+  pulse: ['rare', 'ENERGY'], particle: ['epic', 'ENERGY'], lightning: ['epic', 'ENERGY'],
+  cryo: ['rare', 'ENERGY'], flame: ['rare', 'ENERGY'], eshotgun: ['rare', 'ENERGY'],
+  lasersmg: ['epic', 'ENERGY'], railgun: ['legendary', 'ENERGY'], ion: ['legendary', 'ENERGY'],
+  emp: ['epic', 'ENERGY'], quantum: ['epic', 'ENERGY'], gravity: ['epic', 'ENERGY'],
+};
+
+// Every weapon id that can be selected (granted as owned at boot).
+export const ALL_WEAPON_IDS = [...new Set(WEAPON_SLOTS.flatMap((s) => s.ids))];
+
+// Synthetic loadout "items" for the weapon pickers (name resolved from the
+// live weapon defs at render time).
+const WEAPON_ITEMS = ALL_WEAPON_IDS.flatMap((id) =>
+  WEAPON_SLOTS.filter((s) => s.ids.includes(id)).map((s) => ({
+    id: `${s.key}:${id}`, weaponId: id, slot: s.key, always: true, kind: 'Weapon',
+    rarity: (WEAPON_META[id] || ['common'])[0], tag: (WEAPON_META[id] || [])[1],
+    apply: { type: 'weaponBody', weapon: id },
+  }))
+);
+
+const BY_ID = Object.fromEntries([...CATALOG, ...WEAPON_ITEMS].map((i) => [i.id, i]));
+export const itemById = (id) => BY_ID[id] || null;
+export const itemsForSlot = (slot) =>
+  [...CATALOG, ...WEAPON_ITEMS].filter((i) => i.slot === slot);
+
+// Ordered list of loadout slots for the loadout UI (weapons first).
 export const LOADOUT_SLOTS = [
+  { key: 'wpn_primary',  label: 'PRIMARY' },
+  { key: 'wpn_secondary',label: 'SIDEARM' },
+  { key: 'wpn_special',  label: 'SPECIAL' },
   { key: 'operator',    label: 'OPERATOR' },
-  { key: 'rifleFinish', label: 'RIFLE' },
-  { key: 'pistolFinish',label: 'SIDEARM' },
-  { key: 'smgFinish',   label: 'SMG' },
+  { key: 'rifleFinish', label: 'RIFLE SKIN' },
+  { key: 'pistolFinish',label: 'PISTOL SKIN' },
+  { key: 'smgFinish',   label: 'SMG SKIN' },
   { key: 'knifeFinish', label: 'BLADE' },
 ];
 
@@ -88,7 +135,7 @@ export function rollCrate(rng = Math.random) {
 }
 
 // Applies the player's saved loadout to a freshly-built Player. `assets` is
-// the boot asset bag (needs .ranger/.phantom/.nomad operator part atlases).
+// the boot asset bag (needs operator atlases + .weapons defs).
 export function applyLoadout(player, progression, assets) {
   // operator skin
   const opId = progression.equipped('operator');
@@ -97,7 +144,7 @@ export function applyLoadout(player, progression, assets) {
     const parts = item && assets[item.apply.variant];
     if (parts) player.parts = parts;
   }
-  // weapon finishes
+  // weapon finishes (applied before weapon overrides so a chosen weapon wins)
   for (const slot of ['rifleFinish', 'pistolFinish', 'smgFinish', 'knifeFinish']) {
     const id = progression.equipped(slot);
     if (!id) continue;
@@ -106,4 +153,19 @@ export function applyLoadout(player, progression, assets) {
       player.applyFinish(item.apply.weapon, item.apply.finish);
     }
   }
+  // weapon selection → fill arsenal slots
+  let specialAssigned = false;
+  for (const slot of WEAPON_SLOTS) {
+    const id = progression.equipped(slot.key);
+    if (!id) continue;
+    const item = itemById(id);
+    const def = item && assets.weapons[item.apply.weapon];
+    if (!def) continue;
+    const a = player.arsenal[slot.arsenal];
+    if (!a) continue;
+    a.wpn = def;
+    if (def.magSize !== undefined) { a.mag = def.magSize; a.reserve = def.reserve; }
+    if (slot.key === 'wpn_special') specialAssigned = true;
+  }
+  if (specialAssigned) player.smgUnlocked = true;
 }

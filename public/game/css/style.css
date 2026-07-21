@@ -435,3 +435,14 @@ html, body {
 @media (min-width: 900px) and (pointer: fine) {
   .home-panel { padding: 32px 40px; }
 }
+
+/* ---- energy weapon heat / charge meter (in-game HUD) ---- */
+.wpn-meter {
+  width: 140px; height: 5px; margin: 6px 0 0 auto;
+  background: rgba(10,12,14,0.7); border: 1px solid rgba(217,179,108,0.28); padding: 1px;
+}
+.wpn-meter-fill { height: 100%; width: 0%; transition: width 0.08s linear; }
+.wpn-meter-fill.heat { background: linear-gradient(90deg, #d9c25a, #d0554a); box-shadow: 0 0 8px rgba(208,85,74,0.5); }
+.wpn-meter-fill.heat.over { background: #ff3b30; animation: over-flash 0.35s steps(2) infinite; }
+.wpn-meter-fill.charge { background: linear-gradient(90deg, #4aa8d9, #7fe6ff); box-shadow: 0 0 10px rgba(127,230,255,0.7); }
+@keyframes over-flash { 50% { opacity: 0.4; } }

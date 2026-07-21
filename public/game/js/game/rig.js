@@ -269,5 +269,7 @@ export function newWeaponState() {
     boltBack: 0, slideBack: 0,
     flashT: 0, flashIdx: 0, flashScale: 1,
     knifeAng: 0.35, knifeWrist: 0.3, knifeReach: 26,
+    // energy weapons: heat 0..1 (overheat lock), charge 0..1 (charge shots)
+    heat: 0, overheated: false, charge: 0, charging: false, wasDown: false,
   };
 }

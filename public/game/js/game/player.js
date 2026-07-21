@@ -222,6 +222,9 @@ export class Player {
     this.fireCd -= dt;
     // aim-drift bloom recovers faster → tighter sustained accuracy
     this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.17);
+    // energy weapons cool between shots; overheat clears once cooled enough
+    ws.heat = Math.max(0, ws.heat - dt * (wpn.heatCool || 0.6));
+    if (ws.overheated && ws.heat <= 0.2) ws.overheated = false;
 
     // baseline pose modifiers
     let offX = 0, offY = 0, rot = 0;
@@ -344,19 +347,43 @@ export class Player {
     }
 
     // ---- firing
-    const wantFire = wpn.auto ? input.mouse.down : input.mouse.clicked;
-    const canFire = !this.reload && this.equipT < 0 && this.fireCd <= 0 && this.sprintBlend < 0.55;
-    if (wantFire && this.sprinting) this.sprinting = false;
-    if (wantFire && canFire) {
-      if (cur.mag <= 0) {
-        this.audio.dryFire();
-        this.fireCd = 0.25;
-        if (cur.reserve > 0) this.startReload(cur);
+    const blocked = this.reload || this.equipT >= 0 || this.sprintBlend >= 0.55;
+    if (wpn.charge) {
+      // charge weapons: hold to build charge, release to fire (bigger = stronger)
+      const holding = input.mouse.down && !blocked && !ws.overheated && cur.mag > 0;
+      if (holding) {
+        if (this.sprinting) this.sprinting = false;
+        ws.charging = true;
+        ws.charge = Math.min(1, ws.charge + dt / wpn.charge.time);
+      } else if (ws.charging) {
+        ws.charging = false;
+        if (cur.mag > 0 && this.fireCd <= 0 && !blocked && ws.charge > 0.15) {
+          const mul = wpn.charge.minMul + (wpn.charge.maxMul - wpn.charge.minMul) * ws.charge;
+          this.fire(cur, enemies, game, mul);
+        }
+        ws.charge = 0;
       } else {
-        this.fire(cur, enemies, game);
+        ws.charge = Math.max(0, ws.charge - dt * 2);
+      }
+    } else {
+      const wantFire = wpn.auto ? input.mouse.down : input.mouse.clicked;
+      const canFire = !blocked && this.fireCd <= 0 && !ws.overheated;
+      if (wantFire && this.sprinting) this.sprinting = false;
+      if (wantFire && canFire) {
+        if (cur.mag <= 0) {
+          this.audio.dryFire();
+          this.fireCd = 0.25;
+          if (cur.reserve > 0) this.startReload(cur);
+        } else {
+          this.fire(cur, enemies, game);
+        }
+      } else if (wantFire && ws.overheated && this.fireCd <= 0) {
+        this.fireCd = 0.2;
+        if (this.audio.overheat) this.audio.overheat();
       }
     }
-    // auto-reload hint handled by HUD
+    // surface heat / charge to the HUD
+    if (this.hud.setWeaponMeter) this.hud.setWeaponMeter(ws.heat, ws.overheated, ws.charge);
 
     this.visSpread = wpn.spread + this.speedNorm * 0.045 + (this.onGround ? 0 : 0.05) + this.recoilAccum;
     this.applyWs(ws, offX, offY, rot);
@@ -372,75 +399,139 @@ export class Player {
     this.inspectT = -1;
   }
 
-  fire(cur, enemies, game) {
+  // Fires one trigger pull, dispatching by wpn.fireMode. `chargeMul` scales
+  // damage / projectile power for charge weapons (default 1).
+  fire(cur, enemies, game, chargeMul = 1) {
     const { wpn, ws } = cur;
     cur.mag--;
     this.shots++;
     this.fireCd = 60 / wpn.rpm;
     this.lastShotT = this.time;
 
-    // resolve muzzle in world space
     const pose = computePose(this);
     const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
     const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
-    const ejl = toWorld(this, weaponPoint(wa, wpn.eject));
-    let ang = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
-    ang += randSpread(this.visSpread) - this.recoilAccum * 0.32 * this.facing;
+    const ejl = toWorld(this, weaponPoint(wa, wpn.eject || wpn.muzzle));
+    const baseAng = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
+    const shotAng = () => baseAng + randSpread(this.visSpread) - this.recoilAccum * 0.32 * this.facing;
 
-    // hitscan
-    const range = 1500;
-    const ex = mzl.x + Math.cos(ang) * range;
-    const ey = mzl.y + Math.sin(ang) * range;
+    const mode = wpn.fireMode || 'hitscan';
+    const n = wpn.pellets || 1;
+    if (mode === 'projectile') {
+      const pj = wpn.projectile;
+      for (let i = 0; i < n; i++) {
+        this.fx.spawnProjectile(mzl.x, mzl.y, shotAng(), {
+          color: pj.color, radius: pj.radius, speed: pj.speed * (0.85 + 0.4 * chargeMul),
+          dmg: wpn.dmg * chargeMul, headMul: pj.headMul || 1.6,
+          blast: (pj.blast || 0) * chargeMul, pierce: pj.pierce || 0, life: pj.life || 1.6,
+        });
+      }
+    } else if (mode === 'beam') {
+      for (let i = 0; i < n; i++) this.beamShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+    } else {
+      for (let i = 0; i < n; i++) this.hitscanShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+    }
+
+    this.presentShot(cur, mzl, ejl, baseAng, chargeMul);
+  }
+
+  hitscanShot(mzl, ang, wpn, enemies, game, dmg) {
+    const range = 1600;
+    const ex = mzl.x + Math.cos(ang) * range, ey = mzl.y + Math.sin(ang) * range;
     const wHit = this.world.raycast(mzl.x, mzl.y, ex, ey);
     let bestT = wHit ? wHit.t : 1;
-    let hitEnemy = null, headshot = false;
+    let hitEnemy = null;
     for (const e of enemies) {
       if (e.deadT > 0) continue;
       const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
       if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
     }
-    const hx = mzl.x + (ex - mzl.x) * bestT;
-    const hy = mzl.y + (ey - mzl.y) * bestT;
-
+    const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
     if (hitEnemy) {
-      headshot = hy < hitEnemy.y - 108;
-      const dmg = wpn.dmg * (headshot ? 1.9 : 1);
+      const headshot = hy < hitEnemy.y - 108;
+      const d = dmg * (headshot ? 1.9 : 1);
       this.hits++;
       if (headshot) this.headshots++;
-      const killed = hitEnemy.hp <= dmg;
-      hitEnemy.damage(dmg, Math.sign(ex - mzl.x), this);
+      const killed = hitEnemy.hp <= d;
+      hitEnemy.damage(d, Math.sign(ex - mzl.x), this);
       this.fx.blood(hx, hy, Math.sign(ex - mzl.x));
       this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
       if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
       if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
     } else if (wHit && wHit.tag === 'barrel') {
-      game.damageBarrel(wHit.ref, wpn.dmg);
+      game.damageBarrel(wHit.ref, dmg);
       this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
     } else if (wHit) {
       this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
     }
+    this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy,
+      wpn.tracerColor || null, wpn.tracerWidth || 1.4);
+  }
 
-    // presentation
+  beamShot(mzl, ang, wpn, enemies, game, dmg) {
+    const range = (wpn.beam && wpn.beam.range) || 1600;
+    const ex = mzl.x + Math.cos(ang) * range, ey = mzl.y + Math.sin(ang) * range;
+    const wHit = this.world.raycast(mzl.x, mzl.y, ex, ey);
+    let bestT = wHit ? wHit.t : 1;
+    let hitEnemy = null;
+    for (const e of enemies) {
+      if (e.deadT > 0) continue;
+      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
+      if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
+    }
+    const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
+    const col = wpn.beam.color;
+    if (hitEnemy) {
+      const headshot = hy < hitEnemy.y - 108;
+      const d = dmg * (headshot ? 1.7 : 1);
+      this.hits++;
+      if (headshot) this.headshots++;
+      const killed = hitEnemy.hp <= d;
+      hitEnemy.damage(d, Math.sign(ex - mzl.x), this);
+      this.fx.energyImpact(hx, hy, col, 0);
+      this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
+      if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
+      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
+    } else if (wHit) {
+      if (wHit.tag === 'barrel') game.damageBarrel(wHit.ref, dmg);
+      this.fx.energyImpact(hx, hy, col, 0);
+    }
+    if (wpn.beam.arc) this.fx.arc(mzl.x, mzl.y, hx, hy, col);
+    else this.fx.beam(mzl.x, mzl.y, hx, hy, col, wpn.beam.width || 3);
+    if (wpn.beam.flame) this.fx.flameSpit(mzl.x, mzl.y, hx, hy, ang);
+  }
+
+  presentShot(cur, mzl, ejl, ang, chargeMul) {
+    const { wpn, ws } = cur;
     ws.flashT = 1;
-    ws.flashIdx = (Math.random() * wpn.flashes.length) | 0;
-    ws.flashScale = rand(0.85, 1.25);
+    ws.flashIdx = (Math.random() * (wpn.flashes ? wpn.flashes.length : 1)) | 0;
+    ws.flashScale = rand(0.85, 1.25) * (0.85 + chargeMul * 0.35);
     // recoil pattern: repeatable per-weapon signature, resets after a pause
     if (this.time - (ws.lastFireT || -99) > 0.28) ws.shotIndex = 0;
     ws.lastFireT = this.time;
     const pat = wpn.recoilPattern;
     const patMul = pat ? pat[ws.shotIndex % pat.length] : 1;
     ws.shotIndex = (ws.shotIndex || 0) + 1;
-    ws.recoilVel += wpn.recoilKick * 2.1 * patMul;
-    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul;
+    ws.recoilVel += wpn.recoilKick * 2.1 * patMul * chargeMul;
+    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul * chargeMul;
     if (wpn.bolt) ws.boltBack = 1;
     if (wpn.slide) ws.slideBack = 1;
     this.recoilAccum = Math.min(0.05, this.recoilAccum + 0.008);
-    this.cam.recoil(wpn.camKick);
-    this.cam.addTrauma(wpn.camTrauma);
-    this.audio.shot(wpn.shotSound);
-    this.fx.muzzle(mzl.x, mzl.y, ang);
-    this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy);
-    this.fx.casing(ejl.x, ejl.y, this.facing, wpn.casingSize);
+    this.cam.recoil(wpn.camKick * chargeMul);
+    this.cam.addTrauma(wpn.camTrauma * chargeMul);
+    if (wpn.heatPerShot) {
+      ws.heat = Math.min(1, ws.heat + wpn.heatPerShot);
+      if (ws.heat >= 1) { ws.overheated = true; if (this.audio.overheat) this.audio.overheat(); }
+    }
+    if (wpn.energy) {
+      const c = (wpn.projectile && wpn.projectile.color) || (wpn.beam && wpn.beam.color) || wpn.tracerColor || [120, 200, 255];
+      if (this.audio.energyShot) this.audio.energyShot(wpn.shotSound); else this.audio.shot('rifle');
+      this.fx.energyMuzzle(mzl.x, mzl.y, ang, c, wpn.muzzleBig || 1);
+    } else {
+      this.audio.shot(wpn.shotSound);
+      this.fx.muzzle(mzl.x, mzl.y, ang, wpn.muzzleBig || 1);
+      this.fx.casing(ejl.x, ejl.y, this.facing, wpn.casingSize || 3.6);
+    }
   }
 
   // ------------------------------------------------------------- knife

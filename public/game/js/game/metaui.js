@@ -14,10 +14,19 @@ export class MetaUI {
   constructor(deps) {
     this.p = deps.progression;
     this.previewItem = deps.previewItem;
+    this.weapons = deps.weapons || {};
     this.onDeploy = deps.onDeploy;
     this.audio = deps.audio || null;
     this.busy = false;
   }
+
+  // display name for a card's item (weapons resolve to their live def name)
+  itemLabel(item) {
+    if (!item) return 'STOCK';
+    if (item.weaponId && this.weapons[item.weaponId]) return this.weapons[item.weaponId].name;
+    return item.name;
+  }
+  itemOwned(item) { return !item || item.always || this.p.owns(item.id); }
 
   mount() {
     // bottom tabs
@@ -56,7 +65,8 @@ export class MetaUI {
     for (const slot of LOADOUT_SLOTS) {
       const id = this.p.equipped(slot.key);
       const item = id && itemById(id);
-      chips.push(`${slot.label}: ${item ? item.name.replace(/^.*·\s*/, '') : 'STOCK'}`);
+      const label = item ? this.itemLabel(item).replace(/^.*·\s*/, '') : 'STOCK';
+      chips.push(`${slot.label}: ${label}`);
     }
     for (const text of chips) {
       const c = document.createElement('span');
@@ -79,16 +89,15 @@ export class MetaUI {
       head.className = 'loadout-slot-head';
       const eqItem = equippedId && itemById(equippedId);
       head.innerHTML = `<span class="loadout-slot-label">${slot.label}</span>` +
-        `<span class="loadout-slot-equipped">${eqItem ? eqItem.name : 'STOCK'}</span>`;
+        `<span class="loadout-slot-equipped">${eqItem ? this.itemLabel(eqItem) : 'STOCK'}</span>`;
       box.appendChild(head);
 
       const row = document.createElement('div');
       row.className = 'item-row';
       // "STOCK" (unequip) card is always available
-      row.appendChild(this.makeCard(null, slot.key, equippedId === null || !equippedId));
+      row.appendChild(this.makeCard(null, slot.key, !equippedId));
       for (const item of items) {
-        const owned = this.p.owns(item.id);
-        row.appendChild(this.makeCard(item, slot.key, equippedId === item.id, !owned));
+        row.appendChild(this.makeCard(item, slot.key, equippedId === item.id, !this.itemOwned(item)));
       }
       box.appendChild(row);
       host.appendChild(box);
@@ -107,7 +116,7 @@ export class MetaUI {
 
     const name = document.createElement('div');
     name.className = 'item-name';
-    name.textContent = item ? item.name : 'STOCK';
+    name.textContent = this.itemLabel(item);
     card.appendChild(name);
 
     if (item) {
@@ -129,7 +138,8 @@ export class MetaUI {
 
     if (!locked) {
       card.addEventListener('click', () => {
-        this.p.equip(slotKey, item ? item.id : null);
+        if (item && item.always) { this.p.data.loadout[slotKey] = item.id; this.p.save(); }
+        else this.p.equip(slotKey, item ? item.id : null);
         if (this.audio) this.audio.equip ? this.audio.equip() : this.audio.ui();
         this.renderLoadout();
         this.renderLoadoutChips();

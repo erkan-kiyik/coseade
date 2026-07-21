@@ -17,7 +17,7 @@ import { Player } from './game/player.js';
 import { Enemy, getGlobalDetection } from './game/enemy.js';
 import { Hud } from './game/hud.js';
 import { Progression, UNLOCKS } from './game/progression.js';
-import { applyLoadout } from './game/meta.js';
+import { applyLoadout, ALL_WEAPON_IDS } from './game/meta.js';
 import { MetaUI } from './game/metaui.js';
 import { TouchControls } from './engine/touch.js';
 
@@ -116,6 +116,9 @@ function previewItem(item, cv) {
   if (item.apply.type === 'finish') {
     const base = assets.weapons[item.apply.weapon];
     spr = (base.finishes && base.finishes[item.apply.finish]) || base.body;
+  } else if (item.apply.type === 'weaponBody') {
+    const def = assets.weapons[item.apply.weapon];
+    spr = def && def.body;
   } else if (item.apply.type === 'operator') {
     const parts = assets[item.apply.variant];
     spr = parts && parts.head;
@@ -147,10 +150,14 @@ async function boot() {
   game = new Game();
   if (DEMO) window.__game = game;  // scripted-screenshot / test hook only
 
+  // every weapon is freely selectable in the loadout (not crate loot)
+  for (const id of ALL_WEAPON_IDS) if (!game.progression.owns(id)) game.progression.grant(id);
+
   // meta screens (loadout / crates) + on-screen controls
   game.metaUI = new MetaUI({
     progression: game.progression,
     previewItem,
+    weapons: assets.weapons,
     audio,
   });
   game.metaUI.mount();
@@ -173,6 +180,7 @@ class Game {
     this.cam.zoom = parseFloat(params.get('zoom')) || 1.25;
     this.particles = new Particles();
     this.fx = new FX(this.particles, audio, this.cam, this.world);
+    this.fx.bindGame(this);   // lets energy projectiles resolve damage
     this.progression = new Progression();
     this.state = 'menu';
     this.time = 0;
