@@ -200,7 +200,20 @@ export class MetaUI {
     if (isDup) { refund = Math.round(CRATE_COST * DUPLICATE_REFUND); this.p.addTokens(refund); }
     else this.p.grant(drop.id);
 
-    this.spinReel(drop, () => this.showReveal(drop, isDup, refund));
+    this.playCaseOpen(() => this.spinReel(drop, () => this.showReveal(drop, isDup, refund)));
+  }
+
+  // Plays a short "case cracks open" beat on the static crate display — lid
+  // pops off, a light burst flashes, the box kicks — before cutting to the
+  // full-screen reel. Purely presentational; timing matches the CSS beat.
+  playCaseOpen(done) {
+    const box = $('crate-box'), lid = $('crate-lid'), glow = $('crate-glow'), burst = $('crate-burst');
+    for (const el of [box, lid, glow, burst]) if (el) el.classList.add('opening');
+    if (this.audio && this.audio.equip) this.audio.equip();
+    setTimeout(() => {
+      for (const el of [box, lid, glow, burst]) if (el) el.classList.remove('opening');
+      done();
+    }, 620);
   }
 
   spinReel(winner, done) {
