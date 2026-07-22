@@ -66,7 +66,7 @@
     <div id="dmg-right" class="dmg-dir right"></div>
     <div id="dmg-omni" class="dmg-dir omni"></div>
     <div id="hitmark"></div>
-    <div id="stealth-prompt" class="stealth-prompt"><span class="sp-ico" data-ic="knife"></span><span class="sp-txt">TAKEDOWN</span><span class="sp-key">E</span></div>
+    <div id="stealth-prompt" class="stealth-prompt">TAKEDOWN — E</div>
     <div id="damage-flash"></div>
     <div id="vignette"></div>
   </div>
@@ -83,78 +83,36 @@
   <!-- Main menu — mobile-first tabbed home -->
   <div id="menu" class="overlay hidden">
     <div class="home">
-      <!-- animated background life: drifting particles, a patrol drone, a
-           rotating hologram ring — over the live industrial game scene -->
-      <div id="home-fx" class="home-fx">
-        <canvas id="home-particles" class="home-particles"></canvas>
-        <div id="home-drone" class="home-drone"><span class="drone-body"></span><span class="drone-glow"></span></div>
-        <div class="home-holo"><span class="holo-ring r1"></span><span class="holo-ring r2"></span><span class="holo-ring r3"></span></div>
-      </div>
-
       <header class="home-top">
-        <button class="profile-chip" data-panel="profile">
-          <span class="avatar"><span id="avatar-lvl">1</span></span>
-          <span class="profile-meta">
-            <span class="profile-name">SGT. VANDAL</span>
-            <span class="profile-xp"><span id="home-xp-fill" class="profile-xp-fill"></span></span>
-          </span>
-        </button>
-        <div class="currency-rail">
-          <button class="cur cur-coins" data-panel="shop"><span class="cur-ico" data-ic="coin"></span><span id="token-count">0</span><span class="cur-plus">+</span></button>
-          <button class="cur cur-gems" data-panel="shop"><span class="cur-ico" data-ic="gem"></span><span id="gem-count">0</span><span class="cur-plus">+</span></button>
-          <div class="cur cur-energy"><span class="cur-ico" data-ic="bolt"></span><span id="energy-count">0</span></div>
-        </div>
+        <div class="home-brand">CINDERFALL<span>SECTOR 9</span></div>
+        <div class="token-pill"><span class="token-ico">◈</span><span id="token-count">0</span></div>
       </header>
 
       <main class="home-body">
-        <!-- HOME -->
+        <!-- PLAY -->
         <section id="tab-play" class="home-panel active">
-          <!-- quest / event feature cards -->
-          <div class="quest-row">
-            <button class="quest-card q-missions" data-panel="missions">
-              <span class="quest-ico" data-ic="checklist"></span>
-              <span class="quest-txt"><b>MISSIONS</b><i id="missions-badge">0 ready</i></span>
-            </button>
-            <button class="quest-card q-events" data-panel="events">
-              <span class="quest-ico" data-ic="sparkle"></span>
-              <span class="quest-txt"><b>EVENTS</b><i>Live now</i></span>
-            </button>
-            <button class="quest-card q-pass" data-panel="battlepass">
-              <span class="quest-ico" data-ic="star"></span>
-              <span class="quest-txt"><b>BATTLE PASS</b><i id="bp-badge">Tier 0</i></span>
-            </button>
-          </div>
-
-          <!-- centre stage: character + rotating weapon + PLAY -->
-          <div class="stage">
-            <div class="stage-glow"></div>
-            <canvas id="hero-char" class="hero-char"></canvas>
-            <canvas id="hero-weapon" class="hero-weapon"></canvas>
+          <div class="hero">
+            <div class="hero-kicker">A 2D TACTICAL OPERATION</div>
+            <h1 class="hero-title">CINDERFALL</h1>
             <div id="loadout-chips" class="loadout-chips"></div>
+            <button id="btn-deploy" class="btn primary big">DEPLOY</button>
           </div>
-
-          <div class="play-dock">
-            <button id="btn-deploy" class="btn-play">
-              <span class="play-label">DEPLOY</span>
-              <span class="play-sub">Sector 9 — Cinder Works</span>
-            </button>
-          </div>
-
-          <!-- secondary features -->
-          <div class="feature-grid">
-            <button class="feature-tile" data-panel="shop"><span class="ft-ico" data-ic="shop"></span><span>Shop</span></button>
-            <button class="feature-tile" data-tab="loadout"><span class="ft-ico" data-ic="target"></span><span>Loadout</span></button>
-            <button class="feature-tile" data-tab="crates"><span class="ft-ico" data-ic="box"></span><span>Crates</span></button>
-            <button class="feature-tile" data-panel="collection"><span class="ft-ico" data-ic="medal"></span><span>Collection</span></button>
-            <button class="feature-tile" data-panel="achievements"><span class="ft-ico" data-ic="trophy"></span><span>Achieve</span></button>
-            <button class="feature-tile" data-panel="leaderboards"><span class="ft-ico" data-ic="ranks"></span><span>Ranks</span></button>
-            <button class="feature-tile" data-panel="clan"><span class="ft-ico" data-ic="shield"></span><span>Clan</span></button>
-            <button class="feature-tile" data-panel="friends"><span class="ft-ico" data-ic="users"></span><span>Friends</span></button>
-            <button class="feature-tile" data-panel="mail"><span class="ft-ico" data-ic="mail"></span><span>Mail</span><i id="mail-dot" class="tile-dot"></i></button>
-            <button class="feature-tile" data-panel="news"><span class="ft-ico" data-ic="news"></span><span>News</span></button>
-            <button class="feature-tile" data-panel="settings"><span class="ft-ico" data-ic="gear"></span><span>Settings</span></button>
-            <button class="feature-tile" data-panel="profile"><span class="ft-ico" data-ic="person"></span><span>Profile</span></button>
-          </div>
+          <details class="controls-fold">
+            <summary>CONTROLS</summary>
+            <div class="controls-grid">
+              <span>A / D</span><span>MOVE</span>
+              <span>C</span><span>CROUCH</span>
+              <span>SPACE</span><span>JUMP</span>
+              <span>SHIFT</span><span>SPRINT</span>
+              <span>MOUSE</span><span>AIM / FIRE</span>
+              <span>R</span><span>RELOAD</span>
+              <span>E</span><span>TAKEDOWN</span>
+              <span>1 / 2 / 3 / 4</span><span>WEAPONS</span>
+              <span>RIGHT-CLICK</span><span>HEAVY MELEE</span>
+              <span>ESC</span><span>PAUSE</span>
+            </div>
+            <div class="controls-note">On phones, on-screen controls appear automatically.</div>
+          </details>
         </section>
 
         <!-- LOADOUT -->
@@ -180,22 +138,10 @@
       </main>
 
       <nav class="home-tabs">
-        <button class="home-tab active" data-tab="play"><span class="tab-ico" data-ic="home"></span>HOME</button>
-        <button class="home-tab" data-tab="loadout"><span class="tab-ico" data-ic="target"></span>LOADOUT</button>
-        <button class="home-tab" data-tab="crates"><span class="tab-ico" data-ic="box"></span>CRATES</button>
+        <button class="home-tab active" data-tab="play"><span class="tab-ico">▶</span>PLAY</button>
+        <button class="home-tab" data-tab="loadout"><span class="tab-ico">◈</span>LOADOUT</button>
+        <button class="home-tab" data-tab="crates"><span class="tab-ico">▣</span>CRATES</button>
       </nav>
-    </div>
-
-    <!-- feature panel modal (slides up) -->
-    <div id="modal-host" class="modal-host hidden">
-      <div class="modal-scrim"></div>
-      <div id="modal-sheet" class="modal-sheet">
-        <div class="modal-head">
-          <h3 id="modal-title">TITLE</h3>
-          <button id="modal-close" class="modal-close">✕</button>
-        </div>
-        <div id="modal-body" class="modal-body"></div>
-      </div>
     </div>
 
     <!-- Crate reveal overlay (CS-style horizontal reel) -->
@@ -242,7 +188,7 @@
     <button id="tc-reload" class="tc-btn tc-reload">RELOAD</button>
     <button id="tc-swap" class="tc-btn tc-swap">SWAP</button>
     <button id="tc-crouch" class="tc-btn tc-crouch">CROUCH</button>
-    <button id="tc-takedown" class="tc-btn tc-takedown"><span class="tc-td-ico" data-ic="knife"></span>TAKEDOWN</button>
+    <button id="tc-takedown" class="tc-btn tc-takedown">TAKEDOWN</button>
   </div>
 
   <!-- Deploy cinematic: letterbox bars + briefing text, driven by main.js -->

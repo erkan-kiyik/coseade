@@ -19,7 +19,6 @@ import { Hud } from './game/hud.js';
 import { Progression, UNLOCKS } from './game/progression.js';
 import { applyLoadout, ALL_WEAPON_IDS } from './game/meta.js';
 import { MetaUI } from './game/metaui.js';
-import { HomeUI } from './game/homeui.js';
 import { TouchControls } from './engine/touch.js';
 
 const canvas = document.getElementById('game');
@@ -175,18 +174,13 @@ async function boot() {
     audio,
   });
   game.metaUI.mount();
-  game.homeUI = new HomeUI({
-    progression: game.progression,
-    audio, assets, metaUI: game.metaUI,
-  });
-  game.homeUI.mount();
   game.touch = new TouchControls(input, { force: params.has('touch') });
   game.touch.mount();
 
   hud.setLoad(1, 'READY');
   await raf();
   if (DEMO) game.deploy();
-  else { hud.show('menu'); game.state = 'menu'; game.metaUI.refresh(); game.homeUI.setActive(true); }
+  else { hud.show('menu'); game.state = 'menu'; game.metaUI.refresh(); }
   requestAnimationFrame(frame);
 }
 
@@ -273,7 +267,7 @@ class Game {
   onPlayerHit(headshot, killed) {
     if (!killed) return;
     this.progression.recordKill(headshot);   // also awards tokens
-    this.progression.addBpXp(headshot ? 20 : 12);   // battle-pass progress
+    this.progression.addBpXp(headshot ? 20 : 12);   // battle-pass progress (currency system stays intact even though the shop UI is gone)
     hud.setTokens(this.progression.tokens);
     const res = this.progression.addXp(10 + (headshot ? 15 : 0));
     this.handleLevelUp(res);
@@ -459,7 +453,6 @@ class Game {
     hud.show(s);
     if (s === 'play') this.snapshotRun();   // checkpoint as soon as play begins
     if (s === 'menu' && this.metaUI) this.metaUI.refresh();
-    if (this.homeUI) this.homeUI.setActive(s === 'menu');
     if (this.touch) this.touch.setVisible(s === 'play');
   }
 
