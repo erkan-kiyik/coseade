@@ -8,6 +8,10 @@ import { drawSoldier } from './rig.js';
 import { newWeaponState } from './rig.js';
 import { CATALOG, itemById } from './meta.js';
 import { BP_TIERS } from './progression.js';
+import { icon, paintIcons } from './icons.js';
+
+// Small inline currency glyph for use inside generated panel text.
+const cur = (name) => icon(name, 'cur-sm');
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,6 +51,7 @@ export class HomeUI {
         else if (panel) this.openPanel(panel);
       });
     });
+    paintIcons(document);   // swap every [data-ic] placeholder for its glyph
     $('modal-close').addEventListener('click', () => this.closePanel());
     $('modal-host').querySelector('.modal-scrim').addEventListener('click', () => this.closePanel());
     // pop on the bottom tabs too
@@ -76,6 +81,14 @@ export class HomeUI {
     $('missions-badge').textContent = ready ? `${ready} ready` : 'In progress';
     $('bp-badge').textContent = `Tier ${p.bpTier}`;
     const mailDot = $('mail-dot'); if (mailDot) mailDot.style.display = this._mailClaimed ? 'none' : '';
+    // deploy button reflects a resumable run (continue) vs a fresh deployment
+    const run = p.loadRun && p.loadRun();
+    const dl = document.querySelector('#btn-deploy .play-label');
+    const ds = document.querySelector('#btn-deploy .play-sub');
+    if (dl && ds) {
+      if (run) { dl.textContent = 'CONTINUE'; ds.textContent = `Resume · Stage ${run.stage}`; }
+      else { dl.textContent = 'DEPLOY'; ds.textContent = 'Sector 9 — Cinder Works'; }
+    }
     // showcase reflects equipped loadout
     const opId = p.equipped('operator');
     const opItem = opId && itemById(opId);
@@ -200,7 +213,7 @@ export class HomeUI {
     const rowsFor = (list, key) => (p.data[key] || []).map((m, i) => {
       const prog = p.missionProgress(m), done = prog >= m.goal;
       const rw = this.rewardLabel(m.reward);
-      return `<div class="m-row"><div class="m-ico">✳</div><div class="m-main">
+      return `<div class="m-row"><div class="m-ico">${icon('checklist')}</div><div class="m-main">
         <div class="m-title">${m.desc}</div>
         <div class="m-desc">${prog} / ${m.goal} · ${rw}</div>
         <div class="m-bar"><span style="width:${Math.round(prog / m.goal * 100)}%"></span></div>
@@ -229,9 +242,9 @@ export class HomeUI {
     const p = this.p;
     const nodes = BP_TIERS.map((row) => {
       const state = p.data.bpClaimed[row.tier] ? 'claimed' : p.bpClaimable(row.tier) ? 'ready' : '';
-      const ico = row.reward.item ? '📦' : row.reward.gems ? '◆' : row.reward.energy ? '⚡' : '◈';
+      const ico = icon(row.reward.item ? 'box' : row.reward.gems ? 'gem' : row.reward.energy ? 'bolt' : 'coin');
       return `<button class="bp-node ${state} ${row.premium ? 'premium' : ''}" data-bp="${row.tier}">
-        <div class="bp-t">TIER ${row.tier}${row.premium ? ' ★' : ''}</div>
+        <div class="bp-t">TIER ${row.tier}${row.premium ? ' ' + icon('star', 'inl') : ''}</div>
         <div class="bp-rw">${ico}</div><div class="bp-lbl">${row.label}</div>
         <div class="m-btn ${state === 'ready' ? '' : 'locked'}" style="margin-top:6px;pointer-events:none">${state === 'claimed' ? 'DONE' : state === 'ready' ? 'CLAIM' : 'LOCKED'}</div>
       </button>`;
@@ -242,7 +255,7 @@ export class HomeUI {
         <div style="text-align:right"><div class="m-desc">${p.data.bpXp % 1000} / 1000 XP</div>
         <div class="m-bar" style="width:120px"><span style="width:${Math.round(p.bpTierProgress() * 100)}%"></span></div></div></div>
         <div class="bp-track">${nodes}</div>
-        <p class="m-note">Earn Pass XP from deployments. Premium ★ tiers unlock with the season pass.</p>`,
+        <p class="m-note">Earn Pass XP from deployments. Premium tiers unlock with the season pass.</p>`,
       after: (body) => body.querySelectorAll('[data-bp]').forEach((n) => n.addEventListener('click', () => {
         const row = this.p.claimBpTier(+n.getAttribute('data-bp'));
         if (row) { this.audio && this.audio.reward && this.audio.reward(); this.toast(`UNLOCKED · ${row.label}`); this.refresh(); this.openPanel('battlepass'); }
@@ -253,19 +266,19 @@ export class HomeUI {
 
   panel_shop() {
     const offers = [
-      { cls: 'shop-featured', ico: '🎁', name: 'Starter Bundle', price: '20 ◆', act: () => { if (this.p.spendGems(20)) { this.p.grantReward({ coins: 500, item: 'rifle_cinder' }); return 'Bundle unlocked!'; } return 'Not enough gems'; } },
-      { cls: 'shop-daily', ico: '◈', name: 'Coin Pack · 400', price: '8 ◆', act: () => { if (this.p.spendGems(8)) { this.p.grantReward({ coins: 400 }); return '+400 coins'; } return 'Not enough gems'; } },
-      { cls: 'shop-bundle', ico: '📦', name: 'Supply Crate', price: '120 ◈', act: () => { this.closePanel(); this.metaUI.switchTab('crates'); return null; } },
-      { cls: 'shop-daily', ico: '⚡', name: 'Energy Refill', price: '5 ◆', act: () => { if (this.p.spendGems(5)) { this.p.refillEnergy(); return 'Energy refilled'; } return 'Not enough gems'; } },
+      { cls: 'shop-featured', ico: 'gift', name: 'Starter Bundle', price: `20 ${cur('gem')}`, act: () => { if (this.p.spendGems(20)) { this.p.grantReward({ coins: 500, item: 'rifle_cinder' }); return 'Bundle unlocked!'; } return 'Not enough gems'; } },
+      { cls: 'shop-daily', ico: 'coin', name: 'Coin Pack · 400', price: `8 ${cur('gem')}`, act: () => { if (this.p.spendGems(8)) { this.p.grantReward({ coins: 400 }); return '+400 coins'; } return 'Not enough gems'; } },
+      { cls: 'shop-bundle', ico: 'box', name: 'Supply Crate', price: `120 ${cur('coin')}`, act: () => { this.closePanel(); this.metaUI.switchTab('crates'); return null; } },
+      { cls: 'shop-daily', ico: 'bolt', name: 'Energy Refill', price: `5 ${cur('gem')}`, act: () => { if (this.p.spendGems(5)) { this.p.refillEnergy(); return 'Energy refilled'; } return 'Not enough gems'; } },
     ];
     this._shopOffers = offers;
     const cards = offers.map((o, i) => `<div class="shop-card ${o.cls}" data-shop="${i}">
-      <div class="shop-banner">${o.ico}</div>
+      <div class="shop-banner">${icon(o.ico)}</div>
       <div class="shop-info"><div class="shop-name">${o.name}</div><div class="shop-price">${o.price}</div></div></div>`).join('');
     return {
       title: 'SHOP',
       html: `<div class="m-sub">FEATURED &amp; DAILY DEALS</div><div class="shop-grid">${cards}</div>
-        <p class="m-note">Gems ◆ are premium currency · Coins ◈ are earned in combat.</p>`,
+        <p class="m-note">Gems ${cur('gem')} are premium currency · Coins ${cur('coin')} are earned in combat.</p>`,
       after: (body) => body.querySelectorAll('[data-shop]').forEach((c) => c.addEventListener('click', () => {
         this.bounce(c);
         const res = this._shopOffers[+c.getAttribute('data-shop')].act();
@@ -277,18 +290,18 @@ export class HomeUI {
   panel_achievements() {
     const d = this.p.data;
     const list = [
-      { ico: '💀', name: 'Executioner', desc: 'Total eliminations', val: d.totalKills, goal: 500 },
-      { ico: '🎯', name: 'Marksman', desc: 'Total headshots', val: d.totalHeadshots, goal: 200 },
-      { ico: '🌊', name: 'Survivor', desc: 'Best stage reached', val: d.longestSurvivalStage, goal: 15 },
-      { ico: '📦', name: 'Collector', desc: 'Crates opened', val: d.cratesOpened, goal: 25 },
-      { ico: '⭐', name: 'Veteran', desc: 'Operator level', val: d.level, goal: 20 },
+      { ico: 'skull', name: 'Executioner', desc: 'Total eliminations', val: d.totalKills, goal: 500 },
+      { ico: 'target', name: 'Marksman', desc: 'Total headshots', val: d.totalHeadshots, goal: 200 },
+      { ico: 'wave', name: 'Survivor', desc: 'Best stage reached', val: d.longestSurvivalStage, goal: 15 },
+      { ico: 'box', name: 'Collector', desc: 'Crates opened', val: d.cratesOpened, goal: 25 },
+      { ico: 'star', name: 'Veteran', desc: 'Operator level', val: d.level, goal: 20 },
     ];
     return {
       title: 'ACHIEVEMENTS',
-      html: list.map((a) => `<div class="m-row"><div class="m-ico">${a.ico}</div><div class="m-main">
+      html: list.map((a) => `<div class="m-row"><div class="m-ico">${icon(a.ico)}</div><div class="m-main">
         <div class="m-title">${a.name}</div><div class="m-desc">${a.desc} · ${Math.min(a.val, a.goal)} / ${a.goal}</div>
         <div class="m-bar"><span style="width:${Math.min(100, Math.round(a.val / a.goal * 100))}%"></span></div></div>
-        <div class="m-btn ${a.val >= a.goal ? '' : 'locked'}" style="pointer-events:none">${a.val >= a.goal ? '✓' : ''}</div></div>`).join(''),
+        <div class="m-btn ${a.val >= a.goal ? '' : 'locked'}" style="pointer-events:none">${a.val >= a.goal ? icon('check', 'inl') : ''}</div></div>`).join(''),
     };
   }
 
@@ -310,9 +323,9 @@ export class HomeUI {
     const claimed = this._mailClaimed;
     return {
       title: 'MAIL',
-      html: `<div class="m-row"><div class="m-ico">🎁</div><div class="m-main"><div class="m-title">Welcome, Operator</div>
+      html: `<div class="m-row"><div class="m-ico">${icon('gift')}</div><div class="m-main"><div class="m-title">Welcome, Operator</div>
         <div class="m-desc">A gift from Command to get you started.</div></div>
-        <button class="m-btn ${claimed ? 'locked' : ''}" id="mail-claim" ${claimed ? 'disabled' : ''}>${claimed ? 'CLAIMED' : 'CLAIM 15 ◆'}</button></div>
+        <button class="m-btn ${claimed ? 'locked' : ''}" id="mail-claim" ${claimed ? 'disabled' : ''}>${claimed ? 'CLAIMED' : `CLAIM 15 ${cur('gem')}`}</button></div>
         <p class="m-note">You have no other messages.</p>`,
       after: (body) => {
         const b = body.querySelector('#mail-claim');
@@ -326,19 +339,19 @@ export class HomeUI {
 
   panel_news() {
     const items = [
-      ['🔫', 'Arsenal Expansion', 'Sci-fi weapons added: Plasma Rifle, Railgun, Ion Cannon, Laser SMG and more — with projectile, beam, charge and overheat mechanics.'],
-      ['💨', 'Atmosphere Overhaul', 'Volumetric wind-driven smoke, cinematic grading and a reworked industrial skyline with cooling towers and cranes.'],
-      ['🎛️', 'New Interface', 'A fresh premium home with missions, battle pass, shop and daily rewards.'],
+      ['rifle', 'Arsenal Expansion', 'Sci-fi weapons added: Plasma Rifle, Railgun, Ion Cannon, Laser SMG and more — with projectile, beam, charge and overheat mechanics.'],
+      ['smoke', 'Atmosphere Overhaul', 'Volumetric wind-driven smoke, cinematic grading and a reworked industrial skyline with cooling towers and cranes.'],
+      ['layout', 'New Interface', 'A fresh premium home with missions, battle pass, shop and daily rewards.'],
     ];
-    return { title: 'NEWS', html: items.map((n) => `<div class="m-row"><div class="m-ico">${n[0]}</div><div class="m-main"><div class="m-title">${n[1]}</div><div class="m-desc">${n[2]}</div></div></div>`).join('') };
+    return { title: 'NEWS', html: items.map((n) => `<div class="m-row"><div class="m-ico">${icon(n[0])}</div><div class="m-main"><div class="m-title">${n[1]}</div><div class="m-desc">${n[2]}</div></div></div>`).join('') };
   }
 
   panel_events() {
     return {
       title: 'EVENTS',
-      html: `<div class="m-row" style="border-color:var(--c-violet)"><div class="m-ico">🔥</div><div class="m-main">
+      html: `<div class="m-row" style="border-color:var(--c-violet)"><div class="m-ico">${icon('fire')}</div><div class="m-main">
         <div class="m-title">CINDER PROTOCOL</div><div class="m-desc">Limited-time surge · double Pass XP from deployments this week.</div></div></div>
-        <div class="m-row"><div class="m-ico">☠️</div><div class="m-main"><div class="m-title">Hostile Overrun</div>
+        <div class="m-row"><div class="m-ico">${icon('skull')}</div><div class="m-main"><div class="m-title">Hostile Overrun</div>
         <div class="m-desc">Weekend event — denser enemy waves, bonus coins per kill.</div></div></div>
         <p class="m-note">Events rotate weekly. Play deployments to progress event goals.</p>`,
     };
@@ -346,13 +359,13 @@ export class HomeUI {
 
   panel_clan() {
     return { title: 'CLAN', html: `<p class="m-note">You are not in a clan yet.</p>
-      <div class="m-row"><div class="m-ico">🛡</div><div class="m-main"><div class="m-title">3RD RECON</div><div class="m-desc">Open · 22 / 30 members</div></div><button class="m-btn" onclick="return false">JOIN</button></div>
-      <div class="m-row"><div class="m-ico">⚔️</div><div class="m-main"><div class="m-title">CINDER WOLVES</div><div class="m-desc">Invite only · 30 / 30 members</div></div><button class="m-btn locked" disabled>FULL</button></div>` };
+      <div class="m-row"><div class="m-ico">${icon('shield')}</div><div class="m-main"><div class="m-title">3RD RECON</div><div class="m-desc">Open · 22 / 30 members</div></div><button class="m-btn" onclick="return false">JOIN</button></div>
+      <div class="m-row"><div class="m-ico">${icon('swords')}</div><div class="m-main"><div class="m-title">CINDER WOLVES</div><div class="m-desc">Invite only · 30 / 30 members</div></div><button class="m-btn locked" disabled>FULL</button></div>` };
   }
 
   panel_friends() {
-    const f = [['NOVA', 'In lobby', '🟢'], ['GHOST', 'In mission', '🟡'], ['VIPER', 'Offline', '⚫']];
-    return { title: 'FRIENDS', html: f.map((x) => `<div class="m-row"><div class="m-ico">${x[2]}</div><div class="m-main"><div class="m-title">${x[0]}</div><div class="m-desc">${x[1]}</div></div><button class="m-btn ${x[1] === 'Offline' ? 'locked' : ''}" ${x[1] === 'Offline' ? 'disabled' : ''}>INVITE</button></div>`).join('') + `<p class="m-note">Add friends to squad up.</p>` };
+    const f = [['NOVA', 'In lobby', 'on'], ['GHOST', 'In mission', 'away'], ['VIPER', 'Offline', 'off']];
+    return { title: 'FRIENDS', html: f.map((x) => `<div class="m-row"><div class="m-ico">${icon('dot', 'st-' + x[2])}</div><div class="m-main"><div class="m-title">${x[0]}</div><div class="m-desc">${x[1]}</div></div><button class="m-btn ${x[1] === 'Offline' ? 'locked' : ''}" ${x[1] === 'Offline' ? 'disabled' : ''}>INVITE</button></div>`).join('') + `<p class="m-note">Add friends to squad up.</p>` };
   }
 
   panel_profile() {
@@ -361,7 +374,7 @@ export class HomeUI {
     const mm = Math.floor(d.longestSurvivalTime / 60), ss = String(d.longestSurvivalTime % 60).padStart(2, '0');
     return {
       title: 'PROFILE',
-      html: `<div class="m-row" style="border-color:var(--c-blue)"><div class="m-ico">🎖</div><div class="m-main"><div class="m-title">SGT. "VANDAL" · LVL ${d.level}</div><div class="m-desc">3RD RECON · login streak ${d.loginStreak || 1}d</div></div></div>
+      html: `<div class="m-row" style="border-color:var(--c-blue)"><div class="m-ico">${icon('medal')}</div><div class="m-main"><div class="m-title">SGT. "VANDAL" · LVL ${d.level}</div><div class="m-desc">3RD RECON · login streak ${d.loginStreak || 1}d</div></div></div>
         ${stat('Total eliminations', d.totalKills)}${stat('Headshots', d.totalHeadshots)}${stat('Lifetime accuracy', p.accuracy() + '%')}
         ${stat('Best stage', d.longestSurvivalStage)}${stat('Best survival', mm + ':' + ss)}${stat('Deployments', d.gamesPlayed)}`,
     };
@@ -371,10 +384,10 @@ export class HomeUI {
     const muted = this.audio && this.audio.master && this.audio.master.gain.value === 0;
     return {
       title: 'SETTINGS',
-      html: `<div class="m-row"><div class="m-ico">🔊</div><div class="m-main"><div class="m-title">Sound</div><div class="m-desc">Master audio</div></div>
+      html: `<div class="m-row"><div class="m-ico">${icon('sound')}</div><div class="m-main"><div class="m-title">Sound</div><div class="m-desc">Master audio</div></div>
         <button class="m-btn" id="set-sound">${muted ? 'OFF' : 'ON'}</button></div>
-        <div class="m-row"><div class="m-ico">🎮</div><div class="m-main"><div class="m-title">Controls</div><div class="m-desc">On-screen controls appear automatically on touch devices</div></div></div>
-        <div class="m-row"><div class="m-ico">♻️</div><div class="m-main"><div class="m-title">Reset progress</div><div class="m-desc">Clears levels, currency and unlocks</div></div>
+        <div class="m-row"><div class="m-ico">${icon('gamepad')}</div><div class="m-main"><div class="m-title">Controls</div><div class="m-desc">On-screen controls appear automatically on touch devices</div></div></div>
+        <div class="m-row"><div class="m-ico">${icon('reset')}</div><div class="m-main"><div class="m-title">Reset progress</div><div class="m-desc">Clears levels, currency and unlocks</div></div>
         <button class="m-btn" id="set-reset" style="background:var(--red);color:#fff">RESET</button></div>
         <p class="m-note">CINDERFALL · Sector 9 — build 2026.07</p>`,
       after: (body) => {
@@ -400,9 +413,9 @@ export class HomeUI {
 
   rewardLabel(r) {
     if (!r) return '';
-    if (r.coins) return `${r.coins} ◈`;
-    if (r.gems) return `${r.gems} ◆`;
-    if (r.energy) return `+${r.energy} ⚡`;
+    if (r.coins) return `${r.coins} ${cur('coin')}`;
+    if (r.gems) return `${r.gems} ${cur('gem')}`;
+    if (r.energy) return `+${r.energy} ${cur('bolt')}`;
     if (r.item) { const it = itemById(r.item); return it ? it.name : 'Item'; }
     return '';
   }

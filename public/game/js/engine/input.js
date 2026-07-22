@@ -41,6 +41,10 @@ export class Input {
   }
   get jump() { return this.hit('Space') || this.hit('KeyW') || this.hit('ArrowUp'); }
   get sprint() { return this.down('ShiftLeft') || this.down('ShiftRight'); }
+  // hold to crouch; C or either Ctrl (Ctrl is also a common console-shooter bind)
+  get crouch() { return this.down('KeyC') || this.down('ControlLeft') || this.down('ControlRight'); }
+  // context action (silent takedown): E, or F when not otherwise bound
+  get interact() { return this.hit('KeyE'); }
 
   endFrame() {
     this.pressed.clear();

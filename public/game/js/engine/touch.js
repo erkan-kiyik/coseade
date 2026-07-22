@@ -26,6 +26,25 @@ export class TouchControls {
     this.bindButton('tc-jump', () => this.press('Space'));
     this.bindButton('tc-reload', () => this.press('KeyR'));
     this.bindButton('tc-swap', () => this.cycleWeapon());
+    this.bindHold('tc-crouch', 'KeyC');
+    this.bindButton('tc-takedown', () => this.press('KeyE'));
+  }
+
+  // Holds a key down for as long as the touch button is pressed (unlike
+  // press(), which is a momentary tap) — used for crouch.
+  bindHold(id, code) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); this.key(code, true); el.classList.add('on'); });
+    const up = () => { this.key(code, false); el.classList.remove('on'); };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('pointerleave', up);
+  }
+
+  setTakedownAvailable(on) {
+    const el = document.getElementById('tc-takedown');
+    if (el) el.classList.toggle('avail', !!on);
   }
 
   setVisible(on) {

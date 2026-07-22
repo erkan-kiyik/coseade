@@ -30,6 +30,16 @@ const DEMO = params.has('demo');
 
 let vw = 0, vh = 0, dpr = 1;
 let lightCv, lightG, glowCv, glowG, grainCv;
+let game = null;   // declared early so resize() can safely reference it
+
+// Responsive camera zoom: 1.25 at ~720p, eased down on short/narrow phone
+// viewports so more of the scene stays framed and characters aren't oversized.
+// A ?zoom= query param still overrides for testing.
+function baseZoom() {
+  const q = params.get('zoom');
+  if (q) return parseFloat(q);
+  return 1.25 * clamp(Math.min(vh / 720, vw / 1000), 0.72, 1.06);
+}
 
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -37,8 +47,11 @@ function resize() {
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   const l = makeCanvas(vw * dpr, vh * dpr); lightCv = l.cv; lightG = l.g;
   const g = makeCanvas(vw * dpr, vh * dpr); glowCv = g.cv; glowG = g.g;
+  // keep the framing right across orientation / resize (not mid-cinematic)
+  if (game && game.cam && game.state !== 'intro') game.cam.zoom = baseZoom();
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
 resize();
 
 // pre-rendered film grain
@@ -183,7 +196,7 @@ class Game {
   constructor() {
     this.world = assets.world;
     this.cam = new Camera();
-    this.cam.zoom = parseFloat(params.get('zoom')) || 1.25;
+    this.cam.zoom = baseZoom();
     this.particles = new Particles();
     this.fx = new FX(this.particles, audio, this.cam, this.world);
     this.fx.bindGame(this);   // lets energy projectiles resolve damage
@@ -195,6 +208,8 @@ class Game {
     this.endDelay = 0;
     this.chainQueue = [];
     this.stage = 1;
+    this.pendingResume = null;   // run snapshot to restore on the next reset()
+    this._autosaveT = 0;
     this._prevDetState = 'hidden';
     // the full walk-in cinematic only plays once per session (and never in
     // ?demo=1, which scripts input assuming control right after deploy)
@@ -205,8 +220,9 @@ class Game {
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
       resume: () => { audio.ui(); this.setState('play'); },
-      restart: () => { audio.ui(); this.reset(); this.setState('play'); },
-      quit: () => { audio.ui(); this.reset(); this.setState('menu'); },
+      // restart is an explicit fresh mission — discard the resume snapshot
+      restart: () => { audio.ui(); this.progression.clearRun(); this.pendingResume = null; this.reset(); this.setState('play'); },
+      quit: () => { audio.ui(); this.pendingResume = null; this.reset(); this.setState('menu'); },
     });
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
@@ -263,13 +279,43 @@ class Game {
     this.handleLevelUp(res);
   }
 
+  // Silent takedown reward: counts as an elimination, with a small bonus for
+  // the clean approach. No squad alert (handled by the enemy's silent flag).
+  onStealthKill(enemy) {
+    this.progression.recordKill(false);
+    this.progression.addBpXp(16);
+    hud.setTokens(this.progression.tokens);
+    const res = this.progression.addXp(14);
+    this.handleLevelUp(res);
+  }
+
+  // Persist the live mission state so a reload continues from here.
+  snapshotRun() {
+    const p = this.player;
+    if (!p) return;
+    this.progression.saveRun({
+      stage: this.stage,
+      hp: Math.round(p.hp), armor: Math.round(p.armor),
+      kills: p.kills, headshots: p.headshots,
+      elapsed: Math.round(this.time - this.startTime),
+    });
+  }
+
   reset() {
-    this.stage = 1;
-    this.world.regenerate(1);
+    // resume a saved run if one was queued (deploy → CONTINUE), else fresh
+    const resume = this.pendingResume; this.pendingResume = null;
+    this.stage = resume ? resume.stage : 1;
+    this.world.regenerate(this.stage);
     this.player = new Player(assets.ranger, assets.shadow, assets.weapons, this.world, this.fx, this.cam, audio, hud);
     this.player.x = 260; this.player.y = GROUND_Y;
     this.applyAllUnlocks();
     applyLoadout(this.player, this.progression, assets);   // equipped crate cosmetics win
+    if (resume) {
+      this.player.hp = clamp(resume.hp || this.player.maxHp, 1, this.player.maxHp);
+      this.player.armor = clamp(resume.armor || 0, 0, this.player.maxArmor);
+      this.player.kills = resume.kills || 0;
+      this.player.headshots = resume.headshots || 0;
+    }
     hud.setWeaponIcons(this.player.arsenal);
     this.spawnEnemiesForStage();
     this.particles.pool.length = 0;
@@ -303,9 +349,12 @@ class Game {
     const res = this.progression.addXp(50 + this.stage * 5);
     const leveled = this.handleLevelUp(res);
     if (!leveled) hud.notify(`STAGE ${this.stage} — HOSTILES INBOUND`);
+    this.snapshotRun();   // checkpoint the new stage so a reload resumes here
   }
 
   deploy() {
+    // if a run is in progress, DEPLOY continues it (reset() consumes this)
+    this.pendingResume = this.progression.loadRun();
     hud.sceneFade(() => {
       this.reset();
       if (!this.introShown) {
@@ -385,7 +434,7 @@ class Game {
     }
 
     this.player.update(dt, { input: cs, enemies: [], game: this, vw, vh });
-    this.cam.zoom = damp(this.cam.zoom, t < 3.0 ? 0.95 : 1.25, 1.6, dt);
+    this.cam.zoom = damp(this.cam.zoom, t < 3.0 ? 0.95 : baseZoom(), 1.6, dt);
     this.cam.follow(this.player.x, this.player.y - 60, 0, dt);
     this.cam.update(dt, false, Math.abs(this.player.vx) > 40);
   }
@@ -397,7 +446,7 @@ class Game {
       hud.showCine(false);
       const p = this.player;
       p.x = 260; p.vx = 0; p.vy = 0; p.facing = 1;
-      this.cam.zoom = parseFloat(params.get('zoom')) || 1.25;
+      this.cam.zoom = baseZoom();
       this.cam.follow(p.x, p.y - 60, 0, 0, true);
       this.setState('play');
       audio.resume();
@@ -408,6 +457,7 @@ class Game {
   setState(s) {
     this.state = s;
     hud.show(s);
+    if (s === 'play') this.snapshotRun();   // checkpoint as soon as play begins
     if (s === 'menu' && this.metaUI) this.metaUI.refresh();
     if (this.homeUI) this.homeUI.setActive(s === 'menu');
     if (this.touch) this.touch.setVisible(s === 'play');
@@ -506,6 +556,21 @@ class Game {
     this.cam.follow(p.x, p.y - 60, Math.cos(p.aimWorld), dt);
     this.cam.update(dt, p.sprinting, Math.abs(p.vx) > 60);
 
+    // stealth-kill prompt: shown above the operator whenever a takedown is
+    // available, and mirrored to the on-screen takedown button on touch
+    if (this.state === 'play' && p.deadT <= 0) {
+      const target = p.stealthTarget;
+      if (target) {
+        const sx = vw / 2 + (p.x - this.cam.x) * this.cam.zoom;
+        const sy = vh / 2 + (p.y - 150 - this.cam.y) * this.cam.zoom;
+        hud.setStealthPrompt(true, sx, sy);
+      } else hud.setStealthPrompt(false);
+      if (this.touch) this.touch.setTakedownAvailable(!!target);
+    } else {
+      hud.setStealthPrompt(false);
+      if (this.touch) this.touch.setTakedownAvailable(false);
+    }
+
     if (this.state === 'play') {
       if (p.deadT > 0) {
         this.endDelay += dt;
@@ -514,6 +579,10 @@ class Game {
         this.endDelay += dt;
         if (this.endDelay > 1.6) this.nextStage();
       }
+      // lightweight periodic checkpoint — "save & continue" per spec: state
+      // is captured frequently so a reload/close always resumes in place
+      this._autosaveT += dt;
+      if (this._autosaveT > 4) { this._autosaveT = 0; this.snapshotRun(); }
     }
     input.endFrame();
   }
@@ -524,6 +593,7 @@ class Game {
     const t = Math.round(this.time - this.startTime);
     this.progression.recordShots(p.shots, p.hits);
     this.progression.recordRun(this.stage, t);
+    this.progression.clearRun();   // the run is over — nothing to resume
     hud.end([
       `STAGE REACHED — ${this.stage}`,
       `HOSTILES ELIMINATED — ${p.kills} &nbsp;(${p.headshots} HEADSHOTS)`,
@@ -752,7 +822,6 @@ const NULL_INPUT = {
 
 // ------------------------------------------------------------------ loop
 
-let game = null;
 let last = performance.now();
 let acc = 0;
 const STEP = 1 / 60;

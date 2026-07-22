@@ -147,9 +147,10 @@ export class World {
     P(env.dock(260, 40), 4030);
     P(env.crate(26, 20), 3861);
 
-    P(env.container('containerRed', 'HLC-407'), 1798);
-    P(env.container('containerBlue', 'MSU-2213'), 1846, GY - 38);
-    P(env.container('containerGreen', 'KDR-118'), 3128);
+    // authored opener keeps its precisely-fitted container stack (96×38)
+    P(env.container('containerRed', 'HLC-407', 96, 38), 1798);
+    P(env.container('containerBlue', 'MSU-2213', 96, 38), 1846, GY - 38);
+    P(env.container('containerGreen', 'KDR-118', 96, 38), 3128);
     P(env.crate(26, 20), 1715);
     P(env.crate(26, 20), 2573);
     P(env.crate(26, 22), 2609, GY);        // stack base
@@ -234,15 +235,16 @@ export class World {
       const kind = coverKinds[rng.int(0, coverKinds.length - 1)];
       const gap = rng.range(240, 420);
       if (kind === 'crate') {
-        P(env.crate(26, 20), x);
-        this.colliders.push({ x: x - 13, y: GY - 20, w: 26, h: 20 });
+        // enlarged cover — comfortable to tuck behind (matches new art size)
+        P(env.crate(), x);
+        this.colliders.push({ x: x - 15, y: GY - 25, w: 30, h: 25 });
       } else if (kind === 'container') {
         const variant = rng.pick(['containerRed', 'containerBlue', 'containerGreen']);
         P(env.container(variant, `${rng.pick(['HLC', 'MSU', 'KDR', 'TRX'])}-${rng.int(100, 999)}`), x);
-        this.colliders.push({ x: x - 48, y: GY - 38, w: 96, h: 38 });
+        this.colliders.push({ x: x - 54, y: GY - 44, w: 108, h: 44 });
       } else if (kind === 'sandbags') {
-        P(env.sandbags(), x);
-        this.colliders.push({ x: x - 21, y: GY - 13, w: 42, h: 13 });
+        P(env.sandbags(1.2), x);
+        this.colliders.push({ x: x - 24, y: GY - 16, w: 48, h: 16 });
       } else if (kind === 'barrel') {
         P(env.barrel(rng.pick(['rust', 'blue'])), x);
       } else if (kind === 'dumpster') {
@@ -362,8 +364,18 @@ export class World {
     let nx = ent.x + ent.vx * dt;
     let c = this.rectHit(nx - ent.halfW, ent.y - ent.h, ent.halfW * 2, ent.h - 1);
     if (c) {
-      nx = ent.vx > 0 ? c.x - ent.halfW : c.x + c.w + ent.halfW;
-      ent.vx = 0;
+      // step-up: if the obstacle is a low ledge (crate, sandbags, dock lip)
+      // and there's headroom above it, walk up onto it instead of hard-stopping
+      // — smoother traversal. Tall cover (containers, walls) still blocks.
+      const STEP = 27;
+      const topGap = ent.y - c.y;
+      const clearAbove = !this.rectHit(nx - ent.halfW, c.y - ent.h, ent.halfW * 2, ent.h - 2);
+      if (ent.onGround && topGap > 0.5 && topGap <= STEP && clearAbove) {
+        ent.y = c.y;
+      } else {
+        nx = ent.vx > 0 ? c.x - ent.halfW : c.x + c.w + ent.halfW;
+        ent.vx = 0;
+      }
     }
     ent.x = nx;
 

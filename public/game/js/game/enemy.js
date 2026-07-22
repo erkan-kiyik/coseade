@@ -98,11 +98,13 @@ export class Enemy {
     const facingAng = this.facing === 1 ? 0 : Math.PI;
     const off = Math.abs(angleDiff(facingAng, toPlayer));
 
-    const visionRange = 640 + this.difficulty * 20;
+    // a crouched operator presents a lower profile — spotted later and closer
+    const crouch = player.crouchHold || 0;
+    const visionRange = (640 + this.difficulty * 20) * (1 - crouch * 0.32);
     const visionHalf = 0.5;
-    const periRange = 260;
+    const periRange = 260 * (1 - crouch * 0.42);
     const periHalf = 2.4;
-    const closeRange = 130;
+    const closeRange = 130 - crouch * 30;
 
     let visible = false;
     if (dist < closeRange || (dist < visionRange && off < visionHalf) || (dist < periRange && off < periHalf)) {
@@ -125,6 +127,41 @@ export class Enemy {
         o.searchT = 0;
         o.lastKnownX = this.lastKnownX;
         o.lastKnownY = this.lastKnownY;
+        o.facing = Math.sign(this.x - o.x) || o.facing;
+      }
+    }
+  }
+
+  // Silent knife takedown from behind: drops instantly, no muzzle noise, and
+  // flags the death as silent so only squadmates with a line of sight react.
+  stealthKill(player) {
+    if (this.deadT > 0) return;
+    this.hp = 0;
+    this.deadT = 0.001;
+    this.silentKill = true;
+    this.flinchT = 0.25;
+    this.vx += this.facing * 40;
+    this.fx.blood(this.x, this.y - 84, -this.facing);
+    this.world.bloodDecal(this.x, 0 + this.yGround(), 16);
+    this.fx.magDrop(this.x + this.facing * 4, this.y - 60, -this.facing);
+    if (player) player.kills++;
+  }
+
+  // On death, pull nearby idle/searching squadmates toward the body. A loud
+  // death carries to a radius; a silent takedown is only noticed by allies
+  // who can actually see the corpse — the core of the stealth loop.
+  broadcastDeath(game) {
+    if (!game || !game.enemies) return;
+    const radius = this.silentKill ? 0 : 300 + this.difficulty * 30;
+    for (const o of game.enemies) {
+      if (o === this || o.deadT > 0) continue;
+      if (o.state === 'combat' || o.state === 'alert' || o.state === 'retreat') continue;
+      const dist = Math.abs(o.x - this.x);
+      const sees = dist < 640 && this.world.hasLineOfSight(o.x, o.y - 112, this.x, this.y - 60);
+      if (sees || dist < radius) {
+        o.awareness = Math.max(o.awareness, 0.55);
+        o.state = 'search'; o.searchT = 0;
+        o.lastKnownX = this.x; o.lastKnownY = this.y;
         o.facing = Math.sign(this.x - o.x) || o.facing;
       }
     }
@@ -158,6 +195,9 @@ export class Enemy {
 
   update(dt, player, game) {
     if (this.deadT > 0) {
+      // the moment we go down, alert squadmates who can see (or, for a loud
+      // death, hear) it — a body is a strong "investigate here" signal
+      if (!this._deathSeen) { this._deathSeen = true; this.broadcastDeath(game); }
       this.deadT += dt;
       this.vx = damp(this.vx, 0, 8, dt);
       this.world.moveEntity(this, dt);
@@ -193,11 +233,20 @@ export class Enemy {
     if (this.state === 'patrol') {
       this.aimLocal = damp(this.aimLocal, 0.28, 4, dt);   // muzzle low
       rot += 0.35;
+      this.lookT = (this.lookT || 0) - dt;
       if (this.waitT > 0) {
         this.waitT -= dt;
         this.vx = damp(this.vx, 0, 10, dt);
+        // glance around while halted — natural area scan, not a dead stare
+        if (this.lookT <= 0) { this.lookT = rand(0.7, 1.5); if (rand() < 0.55) this.facing *= -1; }
       } else {
         this.vx = damp(this.vx, this.facing * WALK, 6, dt);
+        // occasionally reverse early or pause mid-route so patrols vary
+        if (this.lookT <= 0) {
+          this.lookT = rand(2.6, 5.2);
+          if (rand() < 0.3) { this.facing *= -1; this.waitT = rand(0.5, 1.4); }
+          else if (rand() < 0.3) { this.waitT = rand(0.6, 1.6); }
+        }
         if (this.x > this.patrolMax) { this.facing = -1; this.waitT = rand(0.8, 2.2); }
         if (this.x < this.patrolMin) { this.facing = 1; this.waitT = rand(0.8, 2.2); }
       }

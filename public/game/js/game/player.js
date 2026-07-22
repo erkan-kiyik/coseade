@@ -10,7 +10,10 @@ import {
 import { newWeaponState, computePose, weaponAnchor, weaponPoint, toWorld } from './rig.js';
 import { drawSoldier } from './rig.js';
 
-const RUN = 300, SPRINT = 450, ACCEL = 2400, JUMP = -900;
+// Movement feel: snappier ground acceleration and blends for more responsive
+// controls, without changing top speeds (preserves the existing game balance).
+const RUN = 300, SPRINT = 450, ACCEL = 2800, JUMP = -900;
+const STEALTH_RANGE = 56;      // reach for a takedown from directly behind
 
 export class Player {
   constructor(parts, shadow, weapons, world, fx, cam, audio, hud) {
@@ -27,6 +30,10 @@ export class Player {
     this.gaitPhase = 0; this.speedNorm = 0;
     this.breathT = rand(0, 9); this.lean = 0;
     this.crouchSpring = 0; this.crouchVel = 0;
+    this.crouchHold = 0;          // 0..1 held-crouch blend (feeds the rig pose)
+    this.crouched = false;
+    this.stealth = null;          // active takedown timeline
+    this.stealthTarget = null;    // hostile that can currently be taken down
     this.hurtT = 0; this.deadT = 0;
 
     this.hp = 100; this.maxHp = 100;
@@ -75,6 +82,9 @@ export class Player {
       return;
     }
 
+    // ---- stealth takedown: a scripted assassination locks control until done
+    if (this.stealth) { this.updateStealth(dt, ctx); return; }
+
     // ---- aim & facing
     const vw = ctx.vw, vh = ctx.vh;
     const m = this.cam.screenToWorld(input.mouse.x, input.mouse.y, vw, vh);
@@ -88,14 +98,21 @@ export class Player {
     this.aimLocal = clamp(raw, -1.15, 1.2);
     this.aimSmooth = damp(this.aimSmooth, this.aimLocal, 15, dt);
 
+    // ---- crouch: hold to lower stance (slower, steadier, harder to spot).
+    // Smoothly blended so the pose eases down/up rather than snapping.
+    const wantCrouch = input.crouch && this.onGround && this.stunT <= 0 && !this.reload;
+    this.crouchHold = damp(this.crouchHold, wantCrouch ? 1 : 0, 12, dt);
+    this.crouched = this.crouchHold > 0.5;
+
     // ---- movement
     this.stunT = Math.max(0, this.stunT - dt);
     const stunMul = this.stunT > 0 ? 0.3 : 1;
     const mx = input.moveX;
-    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload && this.stunT <= 0;
+    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload && this.stunT <= 0 && !wantCrouch;
     this.sprinting = wantSprint;
-    this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 7, dt);
-    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul;
+    this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 9, dt);
+    const crouchMul = lerp(1, 0.5, this.crouchHold);
+    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul * crouchMul;
     const target = mx * top;
     const rate = (this.onGround ? ACCEL : ACCEL * 0.45) * stunMul;
     this.vx = this.vx > target
@@ -167,8 +184,94 @@ export class Player {
     }
 
     this.integrateSprings(dt);
+
+    // ---- stealth: is there an unaware hostile we're standing behind? If so
+    // and the action button is pressed, start the takedown (skips weapon use).
+    this.stealthTarget = this.findStealthTarget(enemies);
+    if (this.stealthTarget && input.interact) {
+      this.startStealth(this.stealthTarget, game);
+      this.stealthTarget = null;
+      this.hud.update(this);
+      return;
+    }
+
     this.updateWeapon(dt, input, enemies, game);
     this.hud.update(this);
+  }
+
+  // ------------------------------------------------------------- stealth
+
+  // A hostile qualifies for a silent takedown when it is unaware, not in a
+  // combat state, the operator is directly behind it (on the side its back
+  // faces) within reach, and on the same footing. Returns the nearest one.
+  findStealthTarget(enemies) {
+    if (!enemies || !this.onGround || this.reload || this.slash || this.sprinting) return null;
+    let best = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e || e.deadT > 0) continue;
+      if (e.awareness > 0.45) continue;
+      if (e.state === 'alert' || e.state === 'combat' || e.state === 'retreat') continue;
+      const dx = e.x - this.x;
+      const dist = Math.abs(dx);
+      if (dist > STEALTH_RANGE || dist < 6) continue;
+      if (Math.abs(e.y - this.y) > 44) continue;
+      // player must be on the side the enemy's back faces (behind it)
+      const side = Math.sign(this.x - e.x);      // which side of the enemy we're on
+      if (side !== -e.facing) continue;
+      // and be facing toward the enemy
+      if (this.facing !== Math.sign(dx)) continue;
+      if (dist < bestD) { bestD = dist; best = e; }
+    }
+    return best;
+  }
+
+  startStealth(target, game) {
+    const side = Math.sign(target.x - this.x) || this.facing;
+    this.facing = side;
+    this.stealth = { t: 0, T: 0.66, target, game, struck: false, side };
+    this.reload = null; this.inspectT = -1; this.slash = null;
+    this.sprinting = false; this.sprintBlend = 0;
+    this.audio.equip();               // soft blade-ready click
+  }
+
+  // Scripted assassination: glide to just behind the target, thrust, drop the
+  // hostile silently, then hand control back. Movement/animation flow through
+  // the normal rig via a forward lean + knife swipe FX.
+  updateStealth(dt, ctx) {
+    const s = this.stealth;
+    s.t += dt;
+    const k = clamp(s.t / s.T, 0, 1);
+
+    // close the last gap to a spot right behind the target during the wind-up
+    const goalX = s.target.x - s.side * 24;
+    const toGoal = goalX - this.x;
+    this.vx = k < 0.55 ? clamp(toGoal * 9, -420, 420) : damp(this.vx, 0, 12, dt);
+    this.world.moveEntity(this, dt);
+
+    // pose: crouch into the target and lean hard toward it (reads as a grab)
+    this.crouchHold = damp(this.crouchHold, 0.6, 10, dt);
+    this.crouched = true;
+    this.lean = damp(this.lean, 0.22 * this.facing, 10, dt);
+    this.aimLocal = this.aimSmooth = damp(this.aimSmooth, 0.5, 12, dt);
+    this.breathT += dt;
+
+    // strike at the midpoint: silent kill + a short blade arc, close blood
+    if (!s.struck && k > 0.46) {
+      s.struck = true;
+      if (s.target.deadT <= 0 && s.target.stealthKill) {
+        s.target.stealthKill(this);
+        this.audio.stab();
+        this.fx.slash(this.x, this.y - 92, -0.4 * this.facing, 0.9 * this.facing, 40, this.facing);
+        this.fx.blood(s.target.x - s.side * 5, s.target.y - 92, s.side);
+        this.hud.hitmark('kill');
+        this.hud.notify('SILENT TAKEDOWN');
+        if (s.game && s.game.onStealthKill) s.game.onStealthKill(s.target);
+      }
+    }
+
+    this.integrateSprings(dt);
+    this.hud.update(this);
+    if (k >= 1) { this.stealth = null; this.lean = 0; }
   }
 
   integrateSprings(dt) {
@@ -386,6 +489,8 @@ export class Player {
     if (this.hud.setWeaponMeter) this.hud.setWeaponMeter(ws.heat, ws.overheated, ws.charge);
 
     this.visSpread = wpn.spread + this.speedNorm * 0.045 + (this.onGround ? 0 : 0.05) + this.recoilAccum;
+    // crouching braces the weapon — tighter cone as a reward for a slow approach
+    this.visSpread *= lerp(1, 0.68, this.crouchHold);
     this.applyWs(ws, offX, offY, rot);
   }
 

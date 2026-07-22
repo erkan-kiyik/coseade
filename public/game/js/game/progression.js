@@ -3,6 +3,10 @@
 // object if storage is unavailable (private browsing, sandboxed iframe).
 
 const KEY = 'cinderfall.progress.v1';
+// Separate key for the in-progress run snapshot (stage + operator vitals), so
+// a reload / tab-close resumes exactly where the operator left off instead of
+// restarting. Cleared on K.I.A. or an explicit fresh deployment.
+const RUN_KEY = 'cinderfall.run.v1';
 
 // Level thresholds: cumulative XP needed to reach level n (2..).
 function xpForLevel(n) {
@@ -90,6 +94,29 @@ export class Progression {
   save() {
     try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
   }
+
+  // ---- resumable run snapshot ----
+  // Persists the live mission state (current stage + operator vitals + run
+  // tallies) so a refresh continues from here. Kept tiny + robust.
+  saveRun(state) {
+    try { localStorage.setItem(RUN_KEY, JSON.stringify({ ...state, ts: Date.now() })); } catch (e) { /* ignore */ }
+  }
+
+  loadRun() {
+    try {
+      const raw = localStorage.getItem(RUN_KEY);
+      if (!raw) return null;
+      const r = JSON.parse(raw);
+      if (!r || !r.stage || r.stage < 1) return null;
+      return r;
+    } catch (e) { return null; }
+  }
+
+  clearRun() {
+    try { localStorage.removeItem(RUN_KEY); } catch (e) { /* ignore */ }
+  }
+
+  hasRun() { return !!this.loadRun(); }
 
   isUnlocked(id) { return !!this.data.unlocked[id]; }
 

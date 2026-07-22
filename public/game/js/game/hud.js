@@ -27,6 +27,7 @@ export class Hud {
       slotIcons: [$('slot-1-icon'), $('slot-2-icon'), $('slot-3-icon'), $('slot-4-icon')],
       objCount: $('obj-count'), stageLabel: $('stage-label'),
       hitmark: $('hitmark'), damage: $('damage-flash'),
+      stealthPrompt: $('stealth-prompt'),
       dmgLeft: $('dmg-left'), dmgRight: $('dmg-right'), dmgOmni: $('dmg-omni'),
       detBar: $('det-bar'), detFill: $('det-fill'), detLabel: $('det-label'),
       xpFill: $('xp-fill'), lvlLabel: $('lvl-label'), hudTokens: $('hud-tokens'),
@@ -180,6 +181,19 @@ export class Hud {
   }
 
   setAimScreen(x, y) { this._aimX = x; this._aimY = y; }
+
+  // Shows/hides the silent-takedown prompt, anchored above the operator.
+  setStealthPrompt(on, sx, sy) {
+    const el = this.el.stealthPrompt;
+    if (!el) return;
+    if (on) {
+      el.style.left = `${sx}px`;
+      el.style.top = `${sy}px`;
+      if (!this._spOn) { this._spOn = true; el.classList.add('show'); }
+    } else if (this._spOn) {
+      this._spOn = false; el.classList.remove('show');
+    }
+  }
 
   // kind: 'hit' | 'headshot' | 'kill'
   hitmark(kind = 'hit') {

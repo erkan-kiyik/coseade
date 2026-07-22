@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>CINDERFALL // SECTOR 9</title>
 <link rel="stylesheet" href="/game/css/style.css">
 </head>
@@ -66,6 +66,7 @@
     <div id="dmg-right" class="dmg-dir right"></div>
     <div id="dmg-omni" class="dmg-dir omni"></div>
     <div id="hitmark"></div>
+    <div id="stealth-prompt" class="stealth-prompt"><span class="sp-ico" data-ic="knife"></span><span class="sp-txt">TAKEDOWN</span><span class="sp-key">E</span></div>
     <div id="damage-flash"></div>
     <div id="vignette"></div>
   </div>
@@ -99,9 +100,9 @@
           </span>
         </button>
         <div class="currency-rail">
-          <button class="cur cur-coins" data-panel="shop"><span class="cur-ico">◈</span><span id="token-count">0</span><span class="cur-plus">+</span></button>
-          <button class="cur cur-gems" data-panel="shop"><span class="cur-ico">◆</span><span id="gem-count">0</span><span class="cur-plus">+</span></button>
-          <div class="cur cur-energy"><span class="cur-ico">⚡</span><span id="energy-count">0</span></div>
+          <button class="cur cur-coins" data-panel="shop"><span class="cur-ico" data-ic="coin"></span><span id="token-count">0</span><span class="cur-plus">+</span></button>
+          <button class="cur cur-gems" data-panel="shop"><span class="cur-ico" data-ic="gem"></span><span id="gem-count">0</span><span class="cur-plus">+</span></button>
+          <div class="cur cur-energy"><span class="cur-ico" data-ic="bolt"></span><span id="energy-count">0</span></div>
         </div>
       </header>
 
@@ -111,15 +112,15 @@
           <!-- quest / event feature cards -->
           <div class="quest-row">
             <button class="quest-card q-missions" data-panel="missions">
-              <span class="quest-ico">✳</span>
+              <span class="quest-ico" data-ic="checklist"></span>
               <span class="quest-txt"><b>MISSIONS</b><i id="missions-badge">0 ready</i></span>
             </button>
             <button class="quest-card q-events" data-panel="events">
-              <span class="quest-ico">◈</span>
+              <span class="quest-ico" data-ic="sparkle"></span>
               <span class="quest-txt"><b>EVENTS</b><i>Live now</i></span>
             </button>
             <button class="quest-card q-pass" data-panel="battlepass">
-              <span class="quest-ico">★</span>
+              <span class="quest-ico" data-ic="star"></span>
               <span class="quest-txt"><b>BATTLE PASS</b><i id="bp-badge">Tier 0</i></span>
             </button>
           </div>
@@ -135,24 +136,24 @@
           <div class="play-dock">
             <button id="btn-deploy" class="btn-play">
               <span class="play-label">DEPLOY</span>
-              <span class="play-sub">Sector 9 · <span id="play-energy">1</span>⚡</span>
+              <span class="play-sub">Sector 9 — Cinder Works</span>
             </button>
           </div>
 
           <!-- secondary features -->
           <div class="feature-grid">
-            <button class="feature-tile" data-panel="shop"><span class="ft-ico">🛒</span><span>Shop</span></button>
-            <button class="feature-tile" data-tab="loadout"><span class="ft-ico">🎯</span><span>Loadout</span></button>
-            <button class="feature-tile" data-tab="crates"><span class="ft-ico">📦</span><span>Crates</span></button>
-            <button class="feature-tile" data-panel="collection"><span class="ft-ico">🏅</span><span>Collection</span></button>
-            <button class="feature-tile" data-panel="achievements"><span class="ft-ico">🏆</span><span>Achieve</span></button>
-            <button class="feature-tile" data-panel="leaderboards"><span class="ft-ico">📊</span><span>Ranks</span></button>
-            <button class="feature-tile" data-panel="clan"><span class="ft-ico">🛡</span><span>Clan</span></button>
-            <button class="feature-tile" data-panel="friends"><span class="ft-ico">👥</span><span>Friends</span></button>
-            <button class="feature-tile" data-panel="mail"><span class="ft-ico">✉</span><span>Mail</span><i id="mail-dot" class="tile-dot"></i></button>
-            <button class="feature-tile" data-panel="news"><span class="ft-ico">📰</span><span>News</span></button>
-            <button class="feature-tile" data-panel="settings"><span class="ft-ico">⚙</span><span>Settings</span></button>
-            <button class="feature-tile" data-panel="profile"><span class="ft-ico">🎖</span><span>Profile</span></button>
+            <button class="feature-tile" data-panel="shop"><span class="ft-ico" data-ic="shop"></span><span>Shop</span></button>
+            <button class="feature-tile" data-tab="loadout"><span class="ft-ico" data-ic="target"></span><span>Loadout</span></button>
+            <button class="feature-tile" data-tab="crates"><span class="ft-ico" data-ic="box"></span><span>Crates</span></button>
+            <button class="feature-tile" data-panel="collection"><span class="ft-ico" data-ic="medal"></span><span>Collection</span></button>
+            <button class="feature-tile" data-panel="achievements"><span class="ft-ico" data-ic="trophy"></span><span>Achieve</span></button>
+            <button class="feature-tile" data-panel="leaderboards"><span class="ft-ico" data-ic="ranks"></span><span>Ranks</span></button>
+            <button class="feature-tile" data-panel="clan"><span class="ft-ico" data-ic="shield"></span><span>Clan</span></button>
+            <button class="feature-tile" data-panel="friends"><span class="ft-ico" data-ic="users"></span><span>Friends</span></button>
+            <button class="feature-tile" data-panel="mail"><span class="ft-ico" data-ic="mail"></span><span>Mail</span><i id="mail-dot" class="tile-dot"></i></button>
+            <button class="feature-tile" data-panel="news"><span class="ft-ico" data-ic="news"></span><span>News</span></button>
+            <button class="feature-tile" data-panel="settings"><span class="ft-ico" data-ic="gear"></span><span>Settings</span></button>
+            <button class="feature-tile" data-panel="profile"><span class="ft-ico" data-ic="person"></span><span>Profile</span></button>
           </div>
         </section>
 
@@ -179,9 +180,9 @@
       </main>
 
       <nav class="home-tabs">
-        <button class="home-tab active" data-tab="play"><span class="tab-ico">⌂</span>HOME</button>
-        <button class="home-tab" data-tab="loadout"><span class="tab-ico">🎯</span>LOADOUT</button>
-        <button class="home-tab" data-tab="crates"><span class="tab-ico">📦</span>CRATES</button>
+        <button class="home-tab active" data-tab="play"><span class="tab-ico" data-ic="home"></span>HOME</button>
+        <button class="home-tab" data-tab="loadout"><span class="tab-ico" data-ic="target"></span>LOADOUT</button>
+        <button class="home-tab" data-tab="crates"><span class="tab-ico" data-ic="box"></span>CRATES</button>
       </nav>
     </div>
 
@@ -240,6 +241,8 @@
     <button id="tc-jump" class="tc-btn tc-jump">JUMP</button>
     <button id="tc-reload" class="tc-btn tc-reload">RELOAD</button>
     <button id="tc-swap" class="tc-btn tc-swap">SWAP</button>
+    <button id="tc-crouch" class="tc-btn tc-crouch">CROUCH</button>
+    <button id="tc-takedown" class="tc-btn tc-takedown"><span class="tc-td-ico" data-ic="knife"></span>TAKEDOWN</button>
   </div>
 
   <!-- Deploy cinematic: letterbox bars + briefing text, driven by main.js -->
