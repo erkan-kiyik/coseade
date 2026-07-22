@@ -4,14 +4,13 @@
 // scrolls at its own parallax rate.
 
 import { makeCanvas, lingrad, radgrad, shade, mix, withA, COL } from './paint.js';
-import { makeRng, makeNoise1D } from '../engine/math.js';
+import { makeRng } from '../engine/math.js';
 
 const SKY_W = 1600, SKY_H = 900;
 
 export function buildBackground() {
   return {
     sky: paintSky(),
-    mountains: paintMountains(),
     clouds: paintClouds(),
     far: paintFar(),
     mid: paintMid(),
@@ -57,86 +56,11 @@ function paintSky() {
     ]);
     g.beginPath(); g.ellipse(x + w / 2, y, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill();
   }
-  // soft light-scatter rays fanning up from the low sun — very restrained,
-  // additive, so it reads as atmospheric scattering rather than a starburst
-  g.save();
-  g.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 7; i++) {
-    const ang = -Math.PI / 2 + (i - 3) * 0.2 + rng.range(-0.05, 0.05);
-    const len = rng.range(260, 440);
-    const halfW = rng.range(12, 28);
-    const dx = Math.cos(ang), dy = Math.sin(ang);
-    const px = -dy, py = dx;
-    g.beginPath();
-    g.moveTo(sx - px * halfW * 0.15, sy - py * halfW * 0.15);
-    g.lineTo(sx + dx * len - px * halfW, sy + dy * len - py * halfW);
-    g.lineTo(sx + dx * len + px * halfW, sy + dy * len + py * halfW);
-    g.closePath();
-    g.fillStyle = withA('#ffdca0', rng.range(0.02, 0.045));
-    g.fill();
-  }
-  g.restore();
   // subtle grain so the ramp never bands
   for (let i = 0; i < 3200; i++) {
     g.fillStyle = `rgba(255,255,255,${Math.random() * 0.02})`;
     g.fillRect(Math.random() * SKY_W, Math.random() * SKY_H, 1, 1);
   }
-  return cv;
-}
-
-// ---------------- distant mountains / hills (tiling strip) ----------------
-// Two layered ridgelines built from smooth value noise (so silhouettes read
-// as natural terrain, not sawtooth randomness), with atmospheric perspective
-// — the back ridge is hazier and cooler, the front ridge darker and closer —
-// plus sparse dark-forest clusters dusting the front ridge's lower slopes.
-function paintMountains() {
-  const W = 2048, H = 380;
-  const { cv, g } = makeCanvas(W, H);
-  const baseY = H;
-  const noiseA = makeNoise1D(71);
-  const noiseB = makeNoise1D(133);
-
-  const ridgeHeight = (noiseFn, x, freq) =>
-    noiseFn(x * freq) * 0.62 + noiseFn(x * freq * 2.3 + 40) * 0.24 + noiseFn(x * freq * 5.1 + 90) * 0.14;
-
-  const ridge = (noiseFn, freq, amp, midY, color, aTop, aBase) => {
-    g.beginPath();
-    g.moveTo(-4, baseY + 4);
-    for (let x = -4; x <= W + 4; x += 8) {
-      g.lineTo(x, midY - ridgeHeight(noiseFn, x, freq) * amp);
-    }
-    g.lineTo(W + 4, baseY + 4);
-    g.closePath();
-    g.fillStyle = lingrad(g, 0, midY - amp, 0, baseY, [[0, withA(color, aTop)], [1, withA(color, aBase)]]);
-    g.fill();
-    return (x) => midY - ridgeHeight(noiseFn, x, freq) * amp;
-  };
-
-  // back ridge: far, hazy, cool blue-grey, low contrast
-  ridge(noiseA, 0.0016, 118, H * 0.6, '#7f8aa0', 0.32, 0.48);
-  // front ridge: closer, darker/warmer, higher contrast
-  const frontY = ridge(noiseB, 0.0026, 152, H * 0.74, '#5c6478', 0.5, 0.66);
-
-  // sparse forest clusters clinging to the front ridge's lower slopes
-  const rng = makeRng(919);
-  for (let i = 0; i < 46; i++) {
-    const x = rng() * W;
-    const y = frontY(x) + rng.range(8, 62);
-    if (y > baseY - 2) continue;
-    const r = rng.range(6, 15);
-    g.fillStyle = withA('#37402f', rng.range(0.25, 0.45));
-    for (let c = 0; c < 3; c++) {
-      g.beginPath();
-      g.ellipse(x + rng.range(-r, r), y + rng.range(-3, 3), r * rng.range(0.5, 0.8), r * rng.range(0.3, 0.45), 0, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-
-  // haze wash at the base, so it dissolves into whatever sits in front
-  g.fillStyle = lingrad(g, 0, H - 150, 0, H, [
-    [0, 'rgba(195,152,120,0)'], [1, 'rgba(195,152,120,0.34)'],
-  ]);
-  g.fillRect(0, H - 150, W, 150);
   return cv;
 }
 
@@ -221,74 +145,6 @@ function paintClouds() {
   return cv;
 }
 
-// ---- far-layer landmark silhouettes: flat-fill (matches the haze-tinted
-// silhouette language of the far skyline, unlike the lit/shaded mid-layer
-// landmarks below) ----------------------------------------------------
-
-function commTowerSil(g, cx, baseY, h, col) {
-  const topY = baseY - h;
-  g.fillStyle = col;
-  g.fillRect(cx - 1.6, topY, 3.2, h);
-  g.strokeStyle = col; g.lineWidth = 1.3;
-  for (let i = 0; i < 5; i++) {
-    const yy = topY + (h * i) / 5;
-    const w = 3 + (i / 5) * 15;
-    g.beginPath(); g.moveTo(cx - w, yy + h / 9); g.lineTo(cx + w, yy); g.stroke();
-  }
-  g.beginPath(); g.ellipse(cx + 9, topY + h * 0.26, 7, 3, -0.3, 0, Math.PI * 2); g.fill();
-  g.fillStyle = withA('#e05a46', 0.75);
-  g.beginPath(); g.arc(cx, topY - 2, 2.2, 0, Math.PI * 2); g.fill();
-}
-
-function transmissionPylonSil(g, cx, baseY, h, col) {
-  const topY = baseY - h;
-  g.fillStyle = col;
-  g.beginPath();
-  g.moveTo(cx - 3, baseY); g.lineTo(cx - 1.2, topY + h * 0.18); g.lineTo(cx, topY);
-  g.lineTo(cx + 1.2, topY + h * 0.18); g.lineTo(cx + 3, baseY);
-  g.closePath(); g.fill();
-  for (const t of [0.24, 0.44]) {
-    const yy = topY + h * t, armW = 17 - t * 15;
-    g.fillRect(cx - armW, yy, armW * 2, 1.6);
-  }
-}
-
-function waterTowerSil(g, cx, baseY, h, w, col) {
-  const legH = h * 0.58, tankH = h - legH;
-  g.fillStyle = col;
-  for (const s of [-1, 1]) {
-    g.beginPath();
-    g.moveTo(cx + s * w * 0.12, baseY - legH);
-    g.lineTo(cx + s * w * 0.4, baseY);
-    g.lineTo(cx + s * w * 0.28, baseY);
-    g.lineTo(cx + s * w * 0.08, baseY - legH);
-    g.closePath(); g.fill();
-  }
-  g.beginPath();
-  g.ellipse(cx, baseY - legH, w * 0.5, tankH * 0.16, 0, Math.PI, 0, true);
-  g.lineTo(cx + w * 0.42, baseY - legH - tankH * 0.85);
-  g.ellipse(cx, baseY - legH - tankH * 0.85, w * 0.42, tankH * 0.14, 0, 0, Math.PI);
-  g.closePath(); g.fill();
-}
-
-function bridgeSpanSil(g, x0, x1, baseY, col) {
-  const midY = baseY - 62;
-  g.strokeStyle = col; g.lineWidth = 3;
-  g.beginPath(); g.moveTo(x0, baseY - 8); g.lineTo(x1, baseY - 8); g.stroke();
-  const piers = 2;
-  g.fillStyle = col;
-  for (let i = 0; i <= piers + 1; i++) {
-    const x = x0 + ((x1 - x0) * i) / (piers + 1);
-    g.fillRect(x - 2, midY, 4, baseY - midY - 8);
-  }
-  g.lineWidth = 1; g.strokeStyle = col;
-  const apex = x0 + (x1 - x0) * 0.5;
-  for (let i = 0; i <= 10; i++) {
-    const x = x0 + ((x1 - x0) * i) / 10;
-    g.beginPath(); g.moveTo(x, midY + 10); g.lineTo(apex, midY - 24); g.stroke();
-  }
-}
-
 // ---------------- far skyline ----------------
 function paintFar() {
   const W = 2048, H = 620;
@@ -320,43 +176,6 @@ function paintFar() {
         g.fillRect(x + bw + 6, baseY - bh - rng.range(50, 120), sw, bh + 160);
       }
       x += bw + rng.range(24, 90);
-    }
-  }
-
-  // landmark silhouettes: comm tower + beacon, a transmission line strung
-  // between two pylons, a water tower, a distant truss bridge — hand-placed
-  // so the skyline reads as a real district, not a repeating loop
-  const landY = H - 40, landCol = withA(hazeB, 0.85);
-  commTowerSil(g, W * 0.2, landY, 220, landCol);
-  transmissionPylonSil(g, W * 0.4, landY, 128, landCol);
-  transmissionPylonSil(g, W * 0.455, landY, 118, landCol);
-  g.strokeStyle = landCol; g.lineWidth = 0.9;
-  g.beginPath();
-  g.moveTo(W * 0.4, landY - 128 * 0.82);
-  g.quadraticCurveTo((W * 0.4 + W * 0.455) / 2 * 1, landY - 128 * 0.82 + 16, W * 0.455, landY - 118 * 0.82);
-  g.stroke();
-  waterTowerSil(g, W * 0.64, landY, 108, 44, landCol);
-  bridgeSpanSil(g, W * 0.74, W * 0.92, landY - 2, landCol);
-
-  // forest patches tucked into gaps between structures
-  for (let i = 0; i < 10; i++) {
-    const fx = rng() * W, fy = landY - rng.range(6, 34);
-    const fr = rng.range(9, 24);
-    g.fillStyle = withA('#37402f', rng.range(0.3, 0.5));
-    for (let c = 0; c < 4; c++) {
-      g.beginPath();
-      g.ellipse(fx + rng.range(-fr, fr), fy + rng.range(-4, 4), fr * rng.range(0.4, 0.7), fr * rng.range(0.25, 0.4), 0, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-
-  // painted smoke plumes drifting from stacks
-  for (let i = 0; i < 4; i++) {
-    let px = rng() * W, py = rng.range(140, 260);
-    for (let s = 0; s < 8; s++) {
-      g.fillStyle = withA('#9a94a0', 0.05 + (7 - s) * 0.008);
-      g.beginPath(); g.arc(px, py, 14 + s * 7, 0, Math.PI * 2); g.fill();
-      px += rng.range(18, 40); py -= rng.range(4, 14);
     }
   }
   // haze wash at base so it sits into the atmosphere
@@ -474,51 +293,6 @@ function rrRect(g, x, y, w, h, r) {
   g.closePath();
 }
 
-// ---- mid-layer landmark silhouettes: lit/shaded (these are closer, so they
-// carry real form-shading, unlike the flat far-layer silhouettes above) ----
-
-// Perspective road wedge receding toward a vanishing point, with a faint
-// dashed centre line — drawn *before* the building row so structures that
-// land on top of it naturally read as "glimpsed through a gap."
-function roadToHorizonSil(g, cx, baseY, halfWidthNear, col) {
-  const vanishY = baseY - 260;
-  g.fillStyle = col;
-  g.beginPath();
-  g.moveTo(cx - halfWidthNear, baseY);
-  g.lineTo(cx - 4, vanishY);
-  g.lineTo(cx + 4, vanishY);
-  g.lineTo(cx + halfWidthNear, baseY);
-  g.closePath();
-  g.fill();
-  g.strokeStyle = withA('#c8a25a', 0.22); g.lineWidth = 1.4;
-  g.setLineDash([6, 10]);
-  g.beginPath(); g.moveTo(cx, baseY - 6); g.lineTo(cx, vanishY + 10); g.stroke();
-  g.setLineDash([]);
-}
-
-// Fenced compound: low chain-link line, a stilted watchtower, a radar dish
-// on a mast — reads as a military/comms facility tucked among the factories.
-function militaryCompoundSil(g, cx, baseY, w, col) {
-  g.strokeStyle = withA('#3a3d34', 0.7); g.lineWidth = 1.2;
-  g.beginPath();
-  for (let fx = cx - w / 2; fx <= cx + w / 2; fx += 8) { g.moveTo(fx, baseY); g.lineTo(fx, baseY - 30); }
-  g.moveTo(cx - w / 2, baseY - 30); g.lineTo(cx + w / 2, baseY - 30);
-  g.stroke();
-  const twX = cx + w * 0.32, twH = 92;
-  g.fillStyle = col;
-  g.fillRect(twX - 1.8, baseY - twH, 3.6, twH - 18);
-  g.fillRect(twX - 10, baseY - twH - 18, 20, 18);
-  g.fillStyle = 'rgba(12,13,15,0.6)';
-  g.fillRect(twX - 7, baseY - twH - 14, 14, 10);
-  const rdX = cx - w * 0.22, rdH = 46;
-  g.strokeStyle = col; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(rdX, baseY); g.lineTo(rdX, baseY - rdH); g.stroke();
-  g.save(); g.translate(rdX, baseY - rdH); g.rotate(-0.5);
-  g.fillStyle = col;
-  g.beginPath(); g.ellipse(0, 0, 14, 5, 0, Math.PI, 0, true); g.fill();
-  g.restore();
-}
-
 // ---------------- mid factory line ----------------
 function paintMid() {
   const W = 2048, H = 760;
@@ -528,44 +302,12 @@ function paintMid() {
 
   const bodyCol = (t) => mix('#3f3e48', '#5b4f4c', t);
 
-  // road glimpsed through a gap in the skyline, painted before the buildings
-  roadToHorizonSil(g, W * 0.465, baseY, 46, bodyCol(0.12));
-
   let x = -40;
   while (x < W + 100) {
     const bw = rng.range(150, 320);
-    const isWarehouse = rng.chance(0.22);
-    const bh = isWarehouse ? rng.range(140, 220) : rng.range(180, 420);
+    const bh = rng.range(180, 420);
     const t = rng();
     const col = bodyCol(t * 0.6);
-
-    if (isWarehouse) {
-      // low, flat-roofed shed with banded roller doors — distinct massing
-      // from the sawtooth factories so the skyline doesn't repeat
-      g.fillStyle = lingrad(g, 0, baseY - bh, 0, baseY, [
-        [0, shade(col, 0.14)], [0.3, col], [1, shade(col, -0.38)],
-      ]);
-      g.fillRect(x, baseY - bh, bw, bh);
-      g.fillStyle = shade(col, -0.22);
-      g.fillRect(x - 2, baseY - bh - 6, bw + 4, 6);
-      let dx = x + 8;
-      while (dx + 34 < x + bw - 8) {
-        g.fillStyle = shade(col, -0.32);
-        g.fillRect(dx, baseY - 46, 34, 46);
-        g.fillStyle = 'rgba(0,0,0,0.25)';
-        for (let ly = baseY - 42; ly < baseY - 6; ly += 6) g.fillRect(dx, ly, 34, 1.6);
-        dx += 44;
-      }
-      for (let v = 0; v < 2; v++) {
-        if (rng.chance(0.6)) {
-          g.fillStyle = shade(col, -0.1);
-          g.fillRect(x + bw * (0.25 + v * 0.4), baseY - bh - 16, 14, 10);
-        }
-      }
-      x += bw + rng.range(30, 110);
-      continue;
-    }
-
     // main mass with vertical gradient (sky glow rims the top)
     g.fillStyle = lingrad(g, 0, baseY - bh, 0, baseY, [
       [0, shade(col, 0.16)],
@@ -660,15 +402,13 @@ function paintMid() {
     g.stroke();
   }
 
-  // ---- landmark structures: cooling towers, a gasometer, tower cranes, a
-  // fenced compound ---- Placed by hand at spread positions (not a uniform
-  // loop) so the skyline has recognisable, non-repeating silhouettes.
+  // ---- landmark structures: cooling towers, a gasometer, tower crane ----
+  // Placed by hand at spread positions (not a uniform loop) so the skyline
+  // has recognisable, non-repeating silhouettes.
   coolingTower(g, W * 0.08, baseY, 300, 150, bodyCol(0.35));
   coolingTower(g, W * 0.86, baseY, 250, 128, bodyCol(0.5));
   gasHolder(g, W * 0.58, baseY, 168, 150, bodyCol(0.42));
   towerCrane(g, W * 0.7, baseY - 250, 250);
-  towerCrane(g, W * 0.19, baseY - 200, 200);
-  militaryCompoundSil(g, W * 0.465, baseY, 150, bodyCol(0.3));
 
   // atmosphere: haze wash rising from the base
   g.fillStyle = lingrad(g, 0, H - 380, 0, H, [

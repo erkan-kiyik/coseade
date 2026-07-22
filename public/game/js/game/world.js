@@ -7,7 +7,7 @@
 
 import * as env from '../art/environment.js';
 import { buildBackground } from '../art/background.js';
-import { makeCanvas, drawSprite, lingrad, radgrad, rr, withA } from '../art/paint.js';
+import { makeCanvas, drawSprite, lingrad, radgrad, rr } from '../art/paint.js';
 import { clamp, rand, randSpread, makeRng } from '../engine/math.js';
 
 export const GROUND_Y = 640;
@@ -496,12 +496,7 @@ export class World {
 
   // ---------------- rendering ----------------
 
-  // Screen-space parallax composite (call with identity transform). Layers,
-  // back to front, each at its own speed so the scene reads with real depth:
-  // sky (static) → mountains (0.025x) → clouds (0.05x + drift) → birds →
-  // far industrial skyline (0.12x) → warm haze → mid factory line (0.3x) →
-  // cool ground fog. World-space facades/props (nearer still) and the
-  // foreground silhouette (1.3x) composite on top via drawBack/drawForeground.
+  // Screen-space parallax composite (call with identity transform).
   drawBackground(g, cam, vw, vh, time) {
     const z = cam.zoom;
     const groundY = vh / 2 + (GROUND_Y - cam.y) * z;
@@ -517,28 +512,26 @@ export class World {
       for (; x < vw; x += w) g.drawImage(img, x, y, w, h);
     };
 
-    // mountains — farthest terrain, barely drifts. Anchored well above the
-    // far skyline's tallest silhouettes so the ridgeline reads clearly over
-    // the rooflines instead of being fully hidden behind them.
-    const mts = Math.max(vw / 2048, 0.72) * 1.15;
-    tile(this.bg.mountains, -cam.x * 0.025, groundY - (this.bg.mountains.height + 240) * mts, mts);
-
     const cs = Math.max(vw / 2048, 0.72);
     tile(this.bg.clouds, -(cam.x * 0.05 + time * 3.5), groundY - 700 * cs, cs * 1.15);
-
-    this.drawBirds(g, cam, vw, vh, groundY, time);
 
     const fs = Math.max(vw / 2048, 0.72) * 1.02;
     tile(this.bg.far, -cam.x * 0.12, groundY - this.bg.far.height * fs + 30 * fs, fs);
 
-    // warm volumetric haze between far and mid
-    this.drawFogBand(g, vw, groundY - 320, 320, '#cd9669', 0.2, time, 7001, 3.2);
+    // warm haze between far and mid
+    g.fillStyle = lingrad(g, 0, groundY - 320, 0, groundY, [
+      [0, 'rgba(205,150,105,0)'], [1, 'rgba(205,150,105,0.18)'],
+    ]);
+    g.fillRect(0, groundY - 320, vw, 320);
 
     const ms = Math.max(vw / 2048, 0.72) * 1.06;
     tile(this.bg.mid, -cam.x * 0.3, groundY - (this.bg.mid.height - 8) * ms, ms);
 
-    // cool volumetric fog settling at street level
-    this.drawFogBand(g, vw, groundY - 150, 190, '#96a0b0', 0.14, time, 7002, 5.5);
+    // cool fog settling at street level
+    g.fillStyle = lingrad(g, 0, groundY - 150, 0, groundY + 30, [
+      [0, 'rgba(150,155,175,0)'], [0.8, 'rgba(150,150,168,0.13)'], [1, 'rgba(150,150,168,0.05)'],
+    ]);
+    g.fillRect(0, groundY - 150, vw, 190);
 
     if (this.weather === 'rain') {
       g.strokeStyle = 'rgba(180,195,215,0.22)';
@@ -549,71 +542,6 @@ export class World {
         const ry = ((i * 71 + time * 900) % (vh + 100)) - 50;
         g.beginPath(); g.moveTo(rx, ry); g.lineTo(rx - 6, ry + 22); g.stroke();
       }
-    }
-  }
-
-  // Small procedural flock — a handful of flapping V-silhouettes drifting
-  // slowly across the upper sky, wrapping seamlessly. Cheap enough to draw
-  // fresh every frame; drawn in screen space with a light parallax tie to
-  // camera x so they don't feel pasted on.
-  drawBirds(g, cam, vw, vh, groundY, time) {
-    if (!this._birds) {
-      const rng = makeRng(4242);
-      this._birds = [];
-      for (let i = 0; i < 6; i++) {
-        this._birds.push({
-          yR: rng.range(0.06, 0.24), speed: rng.range(14, 24), phase: rng.range(0, 6.28),
-          flapSpeed: rng.range(5, 8), size: rng.range(3, 5), lane: rng.range(0, 900),
-        });
-      }
-    }
-    g.save();
-    g.strokeStyle = 'rgba(26,24,30,0.5)';
-    g.lineWidth = 1.3;
-    g.lineCap = 'round';
-    for (const b of this._birds) {
-      const span = vw + 320;
-      const x = (((cam.x * 0.35 + time * b.speed + b.lane) % span) + span) % span - 160;
-      const y = b.yR * vh + Math.sin(time * 0.6 + b.phase) * 8;
-      const wing = 0.35 + (Math.sin(time * b.flapSpeed + b.phase) * 0.5 + 0.5) * 0.5;
-      const s = b.size;
-      g.beginPath();
-      g.moveTo(x - s * 2, y - s * wing);
-      g.quadraticCurveTo(x - s * 0.6, y, x, y);
-      g.quadraticCurveTo(x + s * 0.6, y, x + s * 2, y - s * wing);
-      g.stroke();
-    }
-    g.restore();
-  }
-
-  // Volumetric-feeling fog/haze band: a flat gradient wash (matches the
-  // original look/weight) plus a handful of soft radial wisps that slowly
-  // drift, so the band reads as drifting volume rather than a flat tint.
-  drawFogBand(g, vw, y0, h, baseColor, alpha, time, seed, speed) {
-    g.fillStyle = lingrad(g, 0, y0, 0, y0 + h, [[0, withA(baseColor, 0)], [1, withA(baseColor, alpha)]]);
-    g.fillRect(0, y0, vw, h);
-    if (!this._fogWisps) this._fogWisps = {};
-    if (!this._fogWisps[seed]) {
-      const rng = makeRng(seed);
-      const wisps = [];
-      for (let i = 0; i < 6; i++) {
-        wisps.push({
-          xr: rng(), yr: rng.range(0.2, 0.85), wr: rng.range(0.28, 0.5), hr: rng.range(0.35, 0.62),
-          spd: rng.range(0.012, 0.026), a: rng.range(0.4, 0.9),
-        });
-      }
-      this._fogWisps[seed] = wisps;
-    }
-    for (const w of this._fogWisps[seed]) {
-      const x = (((w.xr + time * w.spd * speed) % 1.3) - 0.15) * vw;
-      const wy = y0 + w.yr * h;
-      const rw = w.wr * vw * 0.5, rh = w.hr * h * 0.6;
-      g.save();
-      g.translate(x, wy);
-      g.scale(1, rh / rw);
-      g.fillStyle = radgrad(g, 0, 0, rw, [[0, withA(baseColor, alpha * w.a)], [1, withA(baseColor, 0)]]);
-      g.beginPath(); g.arc(0, 0, rw, 0, Math.PI * 2); g.fill();
-      g.restore();
     }
   }
 
