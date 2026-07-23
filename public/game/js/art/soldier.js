@@ -43,6 +43,17 @@ const VARIANTS = {
     masked: true,
     pad: '#24262a',
   },
+  nomad: {
+    seed: 4477,
+    uniform: '#7a6a4c', uniformDark: '#5d5039',
+    vest: '#8a7a54', vestDark: '#6b5d40',
+    helmet: '#6e5f42',
+    glove: '#4a4130',
+    boot: '#3a3122',
+    skin: COL.skin,
+    masked: true,
+    pad: '#453b29',
+  },
 };
 
 // Fabric base fill: lit from top with warm key, cool shadow at bottom.

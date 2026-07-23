@@ -13,7 +13,7 @@ const nextRng = () => makeRng((seedCounter += 1013));
 
 // ---------------- shipping container ----------------
 // w×h world units, anchor bottom-center. Corrugated walls, door end, stencil.
-export function container(colorKey = 'containerRed', label = 'HLC-407', w = 96, h = 38) {
+export function container(colorKey = 'containerRed', label = 'HLC-407', w = 108, h = 44) {
   const rng = nextRng();
   const base = COL[colorKey] || colorKey;
   return makeSprite(w, h + 4, w / 2, h + 2, (g) => {
@@ -105,7 +105,7 @@ export function barrel(variant = 'rust') {
 }
 
 // ---------------- wooden crate ----------------
-export function crate(w = 24, h = 20) {
+export function crate(w = 30, h = 25) {
   const rng = nextRng();
   const base = COL.woodCrate;
   return makeSprite(w, h + 3, w / 2, h + 1.5, (g) => {
@@ -142,9 +142,10 @@ export function crate(w = 24, h = 20) {
 }
 
 // ---------------- sandbag emplacement ----------------
-export function sandbags() {
+export function sandbags(scale = 1) {
   const rng = nextRng();
-  return makeSprite(40, 18, 20, 17, (g) => {
+  return makeSprite(40 * scale, 18 * scale, 20 * scale, 17 * scale, (g) => {
+    g.scale(scale, scale);
     const bag = (x, y, w, h, rot) => {
       g.save(); g.translate(x, y); g.rotate(rot);
       g.fillStyle = lingrad(g, 0, -h / 2, 0, h / 2, [

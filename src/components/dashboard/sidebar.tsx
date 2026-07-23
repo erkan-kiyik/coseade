@@ -115,7 +115,7 @@ export function Sidebar({ plan }: { plan: string }) {
         <Rocket className="h-4 w-4" />
       </span>
       <span className="font-semibold tracking-tight">
-        LinkedBoost <span className="gradient-text">AI</span>
+        Coseade <span className="gradient-text">AI</span>
       </span>
     </div>
   );

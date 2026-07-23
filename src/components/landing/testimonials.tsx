@@ -10,7 +10,7 @@ const testimonials = [
     role: "Product Manager · Fintech",
     initials: "SK",
     quote:
-      "Three weeks after applying LinkedBoost's suggestions, I had recruiters from two FAANG companies in my inbox. The keyword analysis alone was worth it.",
+      "Three weeks after applying Coseade's suggestions, I had recruiters from two FAANG companies in my inbox. The keyword analysis alone was worth it.",
   },
   {
     name: "Marcus Alvarez",

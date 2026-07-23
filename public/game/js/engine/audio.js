@@ -37,6 +37,12 @@ class AudioSys {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  // Suspends audio processing entirely (tab hidden / backgrounded) — the
+  // ambience oscillator and compressor otherwise keep running unheard.
+  suspend() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  }
+
   _noise({ dur, gain, f0, f1, type = 'lowpass', q = 1, t0 = 0 }) {
     if (!this.ctx) return;
     const c = this.ctx, now = c.currentTime + t0;
@@ -83,6 +89,55 @@ class AudioSys {
       this._noise({ dur: 0.5, gain: 0.1 * vol, f0: 900, f1: 200, t0: 0.03 });
     }
   }
+
+  // Synthesised energy-weapon fire, tuned per archetype.
+  energyShot(kind, vol = 1) {
+    if (!this.ctx) return;
+    switch (kind) {
+      case 'ray': // classic descending zap
+        this._tone({ freq: 1400, f1: 260, dur: 0.18, gain: 0.32 * vol, type: 'square' });
+        this._tone({ freq: 700, f1: 130, dur: 0.16, gain: 0.16 * vol, type: 'sawtooth' });
+        break;
+      case 'plasma': // wet thump + fizz
+        this._tone({ freq: 320, f1: 90, dur: 0.16, gain: 0.4 * vol, type: 'sawtooth' });
+        this._noise({ dur: 0.14, gain: 0.2 * vol, f0: 3000, f1: 600, type: 'bandpass', q: 2 });
+        break;
+      case 'pulse': // tight blip
+        this._tone({ freq: 900, f1: 400, dur: 0.08, gain: 0.28 * vol, type: 'square' });
+        break;
+      case 'rail': // charged crack
+        this._tone({ freq: 180, f1: 2400, dur: 0.09, gain: 0.4 * vol, type: 'sawtooth' });
+        this._noise({ dur: 0.2, gain: 0.4 * vol, f0: 6000, f1: 400 });
+        break;
+      case 'ion': // deep resonant boom
+        this._tone({ freq: 140, f1: 40, dur: 0.4, gain: 0.5 * vol, type: 'sine' });
+        this._noise({ dur: 0.3, gain: 0.24 * vol, f0: 1200, f1: 200, type: 'bandpass', q: 3 });
+        break;
+      case 'laser': // thin sizzle
+        this._tone({ freq: 2200, f1: 1600, dur: 0.05, gain: 0.14 * vol, type: 'sawtooth' });
+        this._noise({ dur: 0.05, gain: 0.08 * vol, f0: 7000, type: 'highpass' });
+        break;
+      case 'particle':
+        this._tone({ freq: 600, f1: 480, dur: 0.07, gain: 0.2 * vol, type: 'sawtooth' });
+        this._noise({ dur: 0.08, gain: 0.12 * vol, f0: 3400, f1: 1400, type: 'bandpass', q: 2.4 });
+        break;
+      case 'lightning':
+        this._noise({ dur: 0.16, gain: 0.34 * vol, f0: 5000, f1: 900, type: 'bandpass', q: 0.7 });
+        this._tone({ freq: 1300, f1: 200, dur: 0.1, gain: 0.14 * vol, type: 'square' });
+        break;
+      case 'cryo':
+        this._noise({ dur: 0.12, gain: 0.14 * vol, f0: 6000, f1: 3000, type: 'highpass' });
+        break;
+      case 'flame':
+        this._noise({ dur: 0.16, gain: 0.2 * vol, f0: 900, f1: 300, type: 'lowpass', q: 0.6 });
+        break;
+      default:
+        this._tone({ freq: 1000, f1: 300, dur: 0.12, gain: 0.28 * vol, type: 'square' });
+    }
+  }
+
+  charge() { this._tone({ freq: 200, f1: 1300, dur: 0.5, gain: 0.12, type: 'sawtooth' }); }
+  overheat() { this._noise({ dur: 0.3, gain: 0.18, f0: 3000, f1: 500, type: 'bandpass', q: 1.2 }); }
 
   dryFire() { this._tone({ freq: 1600, dur: 0.04, gain: 0.12, type: 'square' }); }
 
@@ -133,6 +188,17 @@ class AudioSys {
   }
 
   ui() { this._tone({ freq: 640, dur: 0.05, gain: 0.07, type: 'triangle' }); }
+  // soft UI click / pop for menu taps
+  pop() {
+    this._tone({ freq: 520, f1: 900, dur: 0.05, gain: 0.06, type: 'sine' });
+    this._tone({ freq: 1400, dur: 0.03, gain: 0.03, type: 'triangle', t0: 0.01 });
+  }
+  // rising reward chime (claim / purchase / unlock)
+  reward() {
+    this._tone({ freq: 620, dur: 0.1, gain: 0.09, type: 'triangle' });
+    this._tone({ freq: 820, dur: 0.1, gain: 0.08, type: 'triangle', t0: 0.08 });
+    this._tone({ freq: 1240, dur: 0.16, gain: 0.08, type: 'sine', t0: 0.16 });
+  }
 
   // ---- awareness / progression ----
   detectionBeep(state) {

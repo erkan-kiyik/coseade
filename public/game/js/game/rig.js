@@ -27,7 +27,8 @@ const rot2 = (px, py, ang) => {
 export function computePose(ent) {
   const sp = clamp(ent.speedNorm, 0, 1);
   const air = ent.onGround ? 0 : clamp(ent.airTime * 5, 0, 1);
-  const crouch = clamp(ent.crouchSpring, 0, 1.4);
+  // landing spring + held crouch both lower the stance; held crouch dominates
+  const crouch = clamp(ent.crouchSpring + (ent.crouchHold || 0) * 1.15, 0, 1.7);
   const mv = clamp(sp * 5, 0, 1);
 
   const breath = Math.sin(ent.breathT * 1.8) * (1 - sp * 0.7);
@@ -269,5 +270,7 @@ export function newWeaponState() {
     boltBack: 0, slideBack: 0,
     flashT: 0, flashIdx: 0, flashScale: 1,
     knifeAng: 0.35, knifeWrist: 0.3, knifeReach: 26,
+    // energy weapons: heat 0..1 (overheat lock), charge 0..1 (charge shots)
+    heat: 0, overheated: false, charge: 0, charging: false, wasDown: false,
   };
 }

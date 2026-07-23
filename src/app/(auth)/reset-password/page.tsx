@@ -3,7 +3,7 @@ import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 
 export const metadata: Metadata = {
   title: "Set new password",
-  description: "Choose a new password for your LinkedBoost AI account.",
+  description: "Choose a new password for your Coseade AI account.",
 };
 
 export default function ResetPasswordPage() {

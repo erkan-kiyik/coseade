@@ -10,7 +10,10 @@ import {
 import { newWeaponState, computePose, weaponAnchor, weaponPoint, toWorld } from './rig.js';
 import { drawSoldier } from './rig.js';
 
-const RUN = 300, SPRINT = 450, ACCEL = 2400, JUMP = -900;
+// Movement feel: snappier ground acceleration and blends for more responsive
+// controls, without changing top speeds (preserves the existing game balance).
+const RUN = 300, SPRINT = 450, ACCEL = 2800, JUMP = -900;
+const STEALTH_RANGE = 56;      // reach for a takedown from directly behind
 
 export class Player {
   constructor(parts, shadow, weapons, world, fx, cam, audio, hud) {
@@ -27,6 +30,10 @@ export class Player {
     this.gaitPhase = 0; this.speedNorm = 0;
     this.breathT = rand(0, 9); this.lean = 0;
     this.crouchSpring = 0; this.crouchVel = 0;
+    this.crouchHold = 0;          // 0..1 held-crouch blend (feeds the rig pose)
+    this.crouched = false;
+    this.stealth = null;          // active takedown timeline
+    this.stealthTarget = null;    // hostile that can currently be taken down
     this.hurtT = 0; this.deadT = 0;
 
     this.hp = 100; this.maxHp = 100;
@@ -75,6 +82,9 @@ export class Player {
       return;
     }
 
+    // ---- stealth takedown: a scripted assassination locks control until done
+    if (this.stealth) { this.updateStealth(dt, ctx); return; }
+
     // ---- aim & facing
     const vw = ctx.vw, vh = ctx.vh;
     const m = this.cam.screenToWorld(input.mouse.x, input.mouse.y, vw, vh);
@@ -88,14 +98,21 @@ export class Player {
     this.aimLocal = clamp(raw, -1.15, 1.2);
     this.aimSmooth = damp(this.aimSmooth, this.aimLocal, 15, dt);
 
+    // ---- crouch: hold to lower stance (slower, steadier, harder to spot).
+    // Smoothly blended so the pose eases down/up rather than snapping.
+    const wantCrouch = input.crouch && this.onGround && this.stunT <= 0 && !this.reload;
+    this.crouchHold = damp(this.crouchHold, wantCrouch ? 1 : 0, 12, dt);
+    this.crouched = this.crouchHold > 0.5;
+
     // ---- movement
     this.stunT = Math.max(0, this.stunT - dt);
     const stunMul = this.stunT > 0 ? 0.3 : 1;
     const mx = input.moveX;
-    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload && this.stunT <= 0;
+    const wantSprint = input.sprint && mx !== 0 && this.stamina > 1 && !this.reload && this.stunT <= 0 && !wantCrouch;
     this.sprinting = wantSprint;
-    this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 7, dt);
-    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul;
+    this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 9, dt);
+    const crouchMul = lerp(1, 0.5, this.crouchHold);
+    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul * crouchMul;
     const target = mx * top;
     const rate = (this.onGround ? ACCEL : ACCEL * 0.45) * stunMul;
     this.vx = this.vx > target
@@ -167,8 +184,94 @@ export class Player {
     }
 
     this.integrateSprings(dt);
+
+    // ---- stealth: is there an unaware hostile we're standing behind? If so
+    // and the action button is pressed, start the takedown (skips weapon use).
+    this.stealthTarget = this.findStealthTarget(enemies);
+    if (this.stealthTarget && input.interact) {
+      this.startStealth(this.stealthTarget, game);
+      this.stealthTarget = null;
+      this.hud.update(this);
+      return;
+    }
+
     this.updateWeapon(dt, input, enemies, game);
     this.hud.update(this);
+  }
+
+  // ------------------------------------------------------------- stealth
+
+  // A hostile qualifies for a silent takedown when it is unaware, not in a
+  // combat state, the operator is directly behind it (on the side its back
+  // faces) within reach, and on the same footing. Returns the nearest one.
+  findStealthTarget(enemies) {
+    if (!enemies || !this.onGround || this.reload || this.slash || this.sprinting) return null;
+    let best = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e || e.deadT > 0) continue;
+      if (e.awareness > 0.45) continue;
+      if (e.state === 'alert' || e.state === 'combat' || e.state === 'retreat') continue;
+      const dx = e.x - this.x;
+      const dist = Math.abs(dx);
+      if (dist > STEALTH_RANGE || dist < 6) continue;
+      if (Math.abs(e.y - this.y) > 44) continue;
+      // player must be on the side the enemy's back faces (behind it)
+      const side = Math.sign(this.x - e.x);      // which side of the enemy we're on
+      if (side !== -e.facing) continue;
+      // and be facing toward the enemy
+      if (this.facing !== Math.sign(dx)) continue;
+      if (dist < bestD) { bestD = dist; best = e; }
+    }
+    return best;
+  }
+
+  startStealth(target, game) {
+    const side = Math.sign(target.x - this.x) || this.facing;
+    this.facing = side;
+    this.stealth = { t: 0, T: 0.66, target, game, struck: false, side };
+    this.reload = null; this.inspectT = -1; this.slash = null;
+    this.sprinting = false; this.sprintBlend = 0;
+    this.audio.equip();               // soft blade-ready click
+  }
+
+  // Scripted assassination: glide to just behind the target, thrust, drop the
+  // hostile silently, then hand control back. Movement/animation flow through
+  // the normal rig via a forward lean + knife swipe FX.
+  updateStealth(dt, ctx) {
+    const s = this.stealth;
+    s.t += dt;
+    const k = clamp(s.t / s.T, 0, 1);
+
+    // close the last gap to a spot right behind the target during the wind-up
+    const goalX = s.target.x - s.side * 24;
+    const toGoal = goalX - this.x;
+    this.vx = k < 0.55 ? clamp(toGoal * 9, -420, 420) : damp(this.vx, 0, 12, dt);
+    this.world.moveEntity(this, dt);
+
+    // pose: crouch into the target and lean hard toward it (reads as a grab)
+    this.crouchHold = damp(this.crouchHold, 0.6, 10, dt);
+    this.crouched = true;
+    this.lean = damp(this.lean, 0.22 * this.facing, 10, dt);
+    this.aimLocal = this.aimSmooth = damp(this.aimSmooth, 0.5, 12, dt);
+    this.breathT += dt;
+
+    // strike at the midpoint: silent kill + a short blade arc, close blood
+    if (!s.struck && k > 0.46) {
+      s.struck = true;
+      if (s.target.deadT <= 0 && s.target.stealthKill) {
+        s.target.stealthKill(this);
+        this.audio.stab();
+        this.fx.slash(this.x, this.y - 92, -0.4 * this.facing, 0.9 * this.facing, 40, this.facing);
+        this.fx.blood(s.target.x - s.side * 5, s.target.y - 92, s.side);
+        this.hud.hitmark('kill');
+        this.hud.notify('SILENT TAKEDOWN');
+        if (s.game && s.game.onStealthKill) s.game.onStealthKill(s.target);
+      }
+    }
+
+    this.integrateSprings(dt);
+    this.hud.update(this);
+    if (k >= 1) { this.stealth = null; this.lean = 0; }
   }
 
   integrateSprings(dt) {
@@ -222,6 +325,9 @@ export class Player {
     this.fireCd -= dt;
     // aim-drift bloom recovers faster → tighter sustained accuracy
     this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.17);
+    // energy weapons cool between shots; overheat clears once cooled enough
+    ws.heat = Math.max(0, ws.heat - dt * (wpn.heatCool || 0.6));
+    if (ws.overheated && ws.heat <= 0.2) ws.overheated = false;
 
     // baseline pose modifiers
     let offX = 0, offY = 0, rot = 0;
@@ -344,21 +450,47 @@ export class Player {
     }
 
     // ---- firing
-    const wantFire = wpn.auto ? input.mouse.down : input.mouse.clicked;
-    const canFire = !this.reload && this.equipT < 0 && this.fireCd <= 0 && this.sprintBlend < 0.55;
-    if (wantFire && this.sprinting) this.sprinting = false;
-    if (wantFire && canFire) {
-      if (cur.mag <= 0) {
-        this.audio.dryFire();
-        this.fireCd = 0.25;
-        if (cur.reserve > 0) this.startReload(cur);
+    const blocked = this.reload || this.equipT >= 0 || this.sprintBlend >= 0.55;
+    if (wpn.charge) {
+      // charge weapons: hold to build charge, release to fire (bigger = stronger)
+      const holding = input.mouse.down && !blocked && !ws.overheated && cur.mag > 0;
+      if (holding) {
+        if (this.sprinting) this.sprinting = false;
+        ws.charging = true;
+        ws.charge = Math.min(1, ws.charge + dt / wpn.charge.time);
+      } else if (ws.charging) {
+        ws.charging = false;
+        if (cur.mag > 0 && this.fireCd <= 0 && !blocked && ws.charge > 0.15) {
+          const mul = wpn.charge.minMul + (wpn.charge.maxMul - wpn.charge.minMul) * ws.charge;
+          this.fire(cur, enemies, game, mul);
+        }
+        ws.charge = 0;
       } else {
-        this.fire(cur, enemies, game);
+        ws.charge = Math.max(0, ws.charge - dt * 2);
+      }
+    } else {
+      const wantFire = wpn.auto ? input.mouse.down : input.mouse.clicked;
+      const canFire = !blocked && this.fireCd <= 0 && !ws.overheated;
+      if (wantFire && this.sprinting) this.sprinting = false;
+      if (wantFire && canFire) {
+        if (cur.mag <= 0) {
+          this.audio.dryFire();
+          this.fireCd = 0.25;
+          if (cur.reserve > 0) this.startReload(cur);
+        } else {
+          this.fire(cur, enemies, game);
+        }
+      } else if (wantFire && ws.overheated && this.fireCd <= 0) {
+        this.fireCd = 0.2;
+        if (this.audio.overheat) this.audio.overheat();
       }
     }
-    // auto-reload hint handled by HUD
+    // surface heat / charge to the HUD
+    if (this.hud.setWeaponMeter) this.hud.setWeaponMeter(ws.heat, ws.overheated, ws.charge);
 
     this.visSpread = wpn.spread + this.speedNorm * 0.045 + (this.onGround ? 0 : 0.05) + this.recoilAccum;
+    // crouching braces the weapon — tighter cone as a reward for a slow approach
+    this.visSpread *= lerp(1, 0.68, this.crouchHold);
     this.applyWs(ws, offX, offY, rot);
   }
 
@@ -372,75 +504,139 @@ export class Player {
     this.inspectT = -1;
   }
 
-  fire(cur, enemies, game) {
+  // Fires one trigger pull, dispatching by wpn.fireMode. `chargeMul` scales
+  // damage / projectile power for charge weapons (default 1).
+  fire(cur, enemies, game, chargeMul = 1) {
     const { wpn, ws } = cur;
     cur.mag--;
     this.shots++;
     this.fireCd = 60 / wpn.rpm;
     this.lastShotT = this.time;
 
-    // resolve muzzle in world space
     const pose = computePose(this);
     const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
     const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
-    const ejl = toWorld(this, weaponPoint(wa, wpn.eject));
-    let ang = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
-    ang += randSpread(this.visSpread) - this.recoilAccum * 0.32 * this.facing;
+    const ejl = toWorld(this, weaponPoint(wa, wpn.eject || wpn.muzzle));
+    const baseAng = this.facing === 1 ? wa.ang : Math.atan2(Math.sin(wa.ang), -Math.cos(wa.ang));
+    const shotAng = () => baseAng + randSpread(this.visSpread) - this.recoilAccum * 0.32 * this.facing;
 
-    // hitscan
-    const range = 1500;
-    const ex = mzl.x + Math.cos(ang) * range;
-    const ey = mzl.y + Math.sin(ang) * range;
+    const mode = wpn.fireMode || 'hitscan';
+    const n = wpn.pellets || 1;
+    if (mode === 'projectile') {
+      const pj = wpn.projectile;
+      for (let i = 0; i < n; i++) {
+        this.fx.spawnProjectile(mzl.x, mzl.y, shotAng(), {
+          color: pj.color, radius: pj.radius, speed: pj.speed * (0.85 + 0.4 * chargeMul),
+          dmg: wpn.dmg * chargeMul, headMul: pj.headMul || 1.6,
+          blast: (pj.blast || 0) * chargeMul, pierce: pj.pierce || 0, life: pj.life || 1.6,
+        });
+      }
+    } else if (mode === 'beam') {
+      for (let i = 0; i < n; i++) this.beamShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+    } else {
+      for (let i = 0; i < n; i++) this.hitscanShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+    }
+
+    this.presentShot(cur, mzl, ejl, baseAng, chargeMul);
+  }
+
+  hitscanShot(mzl, ang, wpn, enemies, game, dmg) {
+    const range = 1600;
+    const ex = mzl.x + Math.cos(ang) * range, ey = mzl.y + Math.sin(ang) * range;
     const wHit = this.world.raycast(mzl.x, mzl.y, ex, ey);
     let bestT = wHit ? wHit.t : 1;
-    let hitEnemy = null, headshot = false;
+    let hitEnemy = null;
     for (const e of enemies) {
       if (e.deadT > 0) continue;
       const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
       if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
     }
-    const hx = mzl.x + (ex - mzl.x) * bestT;
-    const hy = mzl.y + (ey - mzl.y) * bestT;
-
+    const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
     if (hitEnemy) {
-      headshot = hy < hitEnemy.y - 108;
-      const dmg = wpn.dmg * (headshot ? 1.9 : 1);
+      const headshot = hy < hitEnemy.y - 108;
+      const d = dmg * (headshot ? 1.9 : 1);
       this.hits++;
       if (headshot) this.headshots++;
-      const killed = hitEnemy.hp <= dmg;
-      hitEnemy.damage(dmg, Math.sign(ex - mzl.x), this);
+      const killed = hitEnemy.hp <= d;
+      hitEnemy.damage(d, Math.sign(ex - mzl.x), this);
       this.fx.blood(hx, hy, Math.sign(ex - mzl.x));
       this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
       if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
       if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
     } else if (wHit && wHit.tag === 'barrel') {
-      game.damageBarrel(wHit.ref, wpn.dmg);
+      game.damageBarrel(wHit.ref, dmg);
       this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
     } else if (wHit) {
       this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
     }
+    this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy,
+      wpn.tracerColor || null, wpn.tracerWidth || 1.4);
+  }
 
-    // presentation
+  beamShot(mzl, ang, wpn, enemies, game, dmg) {
+    const range = (wpn.beam && wpn.beam.range) || 1600;
+    const ex = mzl.x + Math.cos(ang) * range, ey = mzl.y + Math.sin(ang) * range;
+    const wHit = this.world.raycast(mzl.x, mzl.y, ex, ey);
+    let bestT = wHit ? wHit.t : 1;
+    let hitEnemy = null;
+    for (const e of enemies) {
+      if (e.deadT > 0) continue;
+      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
+      if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
+    }
+    const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
+    const col = wpn.beam.color;
+    if (hitEnemy) {
+      const headshot = hy < hitEnemy.y - 108;
+      const d = dmg * (headshot ? 1.7 : 1);
+      this.hits++;
+      if (headshot) this.headshots++;
+      const killed = hitEnemy.hp <= d;
+      hitEnemy.damage(d, Math.sign(ex - mzl.x), this);
+      this.fx.energyImpact(hx, hy, col, 0);
+      this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
+      if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
+      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
+    } else if (wHit) {
+      if (wHit.tag === 'barrel') game.damageBarrel(wHit.ref, dmg);
+      this.fx.energyImpact(hx, hy, col, 0);
+    }
+    if (wpn.beam.arc) this.fx.arc(mzl.x, mzl.y, hx, hy, col);
+    else this.fx.beam(mzl.x, mzl.y, hx, hy, col, wpn.beam.width || 3);
+    if (wpn.beam.flame) this.fx.flameSpit(mzl.x, mzl.y, hx, hy, ang);
+  }
+
+  presentShot(cur, mzl, ejl, ang, chargeMul) {
+    const { wpn, ws } = cur;
     ws.flashT = 1;
-    ws.flashIdx = (Math.random() * wpn.flashes.length) | 0;
-    ws.flashScale = rand(0.85, 1.25);
+    ws.flashIdx = (Math.random() * (wpn.flashes ? wpn.flashes.length : 1)) | 0;
+    ws.flashScale = rand(0.85, 1.25) * (0.85 + chargeMul * 0.35);
     // recoil pattern: repeatable per-weapon signature, resets after a pause
     if (this.time - (ws.lastFireT || -99) > 0.28) ws.shotIndex = 0;
     ws.lastFireT = this.time;
     const pat = wpn.recoilPattern;
     const patMul = pat ? pat[ws.shotIndex % pat.length] : 1;
     ws.shotIndex = (ws.shotIndex || 0) + 1;
-    ws.recoilVel += wpn.recoilKick * 2.1 * patMul;
-    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul;
+    ws.recoilVel += wpn.recoilKick * 2.1 * patMul * chargeMul;
+    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul * chargeMul;
     if (wpn.bolt) ws.boltBack = 1;
     if (wpn.slide) ws.slideBack = 1;
     this.recoilAccum = Math.min(0.05, this.recoilAccum + 0.008);
-    this.cam.recoil(wpn.camKick);
-    this.cam.addTrauma(wpn.camTrauma);
-    this.audio.shot(wpn.shotSound);
-    this.fx.muzzle(mzl.x, mzl.y, ang);
-    this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy);
-    this.fx.casing(ejl.x, ejl.y, this.facing, wpn.casingSize);
+    this.cam.recoil(wpn.camKick * chargeMul);
+    this.cam.addTrauma(wpn.camTrauma * chargeMul);
+    if (wpn.heatPerShot) {
+      ws.heat = Math.min(1, ws.heat + wpn.heatPerShot);
+      if (ws.heat >= 1) { ws.overheated = true; if (this.audio.overheat) this.audio.overheat(); }
+    }
+    if (wpn.energy) {
+      const c = (wpn.projectile && wpn.projectile.color) || (wpn.beam && wpn.beam.color) || wpn.tracerColor || [120, 200, 255];
+      if (this.audio.energyShot) this.audio.energyShot(wpn.shotSound); else this.audio.shot('rifle');
+      this.fx.energyMuzzle(mzl.x, mzl.y, ang, c, wpn.muzzleBig || 1);
+    } else {
+      this.audio.shot(wpn.shotSound);
+      this.fx.muzzle(mzl.x, mzl.y, ang, wpn.muzzleBig || 1);
+      this.fx.casing(ejl.x, ejl.y, this.facing, wpn.casingSize || 3.6);
+    }
   }
 
   // ------------------------------------------------------------- knife

@@ -4,7 +4,7 @@ import { SignupForm } from "@/components/auth/signup-form";
 
 export const metadata: Metadata = {
   title: "Start Free",
-  description: "Create your free LinkedBoost AI account.",
+  description: "Create your free Coseade AI account.",
 };
 
 export default function SignupPage() {

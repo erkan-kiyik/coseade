@@ -42,7 +42,7 @@ export function Footer() {
                 <Rocket className="h-4 w-4" />
               </span>
               <span className="text-lg tracking-tight">
-                LinkedBoost <span className="gradient-text">AI</span>
+                Coseade <span className="gradient-text">AI</span>
               </span>
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
@@ -70,7 +70,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t pt-8 text-sm text-muted-foreground sm:flex-row">
-          <p>© {new Date().getFullYear()} LinkedBoost AI. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Coseade AI. All rights reserved.</p>
           <p>Not affiliated with LinkedIn Corporation.</p>
         </div>
       </div>

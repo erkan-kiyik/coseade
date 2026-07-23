@@ -147,9 +147,10 @@ export class World {
     P(env.dock(260, 40), 4030);
     P(env.crate(26, 20), 3861);
 
-    P(env.container('containerRed', 'HLC-407'), 1798);
-    P(env.container('containerBlue', 'MSU-2213'), 1846, GY - 38);
-    P(env.container('containerGreen', 'KDR-118'), 3128);
+    // authored opener keeps its precisely-fitted container stack (96×38)
+    P(env.container('containerRed', 'HLC-407', 96, 38), 1798);
+    P(env.container('containerBlue', 'MSU-2213', 96, 38), 1846, GY - 38);
+    P(env.container('containerGreen', 'KDR-118', 96, 38), 3128);
     P(env.crate(26, 20), 1715);
     P(env.crate(26, 20), 2573);
     P(env.crate(26, 22), 2609, GY);        // stack base
@@ -181,6 +182,13 @@ export class World {
     L(2390, GY - 30, 150, [255, 150, 60], 0.85, 0.8);
     // shorted cable sparking above the road
     this.emitters.push({ kind: 'sparks', x: 3506, y: GY - 132 });
+    // industrial smoke sources: rooftop stacks rising over the sector + a
+    // couple of ground vents. Hand-placed for the authored opening stage.
+    this.emitters.push({ kind: 'chimney', x: 760, y: GY - 260, tint: 'exhaust', rate: 0.3, t: 0 });
+    this.emitters.push({ kind: 'chimney', x: 2980, y: GY - 300, tint: 'soot', rate: 0.34, t: 0.15 });
+    this.emitters.push({ kind: 'chimney', x: 4180, y: GY - 230, tint: 'steam', rate: 0.26, t: 0.3 });
+    this.emitters.push({ kind: 'vent', x: 1640, y: GY - 34, tint: 'exhaust', dir: 0, rate: 0.7, t: 0.2 });
+    this.emitters.push({ kind: 'vent', x: 3120, y: GY - 30, tint: 'dust', dir: Math.PI, rate: 0.85, t: 0.5 });
 
     // loot: a couple of resupply crates tucked near cover
     this.pickups.push({ x: 1145, y: GY - 40, kind: 'ammo', alive: true, bob: rand(0, 6) });
@@ -227,15 +235,16 @@ export class World {
       const kind = coverKinds[rng.int(0, coverKinds.length - 1)];
       const gap = rng.range(240, 420);
       if (kind === 'crate') {
-        P(env.crate(26, 20), x);
-        this.colliders.push({ x: x - 13, y: GY - 20, w: 26, h: 20 });
+        // enlarged cover — comfortable to tuck behind (matches new art size)
+        P(env.crate(), x);
+        this.colliders.push({ x: x - 15, y: GY - 25, w: 30, h: 25 });
       } else if (kind === 'container') {
         const variant = rng.pick(['containerRed', 'containerBlue', 'containerGreen']);
         P(env.container(variant, `${rng.pick(['HLC', 'MSU', 'KDR', 'TRX'])}-${rng.int(100, 999)}`), x);
-        this.colliders.push({ x: x - 48, y: GY - 38, w: 96, h: 38 });
+        this.colliders.push({ x: x - 54, y: GY - 44, w: 108, h: 44 });
       } else if (kind === 'sandbags') {
-        P(env.sandbags(), x);
-        this.colliders.push({ x: x - 21, y: GY - 13, w: 42, h: 13 });
+        P(env.sandbags(1.2), x);
+        this.colliders.push({ x: x - 24, y: GY - 16, w: 48, h: 16 });
       } else if (kind === 'barrel') {
         P(env.barrel(rng.pick(['rust', 'blue'])), x);
       } else if (kind === 'dumpster') {
@@ -284,6 +293,31 @@ export class World {
     if (rng.chance(0.5)) {
       this.emitters.push({ kind: 'sparks', x: rng.range(400, mapW - 400), y: GY - rng.range(110, 160) });
     }
+    // -- industrial smoke sources: rooftop stacks (steady columns) + a couple
+    //    of ground vents / damaged machinery. Tints vary by source so plumes
+    //    read differently across the sector. Placed high so columns rise over
+    //    the rooftops without colliding with the play space.
+    const stackTints = ['exhaust', 'exhaust', 'soot', 'steam', 'chem'];
+    const stackCount = rng.int(2, 4);
+    for (let i = 0; i < stackCount; i++) {
+      this.emitters.push({
+        kind: 'chimney',
+        x: rng.range(200, mapW - 200),
+        y: GY - rng.range(150, 300),
+        tint: rng.pick(stackTints),
+        rate: rand(0.22, 0.4), t: rand(0, 0.4),
+      });
+    }
+    for (let i = 0; i < rng.int(1, 3); i++) {
+      this.emitters.push({
+        kind: 'vent',
+        x: rng.range(300, mapW - 300),
+        y: GY - rng.range(20, 70),
+        tint: rng.pick(['exhaust', 'dust', 'steam']),
+        dir: rng.pick([0, Math.PI]),
+        rate: rand(0.5, 1.0), t: rand(0, 0.6),
+      });
+    }
 
     // -- loot: scattered resupply crates, more on higher stages --
     const lootCount = 2 + Math.min(3, Math.floor(stage / 3));
@@ -330,8 +364,18 @@ export class World {
     let nx = ent.x + ent.vx * dt;
     let c = this.rectHit(nx - ent.halfW, ent.y - ent.h, ent.halfW * 2, ent.h - 1);
     if (c) {
-      nx = ent.vx > 0 ? c.x - ent.halfW : c.x + c.w + ent.halfW;
-      ent.vx = 0;
+      // step-up: if the obstacle is a low ledge (crate, sandbags, dock lip)
+      // and there's headroom above it, walk up onto it instead of hard-stopping
+      // — smoother traversal. Tall cover (containers, walls) still blocks.
+      const STEP = 27;
+      const topGap = ent.y - c.y;
+      const clearAbove = !this.rectHit(nx - ent.halfW, c.y - ent.h, ent.halfW * 2, ent.h - 2);
+      if (ent.onGround && topGap > 0.5 && topGap <= STEP && clearAbove) {
+        ent.y = c.y;
+      } else {
+        nx = ent.vx > 0 ? c.x - ent.halfW : c.x + c.w + ent.halfW;
+        ent.vx = 0;
+      }
     }
     ent.x = nx;
 
@@ -502,9 +546,17 @@ export class World {
   }
 
   // World-space layers behind entities (call inside camera transform).
-  drawBack(g) {
+  // cam/vw, when given, cull facades/props/barrels/pickups outside the
+  // visible x-range — endless procedural stages can carry far more of these
+  // than are ever on screen at once, so this cuts real draw-call count
+  // without touching physics/AI (those keep updating regardless of culling).
+  drawBack(g, cam, vw) {
+    const halfVis = cam && vw ? vw / (2 * cam.zoom) + 400 : Infinity;
+    const camX = cam ? cam.x : 0;
+    const visible = (x) => Math.abs(x - camX) < halfVis;
+
     for (const f of this.facades) {
-      drawSprite(g, f.spr, f.x, f.y);
+      if (visible(f.x)) drawSprite(g, f.spr, f.x, f.y);
     }
     // power cables
     g.strokeStyle = 'rgba(10,12,16,0.5)';
@@ -522,16 +574,16 @@ export class World {
     ]);
     g.fillStyle = under;
     g.fillRect(-1600, GROUND_Y + 84, MAP_W + 3200, 1400);
-    for (const p of this.props) drawSprite(g, p.spr, p.x, p.y);
-    for (const b of this.barrels) if (b.alive) drawSprite(g, b.spr, b.x, b.y);
-    this.drawPickups(g);
+    for (const p of this.props) { if (visible(p.x)) drawSprite(g, p.spr, p.x, p.y); }
+    for (const b of this.barrels) if (b.alive && visible(b.x)) drawSprite(g, b.spr, b.x, b.y);
+    this.drawPickups(g, visible);
     // decals over ground/props, under characters
     g.drawImage(this.decalCv, 0, this.decalTop);
   }
 
-  drawPickups(g) {
+  drawPickups(g, visible = () => true) {
     for (const p of this.pickups) {
-      if (!p.alive) continue;
+      if (!p.alive || !visible(p.x)) continue;
       const bob = Math.sin(this.time * 2.4 + p.bob) * 3;
       const y = p.y - 22 + bob;
       g.save();

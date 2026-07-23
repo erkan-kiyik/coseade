@@ -40,6 +40,21 @@ function speckle(g, x, y, w, h, n = 60) {
 // rail, skeleton stock, canted iron + red-dot. Painted in weapon space:
 // origin (0,0) = trigger-hand grip point, muzzle faces +x.
 
+// Emissive energy core: additive glow strip + bright filament. Drawn on top
+// of a recoloured body so energy weapons read as "powered".
+function drawCore(g, x0, y0, x1, y1, c) {
+  const [r, gg, b] = c;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round';
+  g.strokeStyle = `rgba(${r},${gg},${b},0.32)`; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  g.strokeStyle = `rgba(${Math.min(255, r + 90)},${Math.min(255, gg + 90)},${Math.min(255, b + 90)},0.95)`;
+  g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  g.restore();
+}
+
 function paintRifleBody(variant, finish) {
   const dark = variant === 'phantom';
   const rec = (finish && finish.rec) || (dark ? '#2c2e33' : COL.gunmetal);
@@ -174,6 +189,7 @@ function paintRifleBody(variant, finish) {
     // top edge light
     g.strokeStyle = 'rgba(255,215,165,0.22)'; g.lineWidth = 0.6;
     g.beginPath(); g.moveTo(-6.8, -10.7); g.lineTo(17.4, -10.7); g.stroke();
+    if (finish && finish.core) drawCore(g, -4, -8.4, 15.5, -8.4, finish.core);
   });
 }
 
@@ -263,6 +279,7 @@ function paintPistolBody(finish) {
     g.font = '1.5px monospace';
     g.fillText('C-9', 4.6, 1.4);
     speckle(g, -4, -2, 12, 8, 26);
+    if (finish && finish.core) drawCore(g, 0.4, -1.4, 7.6, -1.4, finish.core);
   });
 }
 function paintPistolSlide() {
@@ -297,7 +314,9 @@ function paintPistolSlide() {
 }
 
 // ============================ "TALON-7" KNIFE ============================
-function paintKnife() {
+function paintKnife(finish) {
+  // Optional energy finish: recolors the blade to an emissive edge (VOLT EDGE).
+  const blade = finish && finish.blade;
   // box x -6..+16, y -4..+4; anchor at grip center → (6,4)
   return makeSprite(22, 9, 6, 4.5, (g) => {
     g.translate(6, 4.5);
@@ -325,10 +344,15 @@ function paintKnife() {
     // guard
     g.fillStyle = lingrad(g, 0, -3.2, 0, 3.2, [[0, '#6a6f76'], [1, '#2c2f33']]);
     rr(g, -0.9, -3, 1.6, 6, 0.6); g.fill();
-    // blade: recurve tanto, satin finish
-    g.fillStyle = lingrad(g, 0, -3, 0, 2.4, [
-      [0, '#c9ced6'], [0.42, '#9aa1aa'], [0.55, '#585d64'], [1, '#3a3e44'],
-    ]);
+    // blade: recurve tanto — satin steel, or an emissive energy edge
+    g.fillStyle = blade
+      ? lingrad(g, 0, -3, 0, 2.4, [
+          [0, '#d6f6ff'], [0.4, blade], [0.62, shade(blade, -0.35)], [1, shade(blade, -0.6)],
+        ])
+      : lingrad(g, 0, -3, 0, 2.4, [
+          [0, '#c9ced6'], [0.42, '#9aa1aa'], [0.55, '#585d64'], [1, '#3a3e44'],
+        ]);
+    if (blade) { g.shadowColor = blade; g.shadowBlur = 5; }
     g.beginPath();
     g.moveTo(0.7, -2.6);
     g.lineTo(9.4, -2.9);                        // spine
@@ -336,8 +360,11 @@ function paintKnife() {
     g.quadraticCurveTo(11.5, 1.6, 7, 1.9);      // edge belly
     g.quadraticCurveTo(3, 2.2, 0.7, 1.9);
     g.closePath(); g.fill();
+    g.shadowBlur = 0;
     // edge grind highlight
-    g.fillStyle = lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(240,244,250,0.85)'], [1, 'rgba(160,168,178,0.15)']]);
+    g.fillStyle = blade
+      ? lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(235,252,255,0.95)'], [1, withA(blade, 0.3)]])
+      : lingrad(g, 0, 0.4, 0, 2.2, [[0, 'rgba(240,244,250,0.85)'], [1, 'rgba(160,168,178,0.15)']]);
     g.beginPath();
     g.moveTo(1, 1.1);
     g.quadraticCurveTo(7, 1.4, 11.4, 0.5);
@@ -434,6 +461,7 @@ function paintSmgBody(finish) {
     speckle(g, 8.6, -7.6, 11, 5, 28);
     g.strokeStyle = 'rgba(255,215,165,0.22)'; g.lineWidth = 0.5;
     g.beginPath(); g.moveTo(-4, -8.5); g.lineTo(14, -8.5); g.stroke();
+    if (finish && finish.core) drawCore(g, -2, -6.2, 12, -6.2, finish.core);
   });
 }
 function paintSmgMag() {
@@ -557,20 +585,29 @@ export function buildWeapons() {
     default: rifleBody,
     urban: paintRifleBody('ranger', { rec: '#3c4750', poly: '#2b3640' }),
     cinder: paintRifleBody('ranger', { rec: '#4a2e26', poly: '#38221c' }),
+    arc: paintRifleBody('ranger', { rec: '#123742', poly: '#0c2731' }),   // ARC-9 energy
   };
   const pistolBody = paintPistolBody();
   const pistolFinishes = {
     default: pistolBody,
     desert: paintPistolBody({ grip: '#5c4f3a', frame: '#6b5c42' }),
+    onyx: paintPistolBody({ grip: '#161719', frame: '#1c1d1f' }),
+    gold: paintPistolBody({ grip: '#5a4718', frame: '#8a6f28' }),
   };
   const knifeBody = paintKnife();
   const knifeFinishes = {
     default: knifeBody,
     ravage: paintKnifeBowie(),
+    volt: paintKnife({ blade: '#38e0ff' }),   // VOLT EDGE energy blade
   };
   const smgBody = paintSmgBody();
+  const smgFinishes = {
+    default: smgBody,
+    viper: paintSmgBody({ rec: '#2c4a2e', poly: '#1b2e1c' }),
+    arc: paintSmgBody({ rec: '#123742', poly: '#0c2731' }),
+  };
 
-  return {
+  const defs = {
     rifle: {
       id: 'rifle', name: 'VK-77 "VANDAL"', slot: 1, kind: 'gun',
       body: rifleBody, finishes: rifleFinishes, finish: 'default',
@@ -613,7 +650,7 @@ export function buildWeapons() {
     },
     smg: {
       id: 'smg', name: 'P-12 "WASP"', slot: 4, kind: 'gun',
-      body: smgBody, finishes: null, finish: 'default',
+      body: smgBody, finishes: smgFinishes, finish: 'default',
       mag: paintSmgMag(), bolt: paintBolt(),
       flashes,
       gripA: { x: 0, y: 0.4 },
@@ -642,4 +679,136 @@ export function buildWeapons() {
       aimHeight: -6,
     },
   };
+
+  // ---- expanded arsenal: reuses the three gun silhouettes (rifle / smg /
+  // pistol) with recoloured bodies + energy cores, and layers on distinct
+  // firing archetypes, colours, sounds and recoil. Anchors, mag/bolt/slide
+  // and reload timing are inherited from the base def, so every weapon keeps
+  // a working reload animation for free.
+  const R = defs.rifle, S = defs.smg, P = defs.pistol;
+  const rifleSkin = (rec, poly, core) => paintRifleBody('ranger', { rec, poly, core });
+  const smgSkin = (rec, poly, core) => paintSmgBody({ rec, poly, core });
+  const pistolSkin = (grip, frame, core) => paintPistolBody({ grip, frame, core });
+
+  Object.assign(defs, {
+    // ------- conventional military -------
+    battle: {
+      ...R, id: 'battle', name: 'MK-2 "WARDEN"', body: rifleSkin('#43372a', '#302719'),
+      auto: false, rpm: 340, dmg: 46, spread: 0.015,
+      recoilKick: 2.1, recoilRot: 0.03, camKick: 1.15, camTrauma: 0.062,
+      magSize: 20, reserve: 100, reloadT: 2.3, reloadEmptyT: 3.0, shotSound: 'rifle',
+    },
+    lmg: {
+      ...R, id: 'lmg', name: 'M-900 "OX" LMG', body: rifleSkin('#2f3630', '#232823'),
+      auto: true, rpm: 820, dmg: 24, spread: 0.032,
+      recoilKick: 1.9, recoilRot: 0.03, camKick: 1.0, camTrauma: 0.05, muzzleBig: 1.35,
+      magSize: 100, reserve: 200, reloadT: 3.8, reloadEmptyT: 4.4, shotSound: 'rifle',
+    },
+    sniper: {
+      ...R, id: 'sniper', name: 'LRS-1 "TALON"', body: rifleSkin('#2a2e33', '#20242a'),
+      auto: false, rpm: 55, dmg: 150, spread: 0.002,
+      recoilKick: 3.2, recoilRot: 0.05, camKick: 2.4, camTrauma: 0.12, muzzleBig: 1.5,
+      magSize: 5, reserve: 30, reloadT: 3.0, reloadEmptyT: 3.5,
+      shotSound: 'rifle', tracerColor: [255, 244, 210], tracerWidth: 2.6,
+    },
+    // ------- energy: projectiles -------
+    raygun: {
+      ...P, id: 'raygun', name: 'RAY GUN', body: pistolSkin('#3a1d55', '#4a2668', [200, 110, 255]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 200, dmg: 62, spread: 0.02,
+      projectile: { color: [200, 110, 255], radius: 5, speed: 900, blast: 44, headMul: 1.6, life: 1.6 },
+      recoilKick: 1.4, recoilRot: 0.03, camKick: 0.8, camTrauma: 0.05, muzzleBig: 1.15,
+      magSize: 10, reserve: 60, shotSound: 'ray',
+    },
+    plasma: {
+      ...R, id: 'plasma', name: 'PLASMA RIFLE', body: rifleSkin('#123742', '#0c2731', [80, 220, 255]),
+      energy: true, fireMode: 'projectile', auto: true, rpm: 420, dmg: 34, spread: 0.022,
+      projectile: { color: [80, 220, 255], radius: 4.6, speed: 1050, blast: 28, life: 1.4 },
+      heatPerShot: 0.05, heatCool: 0.55, muzzleBig: 1.15,
+      recoilKick: 1.4, recoilRot: 0.02, camKick: 0.8, camTrauma: 0.045, shotSound: 'plasma',
+    },
+    pulse: {
+      ...R, id: 'pulse', name: 'PULSE RIFLE', body: rifleSkin('#1c3a2a', '#12281c', [120, 255, 170]),
+      energy: true, fireMode: 'projectile', auto: true, rpm: 640, dmg: 22, spread: 0.02,
+      projectile: { color: [120, 255, 170], radius: 3.8, speed: 1250, life: 1.2 },
+      recoilKick: 1.2, recoilRot: 0.018, camKick: 0.62, camTrauma: 0.036, shotSound: 'pulse',
+    },
+    eshotgun: {
+      ...R, id: 'eshotgun', name: 'ENERGY SHOTGUN', body: rifleSkin('#43301a', '#2f2112', [255, 160, 60]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 75, dmg: 15, spread: 0.14, pellets: 8,
+      projectile: { color: [255, 160, 60], radius: 3.4, speed: 820, life: 0.55 },
+      recoilKick: 2.8, recoilRot: 0.04, camKick: 1.6, camTrauma: 0.09, muzzleBig: 1.4,
+      magSize: 6, reserve: 36, reloadT: 2.6, reloadEmptyT: 3.2, shotSound: 'plasma',
+    },
+    quantum: {
+      ...P, id: 'quantum', name: 'QUANTUM PISTOL', body: pistolSkin('#123045', '#164a63', [90, 200, 255]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 300, dmg: 40, spread: 0.016,
+      projectile: { color: [120, 220, 255], radius: 4, speed: 1400, pierce: 1, life: 1.2 },
+      recoilKick: 1.2, recoilRot: 0.03, camKick: 0.6, camTrauma: 0.04, shotSound: 'ray',
+      magSize: 14, reserve: 70,
+    },
+    // ------- energy: charge weapons -------
+    railgun: {
+      ...R, id: 'railgun', name: 'GAUSS RAILGUN', body: rifleSkin('#2e3238', '#202429', [150, 220, 255]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 60, dmg: 120, spread: 0.001,
+      projectile: { color: [150, 220, 255], radius: 4.2, speed: 2600, pierce: 4, life: 0.8 },
+      charge: { time: 0.9, minMul: 0.5, maxMul: 1.5 },
+      recoilKick: 3.0, recoilRot: 0.045, camKick: 2.2, camTrauma: 0.12, muzzleBig: 1.6,
+      magSize: 5, reserve: 30, reloadT: 2.8, reloadEmptyT: 3.3, shotSound: 'rail',
+    },
+    ion: {
+      ...R, id: 'ion', name: 'ION CANNON', body: rifleSkin('#173d3a', '#0f2b29', [80, 255, 210]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 40, dmg: 90, spread: 0.004,
+      projectile: { color: [80, 255, 210], radius: 7, speed: 720, blast: 130, life: 2 },
+      charge: { time: 1.1, minMul: 0.5, maxMul: 1.7 },
+      recoilKick: 2.6, recoilRot: 0.04, camKick: 2.0, camTrauma: 0.14, muzzleBig: 1.7,
+      magSize: 4, reserve: 24, reloadT: 3.0, reloadEmptyT: 3.6, shotSound: 'ion',
+    },
+    emp: {
+      ...R, id: 'emp', name: 'EMP LAUNCHER', body: rifleSkin('#26364a', '#1a2636', [120, 200, 255]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 70, dmg: 40, spread: 0.01,
+      projectile: { color: [140, 210, 255], radius: 6, speed: 640, blast: 150, life: 2.2 },
+      recoilKick: 2.0, recoilRot: 0.03, camKick: 1.4, camTrauma: 0.09, muzzleBig: 1.4,
+      magSize: 5, reserve: 25, reloadT: 2.7, reloadEmptyT: 3.2, shotSound: 'ion',
+    },
+    gravity: {
+      ...R, id: 'gravity', name: 'GRAVITY GUN', body: rifleSkin('#3a2450', '#281634', [180, 120, 255]),
+      energy: true, fireMode: 'projectile', auto: false, rpm: 90, dmg: 55, spread: 0.008,
+      projectile: { color: [180, 120, 255], radius: 6, speed: 560, blast: 110, life: 2.4 },
+      recoilKick: 1.8, recoilRot: 0.03, camKick: 1.2, camTrauma: 0.08, muzzleBig: 1.4,
+      magSize: 8, reserve: 40, shotSound: 'ion',
+    },
+    // ------- energy: beams -------
+    lasersmg: {
+      ...S, id: 'lasersmg', name: 'LASER SMG', body: smgSkin('#3a1420', '#280d16', [255, 70, 90]),
+      energy: true, fireMode: 'beam', auto: true, rpm: 1100, dmg: 9, spread: 0.02,
+      beam: { color: [255, 70, 90], width: 2.2 }, heatPerShot: 0.03, heatCool: 0.6,
+      recoilKick: 0.7, recoilRot: 0.012, camKick: 0.4, camTrauma: 0.024, shotSound: 'laser',
+    },
+    particle: {
+      ...R, id: 'particle', name: 'PARTICLE BEAM', body: rifleSkin('#2a1d55', '#1c1440', [190, 120, 255]),
+      energy: true, fireMode: 'beam', auto: true, rpm: 520, dmg: 16, spread: 0.006,
+      beam: { color: [190, 120, 255], width: 2.6 }, heatPerShot: 0.045, heatCool: 0.5,
+      recoilKick: 0.9, recoilRot: 0.014, camKick: 0.5, camTrauma: 0.03, shotSound: 'particle',
+    },
+    lightning: {
+      ...R, id: 'lightning', name: 'LIGHTNING RIFLE', body: rifleSkin('#26364a', '#1a2636', [130, 200, 255]),
+      energy: true, fireMode: 'beam', auto: true, rpm: 260, dmg: 20, spread: 0.01,
+      beam: { color: [150, 210, 255], width: 2, arc: true }, shotSound: 'lightning',
+      recoilKick: 1.0, recoilRot: 0.016, camKick: 0.6, camTrauma: 0.04,
+    },
+    cryo: {
+      ...R, id: 'cryo', name: 'CRYO GUN', body: rifleSkin('#1d3a4a', '#122a36', [160, 230, 255]),
+      energy: true, fireMode: 'beam', auto: true, rpm: 700, dmg: 8, spread: 0.03,
+      beam: { color: [170, 235, 255], width: 3.4, range: 360 }, shotSound: 'cryo',
+      recoilKick: 0.5, recoilRot: 0.008, camKick: 0.3, camTrauma: 0.02,
+    },
+    flame: {
+      ...R, id: 'flame', name: 'FLAME THROWER', body: rifleSkin('#3a1f12', '#2a150c', [255, 130, 40]),
+      energy: true, fireMode: 'beam', auto: true, rpm: 900, dmg: 6, spread: 0.05,
+      beam: { color: [255, 130, 40], width: 6, range: 300, flame: true }, shotSound: 'flame',
+      recoilKick: 0.4, recoilRot: 0.006, camKick: 0.3, camTrauma: 0.024,
+    },
+  });
+
+  return defs;
 }

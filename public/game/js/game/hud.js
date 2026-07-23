@@ -22,15 +22,20 @@ export class Hud {
       armorRow: $('armor-row'),
       ammoMag: $('ammo-mag'), ammoRes: $('ammo-res'),
       weaponName: $('weapon-name'), reloadHint: $('reload-hint'),
+      wpnMeter: $('wpn-meter'), wpnMeterFill: $('wpn-meter-fill'),
       slots: [$('slot-1'), $('slot-2'), $('slot-3'), $('slot-4')],
       slotIcons: [$('slot-1-icon'), $('slot-2-icon'), $('slot-3-icon'), $('slot-4-icon')],
       objCount: $('obj-count'), stageLabel: $('stage-label'),
       hitmark: $('hitmark'), damage: $('damage-flash'),
+      stealthPrompt: $('stealth-prompt'),
       dmgLeft: $('dmg-left'), dmgRight: $('dmg-right'), dmgOmni: $('dmg-omni'),
       detBar: $('det-bar'), detFill: $('det-fill'), detLabel: $('det-label'),
-      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'),
+      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'), hudTokens: $('hud-tokens'),
       notify: $('notify'),
       endTitle: $('end-title'), endDetail: $('end-detail'),
+      cineBars: $('cine-bars'), introKicker: $('intro-kicker'), introLine: $('intro-line'),
+      introSkip: $('intro-skip'), sceneFade: $('scene-fade'),
+      graphicsTier: $('graphics-tier'),
     };
     this._lastAmmo = null;
     this._lastDetState = null;
@@ -43,6 +48,11 @@ export class Hud {
     $('btn-quit').onclick = h.quit;
     $('btn-redeploy').onclick = h.restart;
     $('btn-menu').onclick = h.quit;
+    if (h.graphics) $('btn-graphics').onclick = h.graphics;
+  }
+
+  setGraphicsTier(name) {
+    if (this.el.graphicsTier) this.el.graphicsTier.textContent = name;
   }
 
   setLoad(p, label) {
@@ -155,7 +165,41 @@ export class Hud {
     this.el.xpFill.style.width = `${Math.round(xpFrac * 100)}%`;
   }
 
+  setTokens(n) {
+    if (this.el.hudTokens) this.el.hudTokens.textContent = `◈ ${n}`;
+  }
+
+  // Energy weapons: shows heat (yellow→red, flashes when overheated) or, for
+  // charge weapons, the current charge (cyan). Hidden for conventional guns.
+  setWeaponMeter(heat, overheated, charge) {
+    const el = this.el.wpnMeter, fill = this.el.wpnMeterFill;
+    if (!el) return;
+    const show = heat > 0.001 || charge > 0.001 || overheated;
+    el.classList.toggle('hidden', !show);
+    if (!show) return;
+    if (charge > 0.001) {
+      fill.style.width = `${Math.round(charge * 100)}%`;
+      fill.className = 'wpn-meter-fill charge';
+    } else {
+      fill.style.width = `${Math.round(heat * 100)}%`;
+      fill.className = 'wpn-meter-fill heat' + (overheated ? ' over' : '');
+    }
+  }
+
   setAimScreen(x, y) { this._aimX = x; this._aimY = y; }
+
+  // Shows/hides the silent-takedown prompt, anchored above the operator.
+  setStealthPrompt(on, sx, sy) {
+    const el = this.el.stealthPrompt;
+    if (!el) return;
+    if (on) {
+      el.style.left = `${sx}px`;
+      el.style.top = `${sy}px`;
+      if (!this._spOn) { this._spOn = true; el.classList.add('show'); }
+    } else if (this._spOn) {
+      this._spOn = false; el.classList.remove('show');
+    }
+  }
 
   // kind: 'hit' | 'headshot' | 'kill'
   hitmark(kind = 'hit') {
@@ -195,6 +239,47 @@ export class Hud {
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
+  }
+
+  // ---- deploy cinematic: letterbox bars, briefing text, dip-to-black cuts
+
+  showCine(on) {
+    this.el.cineBars.classList.toggle('active', on);
+  }
+
+  // Pass undefined for either argument to leave that line as-is (so a later
+  // beat can update only the briefing line while the kicker stays put).
+  setIntroText(kicker, line) {
+    if (kicker !== undefined) {
+      this.el.introKicker.textContent = kicker;
+      this.el.introKicker.classList.toggle('show', kicker.length > 0);
+    }
+    if (line !== undefined) {
+      this.el.introLine.textContent = line;
+      this.el.introLine.classList.toggle('show', line.length > 0);
+    }
+  }
+
+  hideIntroText() {
+    this.el.introKicker.classList.remove('show');
+    this.el.introLine.classList.remove('show');
+  }
+
+  showSkipHint(on) {
+    this.el.introSkip.classList.toggle('show', on);
+  }
+
+  // Dips the screen to black, runs `onBlack` at the peak (to swap state,
+  // snap the camera, etc. without a visible pop), then fades back in.
+  sceneFade(onBlack) {
+    const el = this.el.sceneFade;
+    el.style.transition = 'opacity 0.22s ease-in';
+    el.style.opacity = '1';
+    setTimeout(() => {
+      onBlack();
+      el.style.transition = 'opacity 0.4s ease-out';
+      requestAnimationFrame(() => { el.style.opacity = '0'; });
+    }, 220);
   }
 
   // The campaign is endless — the only way a run ends is the operator going

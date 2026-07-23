@@ -14,8 +14,8 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL(absoluteUrl()),
   title: {
-    default: "LinkedBoost AI — Optimize Your LinkedIn Profile with AI",
-    template: "%s | LinkedBoost AI",
+    default: "Coseade AI — Optimize Your LinkedIn Profile with AI",
+    template: "%s | Coseade AI",
   },
   description:
     "Get recruiter-ready in under 60 seconds. AI-powered LinkedIn profile analysis, ATS scoring, headline generation, and content creation.",
@@ -27,19 +27,19 @@ export const metadata: Metadata = {
     "recruiter visibility",
     "career coach AI",
   ],
-  authors: [{ name: "LinkedBoost AI" }],
+  authors: [{ name: "Coseade AI" }],
   openGraph: {
     type: "website",
     locale: "en_US",
     url: absoluteUrl(),
-    siteName: "LinkedBoost AI",
-    title: "LinkedBoost AI — Optimize Your LinkedIn Profile with AI",
+    siteName: "Coseade AI",
+    title: "Coseade AI — Optimize Your LinkedIn Profile with AI",
     description:
       "Get recruiter-ready in under 60 seconds. AI-powered LinkedIn profile analysis, ATS scoring, and content generation.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "LinkedBoost AI",
+    title: "Coseade AI",
     description: "Optimize your LinkedIn profile with AI. Get recruiter-ready in under 60 seconds.",
   },
   robots: {
