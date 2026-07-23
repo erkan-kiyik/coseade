@@ -1,144 +1,337 @@
-# Coseade AI 🚀
+# Sector 9: Cinderfall
 
-**Optimize your LinkedIn profile with AI — get recruiter-ready in under 60 seconds.**
+**Original Premium 2D Tactical Shooter**
 
-A production-ready SaaS application that analyzes LinkedIn profiles, scores them the way recruiters and ATS systems do, and generates optimized headlines, About sections, experience bullets, posts, and more.
+---
 
-## Features
+## Overview
 
-| Feature | Description | Plan |
-|---|---|---|
-| **Profile Analyzer** | Upload your LinkedIn PDF export or paste your profile; get scored across 6 dimensions (Recruiter, ATS, Keywords, Branding, Leadership, Credibility) with per-section feedback | Free (3/day) |
-| **ATS Checker** | Compare a resume against a job description: match %, missing keywords, strengths, weaknesses, fixes | Pro |
-| **Headline Generator** | 10 optimized headlines per run, in 8 styles (Executive → AI Engineer) | Free |
-| **About Generator** | 3 story-driven About variants in 6 tones | Free |
-| **Experience Optimizer** | STAR-format rewrites that turn duties into measurable achievements | Free |
-| **Skills Analyzer** | Missing skills, trending skills, and ATS keywords — with charts | Free (3/day) |
-| **Post Generator** | Hook + story + CTA + hashtags, carousel/image ideas, best posting time, engagement forecast | Free (3/day) |
-| **AI Career Coach** | Streaming chat: interviews, salary negotiation, roadmaps, networking | Pro |
-| **Career Toolkit** | Cover letters, networking messages, referral requests, interview prep, content calendar, career roadmap | Free (limited) |
-| **Analytics Dashboard** | Score trend, recruiter visibility, keyword growth, content performance, activity charts | All |
+**Sector 9: Cinderfall** is an original 2D side-view tactical shooter built with a strong focus on premium artwork, responsive gameplay, intelligent AI, and long-term replayability.
 
-## Tech Stack
+The project is designed from the beginning as a **commercial-quality game**, not a prototype or technical demonstration.
 
-- **Framework:** Next.js 15 (App Router) + TypeScript
-- **Styling:** Tailwind CSS, shadcn/ui-style components, Framer Motion
-- **Auth & DB:** Supabase (Google OAuth + email/password + password reset) with Prisma ORM on Supabase Postgres
-- **Payments:** Stripe subscriptions with webhooks
-- **AI:** OpenRouter (multi-provider — Claude, Gemini, GPT, and more via one API), structured JSON outputs validated with Zod
-- **Forms:** React Hook Form + Zod
-- **Charts:** Recharts (CVD-validated palette)
-- **Deployment:** Vercel-ready
+Every system is developed with scalability, optimization, maintainability, and visual polish in mind.
 
-## Getting Started
+The game is built for:
 
-### 1. Clone & install
+* 🌐 Web Browser
+* 🤖 Android
+* 🍎 iPhone & iPad
 
-```bash
-git clone <this-repo>
-cd coseade
-npm install
-```
+---
 
-### 2. Supabase setup
+# Vision
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. **Project Settings → API**: copy the URL, `anon` key, and `service_role` key.
-3. **Project Settings → Database**: copy both connection strings — the pooled one (port 6543) for `DATABASE_URL`, the direct one (port 5432) for `DIRECT_URL`.
-4. **Authentication → Providers → Google**: enable it and add your Google OAuth client ID/secret ([Google Cloud Console](https://console.cloud.google.com/apis/credentials); authorized redirect URI: `https://<project>.supabase.co/auth/v1/callback`).
-5. **Authentication → URL Configuration**: set the Site URL to your app URL and add `http://localhost:3000/auth/callback` (and your production `/auth/callback`) to redirect URLs.
+Create one of the highest-quality browser and mobile tactical shooters with:
 
-### 3. Environment variables
+* Beautiful illustrated graphics
+* Smooth gameplay
+* Intelligent enemy AI
+* Fluid animations
+* Excellent optimization
+* Original world design
+* Endless replayability
 
-```bash
-cp .env.example .env
-```
+Every visual element should look handcrafted.
 
-Fill in every value — each one is documented inline in [.env.example](.env.example).
+Every mechanic should feel polished.
 
-### 4. Database
+Every update should improve quality.
 
-```bash
-npm run db:push        # creates the schema in Supabase Postgres
-```
+---
 
-### 5. Stripe setup
+# Art Direction
 
-1. Create a **product** with a **recurring $12/month price**; put its price ID in `STRIPE_PRO_PRICE_ID`.
-2. Create a webhook endpoint pointing to `https://<your-domain>/api/stripe/webhook` with events:
-   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`.
-   Put the signing secret in `STRIPE_WEBHOOK_SECRET`.
-3. For local testing: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+The game follows a premium illustrated art style.
 
-### 6. Run
+### Never use
 
-```bash
-npm run dev
-```
+* Pixel art
+* Placeholder assets
+* Flat vector graphics
+* Generic free assets
+* Inconsistent artwork
+* Blurry textures
+* Low-resolution sprites
 
-Open [http://localhost:3000](http://localhost:3000).
+### Every asset must look professionally created.
 
-## Scripts
+The visual language should remain consistent across:
 
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Development server |
-| `npm run build` | Production build (runs `prisma generate` first) |
-| `npm run start` | Serve the production build |
-| `npm run typecheck` | TypeScript check |
-| `npm run db:push` | Push the Prisma schema to the database |
-| `npm run db:migrate` | Create a migration (development) |
-| `npm run db:studio` | Prisma Studio data browser |
+* Characters
+* Weapons
+* Buildings
+* Props
+* User Interface
+* Effects
+* Environments
 
-## Architecture
+---
 
-```
-src/
-├── app/
-│   ├── page.tsx                  # Landing page (hero, features, demo, pricing, FAQ)
-│   ├── (auth)/                   # login / signup / forgot- & reset-password
-│   ├── auth/callback/            # OAuth + email-link code exchange
-│   ├── dashboard/                # Protected app (sidebar layout, 11 pages)
-│   └── api/
-│       ├── ai/*                  # One route per AI feature (JSON, validated)
-│       ├── extract-pdf/          # LinkedIn/resume PDF → text
-│       └── stripe/*              # checkout / portal / webhook
-├── components/
-│   ├── ui/                       # shadcn/ui-style primitives
-│   ├── landing/                  # Landing page sections
-│   ├── dashboard/                # Sidebar, charts, page chrome
-│   ├── features/                 # One client component per AI feature
-│   └── auth/                     # Auth forms
-├── lib/
-│   ├── ai/                       # OpenRouter client, prompts, zod schemas, route factory
-│   ├── supabase/                 # Browser/server/middleware clients
-│   ├── prisma.ts · stripe.ts     # Singletons
-│   ├── plans.ts · usage.ts       # Plan limits + daily usage enforcement
-│   └── rate-limit.ts             # Burst rate limiting
-└── middleware.ts                 # Session refresh + route protection
-```
+# Asset Quality
 
-**AI pipeline:** every feature route is built with a shared factory (`lib/ai/handler.ts`) that runs: auth → burst rate-limit → Zod input validation → daily plan-limit check → prompt → JSON-mode completion → Zod output validation → usage increment + history record. Prompts live in `lib/ai/prompts.ts`; the model is configurable via `OPENROUTER_MODEL` (any OpenRouter model slug, e.g. `anthropic/claude-opus-4.8`, `google/gemini-2.5-pro`, `openai/gpt-4o`) and falls back automatically if unavailable.
+Source assets should be created at high resolution (typically at least **2048×2048** where appropriate), then optimized into suitable runtime assets for each target platform.
 
-**Billing:** Stripe Checkout creates the subscription; webhooks keep `Subscription`/`Payment` rows and the user's plan in sync; the Stripe billing portal handles cancel/upgrade/payment method.
+Assets include:
 
-## Security
+* Characters
+* Weapons
+* Tactical knife
+* Buildings
+* Props
+* Vegetation
+* Background layers
+* UI
+* Effects
 
-- Protected routes enforced in middleware (`/dashboard/**`) and re-checked in every server component and API route
-- All inputs validated with Zod; user text sanitized before reaching prompts
-- Per-user burst rate limiting on every AI/billing endpoint + durable daily limits in Postgres
-- Stripe webhook signature verification
-- Security headers (`X-Frame-Options`, `nosniff`, referrer & permissions policies)
-- Secrets only via environment variables — nothing checked in
+No blurry assets.
 
-## Deploying to Vercel
+No stretched graphics.
 
-1. Push this repository to GitHub and import it in Vercel.
-2. Add every variable from `.env.example` in **Project → Settings → Environment Variables** (set `NEXT_PUBLIC_APP_URL` to your production URL).
-3. Deploy. Then point your Stripe webhook and Supabase redirect URLs at the production domain.
+No missing textures.
 
-The build command (`prisma generate && next build`) works on Vercel out of the box.
+---
 
-## License
+# Gameplay
 
-MIT — not affiliated with LinkedIn Corporation.
+Sector 9: Cinderfall focuses on tactical combat.
+
+Features include:
+
+* Walking
+* Running
+* Sprinting
+* Jumping
+* Crouching
+* Tactical movement
+* Reloading
+* Weapon inspection
+* Melee combat
+* Smooth aiming
+* Responsive controls
+
+Combat should feel satisfying, readable and responsive.
+
+---
+
+# Enemy AI
+
+Enemy soldiers should:
+
+* Patrol
+* Detect the player using vision
+* Search after losing sight
+* Take cover
+* Fire accurately
+* Reload intelligently
+* Flank when possible
+* React to damage
+* Coordinate with nearby enemies
+
+Combat should feel dynamic.
+
+Enemies should never appear lifeless.
+
+---
+
+# Weapons
+
+Create original military-inspired weapon designs.
+
+Every weapon includes:
+
+* Idle animation
+* Walk animation
+* Sprint animation
+* Fire animation
+* Reload animation
+* Empty reload
+* Inspect animation
+* Equip animation
+* Unequip animation
+
+Weapons should feel premium.
+
+---
+
+# Tactical Knife
+
+Original combat knife.
+
+Animations:
+
+* Equip
+* Idle
+* Sprint
+* Inspect
+* Quick Slash
+* Heavy Slash
+
+Knife combat should feel responsive.
+
+---
+
+# World
+
+The world should feel alive.
+
+Include:
+
+* Streets
+* Warehouses
+* Factories
+* Rooftops
+* Offices
+* Interior rooms
+* Hallways
+* Storage rooms
+* Side streets
+* Industrial zones
+* Military checkpoints
+
+Every major building should be enterable.
+
+No empty maps.
+
+No repetitive layouts.
+
+---
+
+# Graphics
+
+Visual quality is one of the highest priorities.
+
+Features include:
+
+* High-quality illustrated artwork
+* Multi-layer parallax backgrounds
+* Atmospheric lighting
+* Soft shadows
+* Fog
+* Particle systems
+* Dynamic effects
+* Environmental storytelling
+
+Every screenshot should look polished.
+
+---
+
+# Mobile Experience
+
+Designed for:
+
+* Android phones
+* Android tablets
+* iPhone
+* iPad
+
+Supports:
+
+* Landscape mode
+* Portrait mode
+* Customizable touch controls
+* Responsive interface
+* Adaptive graphics quality
+
+The game should feel native on mobile devices.
+
+---
+
+# Progression
+
+Unlimited procedural progression.
+
+Players unlock:
+
+* Weapons
+* Cosmetics
+* Equipment
+* Achievements
+
+Every completed mission generates a new original level with increasing challenge.
+
+---
+
+# Performance
+
+Optimize continuously.
+
+Goals:
+
+* Stable frame rates
+* Low memory usage
+* Fast loading
+* Efficient rendering
+* Responsive controls
+
+Quality should remain high while maintaining smooth performance.
+
+---
+
+# Code Standards
+
+Maintain:
+
+* Clean architecture
+* Modular systems
+* Reusable components
+* Clear documentation
+* Scalable project structure
+
+Avoid duplicated logic.
+
+---
+
+# Quality Standards
+
+This project should never feel unfinished.
+
+Every system must receive multiple polish passes.
+
+No placeholders.
+
+No broken animations.
+
+No missing assets.
+
+No inconsistent art.
+
+No unfinished mechanics.
+
+If something can be improved, improve it.
+
+---
+
+# Release Goals
+
+Prepare the game for commercial distribution.
+
+Target platforms:
+
+* Web
+* Google Play
+* Apple App Store
+
+The project should be ready for packaging and submission, with only the final developer account setup, code signing, and store submission remaining.
+
+---
+
+# Design Principles
+
+* Original gameplay
+* Original artwork
+* Responsive combat
+* Excellent readability
+* Fair progression
+* Intelligent AI
+* High production quality
+* Long-term maintainability
+* Cross-platform compatibility
+
+---
+
+# Final Goal
+
+**Sector 9: Cinderfall** aims to deliver a polished, original 2D tactical shooter with premium visuals, satisfying gameplay, intelligent enemy behavior, optimized performance, and a consistent artistic identity across Web, Android, and iOS.
+
+Every update should move the project closer to a commercially polished release while preserving originality, quality, and player experience.
