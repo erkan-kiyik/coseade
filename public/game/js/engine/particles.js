@@ -2,6 +2,13 @@
 // blood, debris and ambient ash. Casings/debris/blood collide with the world
 // via a solidAt(x, y) callback; impacts are reported through onImpact so the
 // game can stamp decals / play sounds.
+//
+// True object-pool: `max` particle objects are allocated once at construction
+// and reused for the life of the game — spawn() overwrites the fields of a
+// recycled slot instead of allocating a new object, and a dead particle is
+// removed with a swap against the last active slot (O(1), no splice/shift).
+// This keeps particle-heavy combat (explosions, muzzle flashes, smoke) from
+// generating per-frame garbage, which matters most on mobile GC pauses.
 
 import { rand, randSpread, TAU, clamp } from './math.js';
 
@@ -12,46 +19,71 @@ export const K = {
 
 const ADDITIVE = new Set([K.SPARK, K.EMBER]);
 
+function blankParticle() {
+  return {
+    kind: 0, x: 0, y: 0, vx: 0, vy: 0, life: 1, age: 0, size: 3, grow: 0,
+    grav: 0, drag: 0, rot: 0, vrot: 0, color: '#888', alpha: 1,
+    bounce: 0, bounces: 0, seed: 0, _rgb: null,
+  };
+}
+
 export class Particles {
   constructor(max = 2600) {
-    this.pool = [];
     this.max = max;
-    this.onImpact = null;   // (kind, x, y, vx, vy) => void
+    this.items = new Array(max);
+    for (let i = 0; i < max; i++) this.items[i] = blankParticle();
+    this.count = 0;          // items[0..count) are active; order is unordered
+    this._next = 0;          // round-robin recycle cursor once the pool is full
+    this.onImpact = null;    // (kind, x, y, vx, vy) => void
     this.solidAt = () => false;
     this.time = 0;
-    this.wind = 0;          // smooth gusty crosswind, drives smoke drift
+    this.wind = 0;           // smooth gusty crosswind, drives smoke drift
   }
 
+  // Backwards-compat accessor for external code that iterates particles
+  // directly (none currently does, but keep it cheap and correct just in case).
+  get pool() { return this.items.slice(0, this.count); }
+
+  // Drops every active particle instantly (level reset / stage transition).
+  clear() { this.count = 0; }
+
   spawn(kind, o) {
-    if (this.pool.length >= this.max) this.pool.shift();
-    this.pool.push({
-      kind,
-      x: o.x, y: o.y,
-      vx: o.vx || 0, vy: o.vy || 0,
-      life: o.life || 1, age: 0,
-      size: o.size || 3,
-      grow: o.grow || 0,
-      grav: o.grav !== undefined ? o.grav : 0,
-      drag: o.drag || 0,
-      rot: o.rot || rand(0, TAU),
-      vrot: o.vrot || 0,
-      color: o.color || '#888',
-      alpha: o.alpha !== undefined ? o.alpha : 1,
-      bounce: o.bounce || 0,
-      bounces: 0,
-      seed: Math.random() * TAU,
-    });
+    let p;
+    if (this.count < this.max) {
+      p = this.items[this.count++];
+    } else {
+      // pool exhausted: recycle round-robin rather than the oldest (avoids an
+      // O(n) age scan) — at 2600+ concurrent particles this is imperceptible
+      p = this.items[this._next];
+      this._next = (this._next + 1) % this.max;
+    }
+    p.kind = kind;
+    p.x = o.x; p.y = o.y;
+    p.vx = o.vx || 0; p.vy = o.vy || 0;
+    p.life = o.life || 1; p.age = 0;
+    p.size = o.size || 3;
+    p.grow = o.grow || 0;
+    p.grav = o.grav !== undefined ? o.grav : 0;
+    p.drag = o.drag || 0;
+    p.rot = o.rot || rand(0, TAU);
+    p.vrot = o.vrot || 0;
+    p.color = o.color || '#888';
+    p.alpha = o.alpha !== undefined ? o.alpha : 1;
+    p.bounce = o.bounce || 0;
+    p.bounces = 0;
+    p.seed = Math.random() * TAU;
+    p._rgb = null;
   }
 
   update(dt) {
     this.time += dt;
     // gusty wind: two out-of-phase sines so it never obviously loops
     this.wind = Math.sin(this.time * 0.24) * 12 + Math.sin(this.time * 0.083 + 1.3) * 20;
-    const pool = this.pool;
-    for (let i = pool.length - 1; i >= 0; i--) {
-      const p = pool[i];
+    const items = this.items;
+    for (let i = this.count - 1; i >= 0; i--) {
+      const p = items[i];
       p.age += dt;
-      if (p.age >= p.life) { pool.splice(i, 1); continue; }
+      if (p.age >= p.life) { this._kill(i); continue; }
 
       p.vy += p.grav * dt;
       if (p.drag) { const d = Math.exp(-p.drag * dt); p.vx *= d; p.vy *= d; }
@@ -69,7 +101,7 @@ export class Particles {
 
       if (p.bounce && p.vy > 0 && this.solidAt(nx, ny)) {
         if (this.onImpact) this.onImpact(p.kind, p.x, p.y, p.vx, p.vy, p.bounces);
-        if (p.kind === K.BLOOD) { pool.splice(i, 1); continue; }
+        if (p.kind === K.BLOOD) { this._kill(i); continue; }
         p.vy = -p.vy * p.bounce;
         p.vx *= 0.6;
         p.vrot *= 0.5;
@@ -83,8 +115,20 @@ export class Particles {
     }
   }
 
+  // Swap-remove: move the last active slot into i's place and shrink count.
+  // O(1), no allocation — the recycled object itself is left in place (its
+  // fields get overwritten wholesale on the next spawn() into that slot).
+  _kill(i) {
+    this.count--;
+    if (i !== this.count) {
+      const items = this.items;
+      const tmp = items[i]; items[i] = items[this.count]; items[this.count] = tmp;
+    }
+  }
+
   draw(g, additivePass) {
-    for (const p of this.pool) {
+    for (let idx = 0; idx < this.count; idx++) {
+      const p = this.items[idx];
       if (ADDITIVE.has(p.kind) !== additivePass) continue;
       const t = p.age / p.life;
       const fade = t > 0.65 ? 1 - (t - 0.65) / 0.35 : 1;

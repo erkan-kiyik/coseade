@@ -37,6 +37,12 @@ class AudioSys {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  // Suspends audio processing entirely (tab hidden / backgrounded) — the
+  // ambience oscillator and compressor otherwise keep running unheard.
+  suspend() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  }
+
   _noise({ dur, gain, f0, f1, type = 'lowpass', q = 1, t0 = 0 }) {
     if (!this.ctx) return;
     const c = this.ctx, now = c.currentTime + t0;

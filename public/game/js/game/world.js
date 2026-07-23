@@ -546,9 +546,17 @@ export class World {
   }
 
   // World-space layers behind entities (call inside camera transform).
-  drawBack(g) {
+  // cam/vw, when given, cull facades/props/barrels/pickups outside the
+  // visible x-range — endless procedural stages can carry far more of these
+  // than are ever on screen at once, so this cuts real draw-call count
+  // without touching physics/AI (those keep updating regardless of culling).
+  drawBack(g, cam, vw) {
+    const halfVis = cam && vw ? vw / (2 * cam.zoom) + 400 : Infinity;
+    const camX = cam ? cam.x : 0;
+    const visible = (x) => Math.abs(x - camX) < halfVis;
+
     for (const f of this.facades) {
-      drawSprite(g, f.spr, f.x, f.y);
+      if (visible(f.x)) drawSprite(g, f.spr, f.x, f.y);
     }
     // power cables
     g.strokeStyle = 'rgba(10,12,16,0.5)';
@@ -566,16 +574,16 @@ export class World {
     ]);
     g.fillStyle = under;
     g.fillRect(-1600, GROUND_Y + 84, MAP_W + 3200, 1400);
-    for (const p of this.props) drawSprite(g, p.spr, p.x, p.y);
-    for (const b of this.barrels) if (b.alive) drawSprite(g, b.spr, b.x, b.y);
-    this.drawPickups(g);
+    for (const p of this.props) { if (visible(p.x)) drawSprite(g, p.spr, p.x, p.y); }
+    for (const b of this.barrels) if (b.alive && visible(b.x)) drawSprite(g, b.spr, b.x, b.y);
+    this.drawPickups(g, visible);
     // decals over ground/props, under characters
     g.drawImage(this.decalCv, 0, this.decalTop);
   }
 
-  drawPickups(g) {
+  drawPickups(g, visible = () => true) {
     for (const p of this.pickups) {
-      if (!p.alive) continue;
+      if (!p.alive || !visible(p.x)) continue;
       const bob = Math.sin(this.time * 2.4 + p.bob) * 3;
       const y = p.y - 22 + bob;
       g.save();

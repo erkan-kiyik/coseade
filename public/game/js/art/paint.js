@@ -4,7 +4,12 @@
 // gradients, painted ambient occlusion, grunge, scratches and rim light.
 // Deterministic RNG keeps wear patterns stable between runs.
 
-export const ASSET_SCALE = 3;
+// Mutable so boot() can lower it under a weaker quality preset (smaller
+// baked sprite canvases: faster boot, less memory) without touching every
+// call site — sprites are painted once at boot, so this only needs to be
+// set before the first makeSprite() call.
+export let ASSET_SCALE = 3;
+export function setAssetScale(v) { ASSET_SCALE = v; }
 
 export function makeCanvas(w, h) {
   const cv = document.createElement('canvas');

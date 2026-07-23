@@ -35,6 +35,7 @@ export class Hud {
       endTitle: $('end-title'), endDetail: $('end-detail'),
       cineBars: $('cine-bars'), introKicker: $('intro-kicker'), introLine: $('intro-line'),
       introSkip: $('intro-skip'), sceneFade: $('scene-fade'),
+      graphicsTier: $('graphics-tier'),
     };
     this._lastAmmo = null;
     this._lastDetState = null;
@@ -47,6 +48,11 @@ export class Hud {
     $('btn-quit').onclick = h.quit;
     $('btn-redeploy').onclick = h.restart;
     $('btn-menu').onclick = h.quit;
+    if (h.graphics) $('btn-graphics').onclick = h.graphics;
+  }
+
+  setGraphicsTier(name) {
+    if (this.el.graphicsTier) this.el.graphicsTier.textContent = name;
   }
 
   setLoad(p, label) {

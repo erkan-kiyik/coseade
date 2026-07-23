@@ -28,6 +28,7 @@ export class TouchControls {
     this.bindButton('tc-swap', () => this.cycleWeapon());
     this.bindHold('tc-crouch', 'KeyC');
     this.bindButton('tc-takedown', () => this.press('KeyE'));
+    this.bindButton('tc-pause', () => this.press('Escape'));
   }
 
   // Holds a key down for as long as the touch button is pressed (unlike

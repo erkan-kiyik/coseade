@@ -8,7 +8,8 @@ import { Camera } from './engine/camera.js';
 import { Particles, K, burstSparks, puffSmoke, columnSmoke, ventSmoke } from './engine/particles.js';
 import { audio } from './engine/audio.js';
 import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
-import { makeCanvas, drawSprite } from './art/paint.js';
+import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
+import { quality } from './engine/quality.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
@@ -41,7 +42,7 @@ function baseZoom() {
 }
 
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, quality.preset.dprCap);
   vw = window.innerWidth; vh = window.innerHeight;
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   const l = makeCanvas(vw * dpr, vh * dpr); lightCv = l.cv; lightG = l.g;
@@ -146,6 +147,9 @@ function previewItem(item, cv) {
 
 async function boot() {
   hud.show('loading');
+  // bake sprites at the resolution the chosen quality tier calls for — set
+  // once, before the first paint call, since assets are only built here
+  setAssetScale(quality.preset.assetScale);
   hud.setLoad(0.05, 'PAINTING OPERATORS…');
   await raf();
   assets.ranger = buildSoldier('ranger');
@@ -191,7 +195,7 @@ class Game {
     this.world = assets.world;
     this.cam = new Camera();
     this.cam.zoom = baseZoom();
-    this.particles = new Particles();
+    this.particles = new Particles(quality.preset.particleMax);
     this.fx = new FX(this.particles, audio, this.cam, this.world);
     this.fx.bindGame(this);   // lets energy projectiles resolve damage
     this.progression = new Progression();
@@ -217,7 +221,16 @@ class Game {
       // restart is an explicit fresh mission — discard the resume snapshot
       restart: () => { audio.ui(); this.progression.clearRun(); this.pendingResume = null; this.reset(); this.setState('play'); },
       quit: () => { audio.ui(); this.pendingResume = null; this.reset(); this.setState('menu'); },
+      // cycles Low → Medium → High → Ultra; dpr/bloom/grain/particle cap all
+      // take effect immediately, ASSET_SCALE only on the next full reload
+      graphics: () => {
+        audio.ui();
+        quality.cycle();
+        resize();
+        hud.setGraphicsTier(quality.preset.name);
+      },
     });
+    hud.setGraphicsTier(quality.preset.name);
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
 
@@ -312,7 +325,7 @@ class Game {
     }
     hud.setWeaponIcons(this.player.arsenal);
     this.spawnEnemiesForStage();
-    this.particles.pool.length = 0;
+    this.particles.clear();
     this.fx.tracers.length = 0; this.fx.lights.length = 0; this.fx.slashes.length = 0;
     this.chainQueue.length = 0;
     this.endDelay = 0;
@@ -333,7 +346,7 @@ class Game {
     this.spawnEnemiesForStage();
     this.player.x = 260; this.player.y = GROUND_Y; this.player.vx = 0; this.player.vy = 0;
     this.player.onGround = false;
-    this.particles.pool.length = 0;
+    this.particles.clear();
     this.fx.tracers.length = 0; this.fx.lights.length = 0; this.fx.slashes.length = 0;
     this.chainQueue.length = 0;
     this.endDelay = 0;
@@ -599,8 +612,13 @@ class Game {
 
   ambient(dt) {
     const E = this.emitT;
+    // ambient emitters (ash, fire embers, sparks, chimney/vent smoke) are all
+    // pure atmosphere — scale their spawn rate by quality so weaker tiers
+    // spend less time per frame minting particles for a cinder scattered
+    // across a wide screen. The countdown timers just tick slower.
+    const mul = quality.preset.ambientMul;
     // drifting ash
-    E.ash -= dt;
+    E.ash -= dt * mul;
     if (E.ash <= 0) {
       E.ash = 0.14;
       this.particles.spawn(K.ASH, {
@@ -615,7 +633,7 @@ class Game {
     for (const em of this.world.emitters) {
       const onScreen = Math.abs(em.x - this.cam.x) < near;
       if (em.kind === 'fire') {
-        E.fire -= dt;
+        E.fire -= dt * mul;
         if (E.fire <= 0) {
           E.fire = 0.07;
           this.particles.spawn(K.EMBER, {
@@ -626,7 +644,7 @@ class Game {
           if (Math.random() < 0.4) ventSmoke(this.particles, em.x, em.y - 10, -Math.PI / 2, 'soot', { sizeMul: 0.85 });
         }
       } else if (em.kind === 'sparks') {
-        E.sparks -= dt;
+        E.sparks -= dt * mul;
         if (E.sparks <= 0) {
           E.sparks = rand(1.4, 3.6);
           burstSparks(this.particles, em.x, em.y, Math.PI / 2, 7, 0.7, 210);
@@ -634,11 +652,11 @@ class Game {
         }
       } else if (em.kind === 'chimney') {
         if (!onScreen) continue;
-        em.t -= dt;
+        em.t -= dt * mul;
         if (em.t <= 0) { em.t = em.rate; columnSmoke(this.particles, em.x, em.y, em.tint); }
       } else if (em.kind === 'vent') {
         if (!onScreen) continue;
-        em.t -= dt;
+        em.t -= dt * mul;
         if (em.t <= 0) { em.t = em.rate; ventSmoke(this.particles, em.x, em.y, em.dir, em.tint); }
       }
     }
@@ -654,7 +672,7 @@ class Game {
     // world layer
     ctx.save();
     this.cam.applyTransform(ctx, vw, vh);
-    this.world.drawBack(ctx);
+    this.world.drawBack(ctx, this.cam, vw);
     for (const e of this.enemies) if (e.deadT > 0) e.draw(ctx);
     for (const e of this.enemies) if (e.deadT <= 0) e.draw(ctx);
     if (this.state !== 'menu') this.player.draw(ctx);
@@ -698,12 +716,18 @@ class Game {
     this.cam.applyTransform(lightG, vw, vh);
     lightG.globalCompositeOperation = 'lighter';
 
-    glowG.setTransform(1, 0, 0, 1, 0, 0);
-    glowG.globalCompositeOperation = 'source-over';
-    glowG.clearRect(0, 0, glowCv.width, glowCv.height);
-    glowG.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.cam.applyTransform(glowG, vw, vh);
-    glowG.globalCompositeOperation = 'lighter';
+    // glow map only feeds the bloom pass below — skip filling it entirely
+    // when the quality tier has bloom off, rather than painting into it and
+    // then discarding the result
+    const bloomOn = quality.preset.bloom;
+    if (bloomOn) {
+      glowG.setTransform(1, 0, 0, 1, 0, 0);
+      glowG.globalCompositeOperation = 'source-over';
+      glowG.clearRect(0, 0, glowCv.width, glowCv.height);
+      glowG.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.cam.applyTransform(glowG, vw, vh);
+      glowG.globalCompositeOperation = 'lighter';
+    }
 
     const t = this.time * 24;
     for (const l of lights) {
@@ -718,6 +742,7 @@ class Game {
       grad.addColorStop(1, `rgba(${r},${g2},${b},0)`);
       lightG.fillStyle = grad;
       lightG.beginPath(); lightG.arc(l.x, l.y, l.r, 0, Math.PI * 2); lightG.fill();
+      if (!bloomOn) continue;
       const grad2 = glowG.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * 0.7);
       grad2.addColorStop(0, `rgba(${r},${g2},${b},${a * 0.55})`);
       grad2.addColorStop(1, `rgba(${r},${g2},${b},0)`);
@@ -729,13 +754,17 @@ class Game {
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(lightCv, 0, 0, canvas.width, canvas.height);
     // bloom — restrained: a tighter blur at lower gain reads as a soft light
-    // wrap rather than a hazy wash (reduced bloom / less visual noise)
-    ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.42;
-    ctx.filter = 'blur(13px)';
-    ctx.drawImage(glowCv, 0, 0, canvas.width, canvas.height);
-    ctx.filter = 'none';
-    ctx.globalAlpha = 1;
+    // wrap rather than a hazy wash (reduced bloom / less visual noise).
+    // A canvas-wide blur filter is one of the pricier steps here, so weaker
+    // quality tiers skip it outright rather than merely shrinking it.
+    if (quality.preset.bloom) {
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.42;
+      ctx.filter = `blur(${quality.preset.bloomBlur}px)`;
+      ctx.drawImage(glowCv, 0, 0, canvas.width, canvas.height);
+      ctx.filter = 'none';
+      ctx.globalAlpha = 1;
+    }
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -769,7 +798,9 @@ class Game {
     v.addColorStop(1, 'rgba(4,5,9,0.3)');
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, vw, vh);
-    // film grain — subtle
+    // film grain — subtle; skipped on weaker quality tiers (a canvas-wide
+    // tiled overlay draw isn't free, and it's the least-missed effect)
+    if (!quality.preset.grain) { ctx.globalCompositeOperation = 'source-over'; return; }
     ctx.globalCompositeOperation = 'overlay';
     ctx.globalAlpha = 0.03;
     const ox = (Math.random() * 256) | 0, oy = (Math.random() * 256) | 0;
@@ -819,8 +850,28 @@ let last = performance.now();
 let acc = 0;
 const STEP = 1 / 60;
 
+// Battery/thermal: a backgrounded tab still gets (throttled) rAF callbacks in
+// most browsers, and the ambience audio graph keeps processing unheard —
+// both are wasted work. Suspend audio and skip update/render entirely while
+// hidden; `last` is refreshed every hidden frame so returning to the tab
+// doesn't dump a multi-second dt catch-up burst into a single step.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) audio.suspend();
+  else { audio.resume(); last = performance.now(); acc = 0; }
+});
+
+// Lightweight runtime perf monitor: an exponentially-smoothed real frame
+// time, sampled only during active play (menu/pause frames aren't
+// representative). Sustained sub-~38fps for a few seconds steps the quality
+// preset down once (see quality.js — it never auto-raises or re-triggers).
+let perfAvg = 1 / 60;
+let lowPerfT = 0;
+
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.06);
+  if (document.hidden) { last = now; requestAnimationFrame(frame); return; }
+  input.pollGamepad();
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(rawDt, 0.06);
   last = now;
   acc += dt;
   let steps = 0;
@@ -830,6 +881,17 @@ function frame(now) {
     steps++;
   }
   game.render();
+
+  if (game.state === 'play') {
+    perfAvg = perfAvg * 0.94 + rawDt * 0.06;
+    lowPerfT = perfAvg > 1 / 38 ? lowPerfT + rawDt : 0;
+    if (lowPerfT > 4) {
+      lowPerfT = -1e9;   // one check is enough; tryAutoLower() is one-shot anyway
+      const lowered = quality.tryAutoLower();
+      if (lowered) { hud.notify(`GRAPHICS — AUTO-LOWERED TO ${quality.preset.name}`); resize(); }
+    }
+  }
+
   requestAnimationFrame(frame);
 }
 
