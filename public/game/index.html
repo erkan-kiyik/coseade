@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>CINDERFALL // SECTOR 9</title>
 <link rel="stylesheet" href="/game/css/style.css">
+
+<!-- Google AdSense — H5 Games Ad Placement API. Powers the "watch ad, get a
+     free supply crate" button (js/game/ads.js calls adBreak with type
+     'reward'). Swap ca-pub-XXXXXXXXXXXXXXXX for your real AdSense publisher
+     ID before shipping; ads simply won't be requested with the placeholder. -->
+<script async data-ad-frequency-hint="30s"
+        src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+        crossorigin="anonymous"></script>
+<script>
+  window.adsbygoogle = window.adsbygoogle || [];
+  var adBreak = adConfig = function (o) { adsbygoogle.push(o); };
+</script>
 </head>
 <body>
 <div id="app">
@@ -134,6 +146,7 @@
               <span class="crate-mark">◈</span>
             </div>
             <button id="btn-open-crate" class="btn primary big">OPEN — <span id="crate-cost">120</span> ◈</button>
+            <button id="btn-free-crate" class="btn ad-btn">▶ WATCH AD — FREE CRATE</button>
             <div id="crate-msg" class="crate-msg"></div>
           </div>
           <div class="collection">

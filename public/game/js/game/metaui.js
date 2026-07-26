@@ -6,8 +6,15 @@ import {
   CATALOG, RARITY, CRATE_COST, DUPLICATE_REFUND, LOADOUT_SLOTS,
   rollCrate, itemsForSlot, itemById,
 } from './meta.js';
+import { requestRewardedAd } from './ads.js';
 
 const $ = (id) => document.getElementById(id);
+
+// mm:ss countdown label for the free-crate cooldown.
+function formatCooldown(ms) {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 export class MetaUI {
   // deps: { progression, previewItem(item, canvas), onDeploy, audio }
@@ -34,9 +41,12 @@ export class MetaUI {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
     $('btn-open-crate').addEventListener('click', () => this.openCrate());
+    $('btn-free-crate').addEventListener('click', () => this.openFreeCrate());
     $('reveal-done').addEventListener('click', () => this.closeReveal());
     $('crate-cost').textContent = String(CRATE_COST);
     this.refresh();
+    // ticks the free-crate cooldown label while the menu is open
+    setInterval(() => this.renderFreeCrate(), 1000);
   }
 
   // Re-read progression and repaint everything (call on menu show / after runs).
@@ -45,6 +55,7 @@ export class MetaUI {
     this.renderLoadoutChips();
     this.renderLoadout();
     this.renderCollection();
+    this.renderFreeCrate();
   }
 
   switchTab(name) {
@@ -177,6 +188,54 @@ export class MetaUI {
     $('collection-count').textContent = `${owned} / ${CATALOG.length}`;
   }
 
+  // Reflects the ad-crate cooldown on the "watch ad" button.
+  renderFreeCrate() {
+    const btn = $('btn-free-crate');
+    if (!btn) return;
+    const ready = this.p.freeCrateReady();
+    btn.disabled = !ready || this.busy;
+    btn.textContent = ready
+      ? '▶ WATCH AD — FREE CRATE'
+      : `FREE CRATE IN ${formatCooldown(this.p.freeCrateRemainingMs())}`;
+  }
+
+  // ---- free crate: rewarded ad, no token cost, then the same roll/reveal
+  // flow as a paid crate ----
+  openFreeCrate() {
+    if (this.busy) return;
+    const msg = $('crate-msg');
+    if (!this.p.freeCrateReady()) return;
+    msg.classList.remove('warn');
+    msg.textContent = 'LOADING AD…';
+    this.busy = true;
+    this.renderFreeCrate();
+
+    requestRewardedAd({
+      adUnit: 'free_supply_crate',
+      onSettled: (rewarded) => {
+        if (!rewarded) {
+          this.busy = false;
+          msg.classList.add('warn');
+          msg.textContent = 'AD UNAVAILABLE — TRY AGAIN LATER';
+          this.renderFreeCrate();
+          return;
+        }
+        this.p.claimFreeCrate();
+        this.p.data.cratesOpened++;
+        msg.textContent = '';
+        if (this.audio) this.audio.ui();
+
+        const drop = rollCrate();
+        const isDup = this.p.owns(drop.id);
+        let refund = 0;
+        if (isDup) { refund = Math.round(CRATE_COST * DUPLICATE_REFUND); this.p.addTokens(refund); }
+        else this.p.grant(drop.id);
+
+        this.playCaseOpen(() => this.spinReel(drop, () => this.showReveal(drop, isDup, refund)));
+      },
+    });
+  }
+
   // ---- crate open: spend, roll, spin the reel, reveal ----
   openCrate() {
     if (this.busy) return;
@@ -298,6 +357,7 @@ export class MetaUI {
     this.renderCollection();
     this.renderLoadout();
     this.renderLoadoutChips();
+    this.renderFreeCrate();
     if (this.audio) this.audio.ui();
   }
 }
