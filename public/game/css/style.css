@@ -281,6 +281,10 @@ html, body {
 .btn.quiet { width: 200px; padding: var(--s2) var(--s4); font-size: 11px; color: var(--ink-dim); background: transparent; box-shadow: none; margin-top: var(--s6); }
 .btn.quiet:hover { color: var(--amber-dim); background: var(--surface-1); box-shadow: none; }
 .btn.quiet #graphics-tier { color: var(--amber-dim); font-weight: 700; }
+/* rewarded-ad CTA: distinct from the paid "primary" open button */
+.btn.ad-btn { color: var(--green); border-color: var(--green); background: transparent; font-size: 12px; padding: var(--s2) var(--s5); }
+.btn.ad-btn:hover { background: rgba(143, 174, 106, 0.12); border-color: var(--green); color: var(--green); }
+.btn.ad-btn:disabled { color: var(--ink-dim); border-color: var(--line-2); }
 
 .controls-grid {
   margin-top: 36px;

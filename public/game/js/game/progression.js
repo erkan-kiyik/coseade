@@ -38,6 +38,7 @@ function defaultProgress() {
     inventory: {},   // itemId -> true once owned (crate drops)
     loadout: {},     // slotKey -> itemId currently equipped
     cratesOpened: 0,
+    lastFreeCrateAt: 0,   // timestamp of the last ad-sponsored free crate
     // live-service meta
     missions: null, missionDay: 0,     // regenerated daily
     weekly: null, missionWeek: 0,
@@ -49,6 +50,9 @@ function defaultProgress() {
 // Tokens awarded per kill (headshots pay a premium).
 export const TOKENS_PER_KILL = 8;
 export const TOKENS_PER_HEADSHOT = 14;
+
+// Cooldown between ad-sponsored free crates (see ads.js / metaui.js).
+export const FREE_CRATE_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Battle-pass: XP per tier and the reward table.
 export const BP_XP_PER_TIER = 1000;
@@ -168,6 +172,11 @@ export class Progression {
     this.save();
     return true;
   }
+
+  // ---- free crate (rewarded ad) ----
+  freeCrateReady() { return Date.now() - this.data.lastFreeCrateAt >= FREE_CRATE_COOLDOWN_MS; }
+  freeCrateRemainingMs() { return Math.max(0, FREE_CRATE_COOLDOWN_MS - (Date.now() - this.data.lastFreeCrateAt)); }
+  claimFreeCrate() { this.data.lastFreeCrateAt = Date.now(); this.save(); }
 
   // ---- inventory / loadout ----
   owns(id) { return !!this.data.inventory[id]; }
