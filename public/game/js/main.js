@@ -27,6 +27,7 @@ import { StatsUI } from './game/statsui.js';
 import { TouchControls } from './engine/touch.js';
 import { watchRewardedAd } from './engine/ads.js';
 import { mountCurrencyIcons } from './art/currency.js';
+import { dailyStatus, claimDaily, shareRun, DAILY_REWARDS } from './game/retention.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -221,7 +222,11 @@ async function boot() {
   hud.setLoad(1, 'READY');
   await raf();
   if (DEMO) game.deploy();
-  else { hud.show('menu'); game.state = 'menu'; game.metaUI.refresh(); game.storeUI.refresh(); game.statsUI.refresh(); }
+  else {
+    hud.show('menu'); game.state = 'menu';
+    game.metaUI.refresh(); game.storeUI.refresh(); game.statsUI.refresh();
+    game.offerDailyReward();   // lands on the menu, never mid-run
+  }
   requestAnimationFrame(frame);
 }
 
@@ -281,6 +286,8 @@ class Game {
       // Cycles TR ⇄ EN. The static markup is re-filled by i18n itself; the
       // screens that build their labels in JS repaint through onLangChange.
       language: () => { audio.ui(); cycleLang(); hud.setLanguage(); },
+      share: () => { audio.ui(); this.shareResult(); },
+      claimDaily: () => { audio.ui(); this.claimDailyReward(); },
     });
     hud.setGraphicsTier(quality.preset.name);
     hud.setLanguage();
@@ -801,6 +808,42 @@ class Game {
       `OPERATOR LEVEL — ${this.progression.data.level}`,
     ].join('<br>'), t('hud.attempt', { n: nextAttempt - 1 }));
     this.setState('end');
+  }
+
+  // ---- retention ----
+
+  // Offers today's login reward. Called when the menu becomes visible, so
+  // it lands on the screen the player is already looking at rather than
+  // interrupting a run.
+  offerDailyReward() {
+    // Never on a brand-new install. A first-time player should reach the
+    // DEPLOY button and be shooting within seconds, not read a streak chart
+    // for a streak they haven't started — the reward is there to pull people
+    // *back*, so it waits until they've actually played once.
+    if (!this.progression.data.totalKills && !this.progression.totalAttempts) return;
+    const st = dailyStatus();
+    if (!st.available) return;
+    hud.showDaily(true, { rewards: DAILY_REWARDS, day: st.day, streak: st.streak });
+  }
+
+  claimDailyReward() {
+    const reward = claimDaily();
+    if (!reward) { hud.showDaily(false); return; }
+    if (reward.kind === 'diamonds') this.progression.addDiamonds(reward.amount);
+    else this.progression.addTokens(reward.amount);
+    hud.markDailyClaimed();
+    if (audio.levelUp) audio.levelUp();
+    // Repaint the balances behind the overlay, then close it.
+    if (this.metaUI) this.metaUI.refresh();
+    if (this.storeUI) this.storeUI.refresh();
+    setTimeout(() => hud.showDaily(false), 900);
+  }
+
+  // Shares the run the player just finished. lastRunStats is set by finish().
+  async shareResult() {
+    const stats = this.lastRunStats || { stage: this.stage, attempts: 0, kills: 0 };
+    const kind = await shareRun(stats);
+    hud.setShareResult(kind);
   }
 
   ambient(dt) {

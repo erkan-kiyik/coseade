@@ -43,6 +43,9 @@ export class Hud {
       graphicsTier: $('graphics-tier'),
       bossBar: $('boss-bar'), bossName: $('boss-name'), bossHpFill: $('boss-hp-fill'),
       lore: $('lore'), loreAttempt: $('lore-attempt'), attemptBadge: $('attempt-badge'),
+      daily: $('daily'), dailySub: $('daily-sub'), dailyTrack: $('daily-track'),
+      dailyStreak: $('daily-streak'), dailyClaim: $('btn-daily-claim'),
+      shareBtn: $('btn-share'),
     };
     this._loreTimers = [];
     this._lastAmmo = null;
@@ -58,6 +61,8 @@ export class Hud {
     $('btn-menu').onclick = h.quit;
     if (h.graphics) $('btn-graphics').onclick = h.graphics;
     if (h.language) $('btn-language').onclick = h.language;
+    if (h.share) $('btn-share').onclick = h.share;
+    if (h.claimDaily) $('btn-daily-claim').onclick = h.claimDaily;
     if (h.watchAdRevive) $('btn-revive-ad').onclick = h.watchAdRevive;
     if (h.skipRevive) $('btn-revive-skip').onclick = h.skipRevive;
   }
@@ -105,6 +110,46 @@ export class Hud {
     if (!el) return;
     const entry = LANGS.find((l) => l.code === getLang());
     el.textContent = entry ? entry.label : getLang().toUpperCase();
+  }
+
+  // ---- daily reward ----
+  // `rewards` is the seven-day cycle, `day` the one being claimed now.
+  showDaily(on, { rewards = [], day = 1, streak = 0 } = {}) {
+    const el = this.el.daily;
+    if (!el) return;
+    el.classList.toggle('hidden', !on);
+    if (!on) return;
+    this.el.dailySub.textContent = t('daily.sub', { n: day });
+    this.el.dailyStreak.textContent = t('daily.streak', { n: streak });
+    const track = this.el.dailyTrack;
+    track.innerHTML = '';
+    for (const r of rewards) {
+      const cell = document.createElement('div');
+      cell.className = 'daily-cell'
+        + (r.kind === 'diamonds' ? ' diamond' : '')
+        + (r.day < day ? ' done' : '')
+        + (r.day === day ? ' today' : '');
+      cell.innerHTML = `<div class="daily-cell-day">${r.day}</div>` +
+        `<div class="daily-cell-amt">${r.amount}</div>`;
+      track.appendChild(cell);
+    }
+    this.el.dailyClaim.disabled = false;
+    this.el.dailyClaim.textContent = t('daily.claim');
+  }
+
+  markDailyClaimed() {
+    if (!this.el.dailyClaim) return;
+    this.el.dailyClaim.disabled = true;
+    this.el.dailyClaim.textContent = t('daily.claimed');
+  }
+
+  // Share button feedback: 'shared' | 'copied' | 'failed'
+  setShareResult(kind) {
+    const b = this.el.shareBtn;
+    if (!b) return;
+    b.textContent = kind === 'failed' ? t('end.share') : t('share.copied');
+    clearTimeout(this._shareT);
+    this._shareT = setTimeout(() => { b.textContent = t('end.share'); }, 1800);
   }
 
   setReviveCountdown(n) {

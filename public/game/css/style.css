@@ -322,6 +322,37 @@ html, body {
   text-shadow: 0 0 14px rgba(255, 92, 70, 0.4);
 }
 
+/* Sits above the menu it appears over (both are .overlay at z-index 20).
+   .dim's 0.82 backdrop isn't enough to bury a saturated DEPLOY button
+   behind it, and this is a modal — it should own the screen while it's up. */
+#daily { z-index: 30; background: rgba(5, 7, 10, 0.97); }
+
+/* ---------- daily login reward ----------
+   A seven-cell track so the player can see the streak they're building and
+   what day 7 is worth — the reason to come back tomorrow rather than a
+   generic "here's some currency" popup. */
+.daily-track {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--s2);
+  max-width: 420px; margin: 0 auto var(--s6);
+}
+.daily-cell {
+  padding: var(--s3) 2px; border-radius: var(--r2); text-align: center;
+  background: linear-gradient(160deg, var(--surface-2), var(--surface-1));
+  box-shadow: var(--sh-1), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease);
+}
+.daily-cell-day { font-size: 8px; letter-spacing: 0.1em; color: var(--ink-dim); }
+.daily-cell-amt { font-size: 12px; font-weight: 700; color: var(--ink); margin-top: 3px; }
+.daily-cell.diamond .daily-cell-amt { color: #6fd4ec; }
+.daily-cell.done { opacity: 0.42; }
+.daily-cell.today {
+  transform: translateY(-4px) scale(1.06);
+  box-shadow: var(--sh-2), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 20px -4px rgba(255, 92, 70, 0.6);
+}
+.daily-streak {
+  font-size: 11px; letter-spacing: 0.18em; color: var(--ink-dim); margin-top: var(--s4);
+}
+
 /* ---------- detection / threat meter: compact, shows only when aware ---------- */
 .det-bar {
   display: flex; gap: var(--s2); align-items: center; max-width: 100%;
