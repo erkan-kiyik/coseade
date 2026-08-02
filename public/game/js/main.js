@@ -10,6 +10,7 @@ import { audio } from './engine/audio.js';
 import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
 import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
 import { quality } from './engine/quality.js';
+import { device, applyDeviceProfile } from './engine/device.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
@@ -36,11 +37,10 @@ const DEMO = params.has('demo');
 // combo; longer than this and the next kill starts a fresh combo of 1.
 const COMBO_WINDOW = 4.0;
 
-// Character contour colour. A soft, translucent cool-dark tint — just enough
-// to separate the silhouette from a busy background at a glance, without the
-// heavy near-opaque "sticker" line the contour used to draw (that read as a
-// solid dark box around the character on small/compressed screens).
-const CHAR_OUTLINE_COLOR = 'rgba(9,12,19,0.5)';
+// Ground-accent colour: the single hairline under a character's feet that
+// replaced the old stamped contour (see rig.js). Warm accent rather than a
+// dark tint — it reads as a deliberate marker, not a leftover shadow.
+const CHAR_ACCENT_COLOR = 'rgba(255,120,96,0.55)';
 
 // Reticle bloom gains. Measured against the live weapon state: visSpread runs
 // ~0.025 at rest and peaks ~0.115 while spraying on the move, and the recoil
@@ -75,6 +75,8 @@ function resize() {
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   const l = makeCanvas(vw * dpr, vh * dpr); lightCv = l.cv; lightG = l.g;
   const g = makeCanvas(vw * dpr, vh * dpr); glowCv = g.cv; glowG = g.g;
+  // refresh --ui-scale so the DOM overlay tracks the new viewport
+  applyDeviceProfile();
   // keep the framing right across orientation / resize (not mid-cinematic)
   if (game && game.cam && game.state !== 'intro') game.cam.zoom = baseZoom();
 }
@@ -890,14 +892,14 @@ class Game {
     if (this.state === 'play' && this.player.deadT <= 0) this.crosshair();
   }
 
-  // Per-frame character draw options (contour colour/width), rebuilt cheaply
-  // each frame so a graphics-tier change takes effect immediately. Returns
-  // null on tiers with the contour disabled, which skips the buffered path.
+  // Per-frame character draw options (ground-accent colour/width), rebuilt
+  // cheaply each frame so a graphics-tier change takes effect immediately.
+  // Returns null on tiers with the accent disabled.
   characterDrawOpts() {
-    const px = quality.preset.outlinePx;
+    const px = quality.preset.accentPx;
     if (!px) return null;
-    if (!this._charOpts || this._charOpts.outline.px !== px) {
-      this._charOpts = { outline: { color: CHAR_OUTLINE_COLOR, px } };
+    if (!this._charOpts || this._charOpts.accent.px !== px) {
+      this._charOpts = { accent: { color: CHAR_ACCENT_COLOR, px } };
     }
     return this._charOpts;
   }
@@ -927,9 +929,9 @@ class Game {
     lightG.globalCompositeOperation = 'lighter';
 
     // glow map only feeds the bloom pass below — skip filling it entirely
-    // when the quality tier has bloom off, rather than painting into it and
-    // then discarding the result
-    const bloomOn = quality.preset.bloom;
+    // when bloom won't run, rather than painting into it and then discarding
+    // the result (the device probe can veto bloom as well as the tier)
+    const bloomOn = quality.preset.bloom && device.canvasFilter;
     if (bloomOn) {
       glowG.setTransform(1, 0, 0, 1, 0, 0);
       glowG.globalCompositeOperation = 'source-over';
@@ -967,7 +969,12 @@ class Game {
     // wrap rather than a hazy wash (reduced bloom / less visual noise).
     // A canvas-wide blur filter is one of the pricier steps here, so weaker
     // quality tiers skip it outright rather than merely shrinking it.
-    if (quality.preset.bloom) {
+    // Gated on the live capability probe, not just the quality tier: where
+    // ctx.filter is unimplemented (older Android WebViews) the blur is a
+    // silent no-op, and this pass would screen the glow map over the scene
+    // completely unblurred — a bright haze that appears only in the APK.
+    // Better to ship no bloom there than a broken one.
+    if (quality.preset.bloom && device.canvasFilter) {
       ctx.globalCompositeOperation = 'screen';
       ctx.globalAlpha = 0.42;
       ctx.filter = `blur(${quality.preset.bloomBlur}px)`;

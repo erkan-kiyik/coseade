@@ -90,6 +90,40 @@
   * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
 }
 
+/* ============ device-specific render override ============
+   Set by engine/device.js from live capability tests, not UA sniffing. These
+   are the differences that otherwise only surface once the APK is built:
+   the Android WebView the game ships inside does not always implement the
+   same CSS the desktop browser it was developed against does.
+
+   --ui-scale is recomputed on every resize/orientation change from whichever
+   viewport axis is scarcer, so the whole overlay tightens together instead of
+   each cluster drifting on its own on unusual phone aspect ratios. */
+:root { --ui-scale: 1; }
+
+/* Frosted glass degrades to nothing without backdrop-filter — the panels are
+   only ~40% opaque, so on a WebView that ignores the blur the HUD text lands
+   straight on the scene and becomes unreadable. Fall back to an opaque
+   surface instead of a transparent one. */
+html.no-backdrop-filter .glass,
+html.no-backdrop-filter .notify,
+html.no-backdrop-filter .tc-pause {
+  background: rgba(10, 13, 18, 0.88) !important;
+  -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+}
+
+/* Without env() support the safe-area terms in every inset resolve to 0 and
+   the HUD sits under the status bar / gesture pill. Reserve a fixed margin. */
+html.no-safe-area #hud { --hud-pad: 16px; }
+html.no-safe-area .home-top { padding-top: 20px; }
+html.no-safe-area .home-legal { padding-bottom: 16px; }
+
+/* The packaged app never shows a desktop pointer, and its viewport is the
+   whole screen — no browser chrome to leave room for. */
+html.is-native body { overscroll-behavior: none; }
+html.is-native #game { cursor: none; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 /* ---------- native-app touch behaviour ----------
@@ -138,10 +172,10 @@ html, body {
    never shrink below legibility. Width is the axis that actually constrains
    this HUD (three clusters share one row), so the relative term tracks vw. */
 #hud {
-  --hud-pad: clamp(8px, 1.5vw, 14px);
-  --hud-gap: clamp(4px, 0.8vw, 7px);
-  --hud-fs: clamp(9px, 1.35vw, 11px);        /* cluster label text */
-  --hud-fs-sm: clamp(8px, 1.15vw, 9px);      /* sub-labels (LVL, THREAT…) */
+  --hud-pad: calc(clamp(8px, 1.5vw, 14px) * var(--ui-scale));
+  --hud-gap: calc(clamp(4px, 0.8vw, 7px) * var(--ui-scale));
+  --hud-fs: calc(clamp(9px, 1.35vw, 11px) * var(--ui-scale));        /* cluster label text */
+  --hud-fs-sm: calc(clamp(8px, 1.15vw, 9px) * var(--ui-scale));      /* sub-labels (LVL, THREAT…) */
   /* Cluster caps chosen so left + centre + right can never sum past the row:
      24 + 34 + 30 = 88vw, leaving the gaps and the SWAP button's reserved
      right margin. */
