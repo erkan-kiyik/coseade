@@ -6,12 +6,15 @@
 import { drawSprite } from '../art/paint.js';
 import { audio } from '../engine/audio.js';
 import { playCurrencyGain, animateCount } from './currencyfx.js';
+import { t, getLang, LANGS } from '../engine/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
-const DET_LABEL = {
-  hidden: 'HIDDEN', suspicious: 'SUSPICIOUS', searching: 'SEARCHING',
-  detected: 'DETECTED', combat: 'COMBAT',
+// Detection states map to dictionary keys rather than literals so the threat
+// meter reads in the player's language like everything else.
+const DET_KEY = {
+  hidden: 'det.hidden', suspicious: 'det.suspicious', searching: 'det.searching',
+  detected: 'det.detected', combat: 'det.combat',
 };
 
 export class Hud {
@@ -54,6 +57,7 @@ export class Hud {
     $('btn-redeploy').onclick = h.restart;
     $('btn-menu').onclick = h.quit;
     if (h.graphics) $('btn-graphics').onclick = h.graphics;
+    if (h.language) $('btn-language').onclick = h.language;
     if (h.watchAdRevive) $('btn-revive-ad').onclick = h.watchAdRevive;
     if (h.skipRevive) $('btn-revive-skip').onclick = h.skipRevive;
   }
@@ -93,6 +97,14 @@ export class Hud {
   // behind it while the world is frozen).
   showRevive(on) {
     this.el.revive.classList.toggle('hidden', !on);
+  }
+
+  // Reflects the active language onto the pause-menu toggle.
+  setLanguage() {
+    const el = $('language-label');
+    if (!el) return;
+    const entry = LANGS.find((l) => l.code === getLang());
+    el.textContent = entry ? entry.label : getLang().toUpperCase();
   }
 
   setReviveCountdown(n) {
@@ -151,7 +163,7 @@ export class Hud {
       'hidden',
       !(player.reload || (isGun && cur.mag === 0 && cur.reserve > 0))
     );
-    this.el.reloadHint.textContent = player.reload ? 'RELOADING' : 'PRESS R — RELOAD';
+    this.el.reloadHint.textContent = t(player.reload ? 'hud.reloading' : 'hud.reloadHint');
 
     const slotOf = { rifle: 0, pistol: 1, knife: 2, smg: 3 };
     this.el.slots.forEach((s, i) => { if (s) s.classList.toggle('active', i === slotOf[player.current]); });
@@ -167,7 +179,7 @@ export class Hud {
   }
 
   setStage(n) {
-    this.el.stageLabel.textContent = `STAGE ${n}`;
+    this.el.stageLabel.textContent = t('hud.stage', { n });
   }
 
   setSlot4Visible(visible) {
@@ -180,7 +192,7 @@ export class Hud {
     this.el.detFill.style.width = `${Math.round(value * 100)}%`;
     if (state !== this._lastDetState) {
       this._lastDetState = state;
-      this.el.detLabel.textContent = DET_LABEL[state] || 'HIDDEN';
+      this.el.detLabel.textContent = t(DET_KEY[state] || 'det.hidden');
       // The threat bar only appears once an enemy is actually aware of the
       // player; in the safe 'hidden' state it fades out (via .det-visible /
       // the CSS opacity transition) so it never clutters stealth play.
@@ -346,7 +358,7 @@ export class Hud {
   // The campaign is endless — the only way a run ends is the operator going
   // down, so this is always the K.I.A. screen with a run summary.
   end(stats) {
-    this.el.endTitle.textContent = 'K.I.A.';
+    this.el.endTitle.textContent = t('end.kia');
     this.el.endTitle.style.color = 'var(--red)';
     this.el.endDetail.innerHTML = stats;
   }

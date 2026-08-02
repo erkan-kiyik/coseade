@@ -11,6 +11,7 @@ import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.
 import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
 import { quality } from './engine/quality.js';
 import { device, applyDeviceProfile } from './engine/device.js';
+import { t, applyTranslations, cycleLang, getLang, LANGS } from './engine/i18n.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
@@ -176,6 +177,7 @@ function previewItem(item, cv) {
 }
 
 async function boot() {
+  applyTranslations();          // fill static markup before the first paint
   hud.show('loading');
   // bake sprites at the resolution the chosen quality tier calls for — set
   // once, before the first paint call, since assets are only built here
@@ -276,8 +278,12 @@ class Game {
       },
       watchAdRevive: () => { audio.ui(); this.reviveViaAd(); },
       skipRevive: () => { audio.ui(); this.declineRevive(); },
+      // Cycles TR ⇄ EN. The static markup is re-filled by i18n itself; the
+      // screens that build their labels in JS repaint through onLangChange.
+      language: () => { audio.ui(); cycleLang(); hud.setLanguage(); },
     });
     hud.setGraphicsTier(quality.preset.name);
+    hud.setLanguage();
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
 
@@ -332,7 +338,7 @@ class Game {
     for (const u of res.newUnlocks) this.applyUnlock(u);
     hud.setSlot4Visible(this.player.smgUnlocked);
     const extra = res.newUnlocks.length ? ' — ' + res.newUnlocks.map((u) => u.label).join(', ') : '';
-    hud.notify(`LEVEL UP — ${res.newLevel}${extra}`);
+    hud.notify(t('notify.levelUp', { n: res.newLevel }) + extra);
     return true;
   }
 
@@ -366,7 +372,7 @@ class Game {
     this.progression.recordBossKill();
     hud.setTokens(this.progression.tokens);
     hud.showBoss(false);
-    hud.notify(`BOSS DEFEATED — ${boss.name}`);
+    hud.notify(t('notify.bossDown', { name: boss.name }));
   }
 
   // Stats page: kill streak (kills since the operator last went down) and
@@ -461,7 +467,7 @@ class Game {
       const boss = this.enemies[0];
       hud.showBoss(true, boss.name);
       hud.setBossHp(1);
-      if (!leveled) hud.notify(`⚠ BOSS INCOMING — ${boss.name}`);
+      if (!leveled) hud.notify(t('notify.bossIncoming', { name: boss.name }));
     } else {
       hud.showBoss(false);
       if (!leveled) hud.notify(`STAGE ${this.stage} — HOSTILES INBOUND`);
@@ -1161,7 +1167,7 @@ function frame(now) {
     if (lowPerfT > 4) {
       lowPerfT = -1e9;   // one check is enough; tryAutoLower() is one-shot anyway
       const lowered = quality.tryAutoLower();
-      if (lowered) { hud.notify(`GRAPHICS — AUTO-LOWERED TO ${quality.preset.name}`); resize(); }
+      if (lowered) { hud.notify(t('notify.graphicsLowered', { tier: quality.preset.name })); resize(); }
     }
   }
 

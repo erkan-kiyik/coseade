@@ -17,6 +17,16 @@ function drawBone(g, spr, x0, y0, x1, y1, len, sx = 1) {
   drawSprite(g, spr, x0, y0, rot, sx, d / len);
 }
 
+// Gait humanisation constants.
+// WEIGHT_BIAS: how much more the body rises over one leg than the other
+// (0 = perfectly symmetric machine gait). PELVIC_LIST: hip drop toward the
+// swinging leg, in world units. STEP_BIAS: stride-length difference between
+// the two legs. All deliberately small — the read should be "a person", not
+// "an injured person".
+const WEIGHT_BIAS = 0.16;
+const PELVIC_LIST = 1.15;
+const STEP_BIAS = 0.12;
+
 const rot2 = (px, py, ang) => {
   const c = Math.cos(ang), s = Math.sin(ang);
   return { x: px * c - py * s, y: px * s + py * c };
@@ -32,17 +42,31 @@ export function computePose(ent) {
   const mv = clamp(sp * 5, 0, 1);
 
   const breath = Math.sin(ent.breathT * 1.8) * (1 - sp * 0.7);
-  const bob = Math.abs(Math.sin(ent.gaitPhase)) * 3.1 * sp * (1 - air);
-  // Weight shifts side to side once per full stride (half the bob's rate), so
-  // the walk cycle isn't a perfectly symmetric up-down piston.
-  const sway = Math.sin(ent.gaitPhase * 0.5) * 1.4 * sp * (1 - air);
+  // Footing irregularity the Player integrates (see gaitNoise there); zero
+  // for entities that don't track it, so hostiles keep the tidy cycle.
+  const noise = (ent.gaitNoise || 0) * (1 - air);
+
+  // Vertical bob. Real gait is not symmetric: the body rises less over the
+  // weaker/trailing leg than the driving one, so alternate strides get
+  // different amplitude. WEIGHT_BIAS is what stops the walk reading as a
+  // two-frame piston loop.
+  const stride = Math.sin(ent.gaitPhase);
+  const strideSide = Math.sin(ent.gaitPhase * 0.5);          // −1..1, one full stride
+  const bobAmp = 3.1 * (1 + WEIGHT_BIAS * strideSide);
+  const bob = Math.abs(stride) * bobAmp * sp * (1 - air) + noise * 0.9;
+
+  // Lateral weight shift once per full stride, plus a pelvic list: the hip
+  // drops toward the swinging leg as the opposite one takes the load, which
+  // is the single strongest "this is a person walking" cue.
+  const sway = strideSide * 1.4 * sp * (1 - air);
+  const pelvicList = strideSide * PELVIC_LIST * sp * (1 - air);
 
   // stumbleLean is a transient the Player adds on top of its damped lean —
   // kept separate so the tilt can't feed back into the damping and linger.
   const lean = ent.lean + (ent.stumbleLean || 0) + air * clamp(ent.vy * 0.00035, -0.12, 0.2);
 
-  const hipX = lean * 13 + sway;
-  const hipY = -BONES.hipStand + crouch * 9 - bob + air * 4 + breath * 0.4;
+  const hipX = lean * 13 + sway + noise * 1.6;
+  const hipY = -BONES.hipStand + crouch * 9 - bob + air * 4 + breath * 0.4 + pelvicList;
 
   const torsoLen = BONES.torso - crouch * 2.5;
   const neck = {
@@ -61,10 +85,15 @@ export function computePose(ent) {
   const liftH = 3.5 + sp * 8;
   for (let i = 0; i < 2; i++) {
     const ph = ent.gaitPhase + (i ? Math.PI : 0);
-    const gx = -Math.cos(ph) * S + hipX * 0.55;
-    const lift = Math.max(0, Math.sin(ph)) * liftH;
+    // One leg takes a marginally longer step and lifts marginally higher than
+    // the other. Nobody's stride is truly even, and the asymmetry is what
+    // keeps a looping cycle from reading as mechanical.
+    const legS = S * (1 + (i ? STEP_BIAS : -STEP_BIAS));
+    const legLift = liftH * (1 + (i ? -STEP_BIAS : STEP_BIAS));
+    const gx = -Math.cos(ph) * legS + hipX * 0.55;
+    const lift = Math.max(0, Math.sin(ph)) * legLift;
     const standX = i ? -4.5 : 5.5;
-    let fx = lerp(standX, gx, mv);
+    let fx = lerp(standX, gx, mv) + noise * 0.8;
     let fy = -lerp(0, lift, mv);
     if (air > 0) {
       // tuck in the air; reach for the ground while falling fast
