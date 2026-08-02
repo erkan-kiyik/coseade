@@ -288,6 +288,40 @@ html, body {
   to { opacity: 0; transform: translate(-50%, -56%) scale(0.98); }
 }
 
+/* ---------- attempt counter ----------
+   Deliberately quiet during play (it's a running tally, not an alert) and
+   loud inside the briefing card, where it's the first thing a returning
+   player looks for after a death. */
+.attempt-badge {
+  position: absolute;
+  top: calc(var(--hud-pad) + env(safe-area-inset-top) + 84px);
+  left: 50%; transform: translateX(-50%);
+  font-size: calc(clamp(9px, 1.3vw, 11px) * var(--ui-scale));
+  letter-spacing: 0.22em; font-weight: 700;
+  color: rgba(255, 120, 96, 0.62);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none; white-space: nowrap;
+}
+.lore-attempt {
+  margin-top: 10px; padding-top: 9px;
+  border-top: 1px solid rgba(214, 69, 58, 0.28);
+  font-size: clamp(11px, 2vw, 15px); letter-spacing: 0.26em; font-weight: 700;
+  color: var(--amber-bright);
+  text-shadow: 0 0 12px rgba(255, 92, 70, 0.45);
+  animation: attempt-pop 0.5s var(--ease-out);
+}
+@keyframes attempt-pop {
+  0% { opacity: 0; transform: scale(0.86); }
+  60% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+/* End screen: the attempt number is the headline stat of a failed run. */
+.end-attempt {
+  font-size: clamp(13px, 2.4vw, 18px); letter-spacing: 0.3em; font-weight: 700;
+  color: var(--amber-bright); margin-bottom: var(--s4);
+  text-shadow: 0 0 14px rgba(255, 92, 70, 0.4);
+}
+
 /* ---------- detection / threat meter: compact, shows only when aware ---------- */
 .det-bar {
   display: flex; gap: var(--s2); align-items: center; max-width: 100%;

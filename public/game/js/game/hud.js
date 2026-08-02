@@ -42,7 +42,7 @@ export class Hud {
       introSkip: $('intro-skip'), sceneFade: $('scene-fade'),
       graphicsTier: $('graphics-tier'),
       bossBar: $('boss-bar'), bossName: $('boss-name'), bossHpFill: $('boss-hp-fill'),
-      lore: $('lore'),
+      lore: $('lore'), loreAttempt: $('lore-attempt'), attemptBadge: $('attempt-badge'),
     };
     this._loreTimers = [];
     this._lastAmmo = null;
@@ -210,6 +210,23 @@ export class Hud {
   // Mission briefing: visible for `hold` seconds, then fades itself out.
   // Re-showing while one is already up restarts it cleanly rather than
   // stacking timers (stage transitions can arrive faster than the hold).
+  // Attempt counter. `n` is which try this is at the current stage; the
+  // badge stays up for the whole run and the briefing line only appears
+  // once the player has actually failed here at least once (showing
+  // "ATTEMPT #1" on a first visit would just be noise).
+  setAttempt(n) {
+    const badge = this.el.attemptBadge;
+    if (badge) {
+      badge.textContent = t('hud.attempt', { n });
+      badge.classList.toggle('hidden', n <= 1);
+    }
+    const line = this.el.loreAttempt;
+    if (line) {
+      line.textContent = t('hud.attempt', { n });
+      line.classList.toggle('hidden', n <= 1);
+    }
+  }
+
   showLore(hold = 3) {
     const el = this.el.lore;
     if (!el) return;
@@ -357,9 +374,12 @@ export class Hud {
 
   // The campaign is endless — the only way a run ends is the operator going
   // down, so this is always the K.I.A. screen with a run summary.
-  end(stats) {
+  // `attemptLine` is the headline number on a failed run (Geometry Dash
+  // style); it renders above the stat block so it reads first.
+  end(stats, attemptLine = '') {
     this.el.endTitle.textContent = t('end.kia');
     this.el.endTitle.style.color = 'var(--red)';
-    this.el.endDetail.innerHTML = stats;
+    const head = attemptLine ? `<div class="end-attempt">${attemptLine}</div>` : '';
+    this.el.endDetail.innerHTML = head + stats;
   }
 }

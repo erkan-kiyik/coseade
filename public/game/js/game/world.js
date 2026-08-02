@@ -11,7 +11,11 @@ import { makeCanvas, drawSprite, lingrad, radgrad, rr } from '../art/paint.js';
 import { clamp, rand, randSpread, makeRng } from '../engine/math.js';
 
 export const GROUND_Y = 640;
-export const MAP_W = 4600;
+// Map width. Stages were clearing in well under a minute at 4600; the wider
+// field gives a run room to breathe (more cover to work, more ground to lose)
+// without changing any of the layout maths, which is all expressed relative
+// to MAP_W.
+export const MAP_W = 7400;
 const GRAV = 2400;
 
 // Uniform darkening laid over the parallax stack — see drawBackground().
@@ -25,6 +29,13 @@ export const STAGE1_SPAWNS = [
   { x: 2950, min: 2760, max: 3050, y: GROUND_Y },
   { x: 3500, min: 3380, max: 3690, y: GROUND_Y },
   { x: 4080, min: 3960, max: 4140, y: GROUND_Y - 40 },
+  // --- back half, added when MAP_W was widened: the authored stage used to
+  // end around 4400 and would otherwise leave a long empty walk-out ---
+  { x: 4750, min: 4600, max: 4900, y: GROUND_Y },
+  { x: 5320, min: 5180, max: 5480, y: GROUND_Y },
+  { x: 5950, min: 5800, max: 6120, y: GROUND_Y - 40 },
+  { x: 6560, min: 6400, max: 6720, y: GROUND_Y },
+  { x: 7050, min: 6920, max: 7180, y: GROUND_Y },
 ];
 
 export class World {
@@ -184,10 +195,54 @@ export class World {
     this.emitters.push({ kind: 'vent', x: 1640, y: GY - 34, tint: 'exhaust', dir: 0, rate: 0.7, t: 0.2 });
     this.emitters.push({ kind: 'vent', x: 3120, y: GY - 30, tint: 'dust', dir: Math.PI, rate: 0.85, t: 0.5 });
 
+    // ---- back half (x > 4500) ----
+    // Added when MAP_W was widened. Same vocabulary as the front half —
+    // containers to break sightlines, a dock to fight up onto, barrels to
+    // shoot — so the extended run still reads as one authored space.
+    this.colliders.push(
+      { x: 4820, y: GY - 38, w: 96, h: 38 },               // container
+      { x: 4772, y: GY - 20, w: 26, h: 20 },
+      { x: 5400, y: GY - 13, w: 42, h: 13 },               // sandbags (vault)
+      { x: 5880, y: GY - 40, w: 280, h: 40 },              // third dock
+      { x: 5828, y: GY - 20, w: 26, h: 20 },
+      { x: 6480, y: GY - 38, w: 96, h: 38 },
+      { x: 6528, y: GY - 76, w: 96, h: 38 },               // stacked
+      { x: 6432, y: GY - 20, w: 26, h: 20 },
+      { x: 6980, y: GY - 13, w: 42, h: 13 },
+    );
+    P(env.container('containerBlue', 'VTX-889', 96, 38), 4868);
+    P(env.crate(26, 20), 4785);
+    P(env.sandbags(), 5421);
+    P(env.dock(280, 40), 6020);
+    P(env.crate(26, 20), 5841);
+    P(env.container('containerRed', 'QLR-052', 96, 38), 6528);
+    P(env.container('containerGreen', 'ZBN-771', 96, 38), 6576, GY - 38);
+    P(env.crate(26, 20), 6445);
+    P(env.sandbags(), 7001);
+    P(env.dumpster(), 5150);
+    P(env.tires(), 6250);
+    P(env.rubble(), 4600);
+    P(env.rubble(), 6800);
+    P(env.barrel('blue'), 5620);
+    P(env.barrel('rust'), 6120, GY - 40);
+    for (const lx of [5080, 6000, 6900]) {
+      P(env.lamp(), lx);
+      L(lx + 14, GY - 84, 230, [255, 202, 128], 0.62, lx === 6000 ? 0.45 : 0.04);
+    }
+    for (const bx of [5320, 6340]) {
+      this.barrels.push({ x: bx, y: GY, hp: 30, alive: true, spr: env.barrel('red') });
+    }
+    this.emitters.push({ kind: 'chimney', x: 5500, y: GY - 275, tint: 'soot', rate: 0.3, t: 0.45 });
+    this.emitters.push({ kind: 'chimney', x: 6700, y: GY - 245, tint: 'steam', rate: 0.28, t: 0.6 });
+    this.emitters.push({ kind: 'vent', x: 5900, y: GY - 32, tint: 'dust', dir: 0, rate: 0.8, t: 0.35 });
+
     // loot: a couple of resupply crates tucked near cover
     this.pickups.push({ x: 1145, y: GY - 40, kind: 'ammo', alive: true, bob: rand(0, 6) });
     this.pickups.push({ x: 2280, y: GY, kind: 'health', alive: true, bob: rand(0, 6) });
     this.pickups.push({ x: 3590, y: GY, kind: 'armor', alive: true, bob: rand(0, 6) });
+    this.pickups.push({ x: 4900, y: GY, kind: 'ammo', alive: true, bob: rand(0, 6) });
+    this.pickups.push({ x: 5950, y: GY - 40, kind: 'health', alive: true, bob: rand(0, 6) });
+    this.pickups.push({ x: 6600, y: GY, kind: 'ammo', alive: true, bob: rand(0, 6) });
 
     this.enemySpawns = STAGE1_SPAWNS;
   }
@@ -304,15 +359,17 @@ export class World {
     }
 
     // -- loot: scattered resupply crates, more on higher stages --
-    const lootCount = 2 + Math.min(3, Math.floor(stage / 3));
+    const lootCount = 4 + Math.min(4, Math.floor(stage / 3));
     for (let i = 0; i < lootCount; i++) {
       const kind = rng.pick(['ammo', 'ammo', 'health', 'armor']);
       const lx = clusters.length ? clusters[rng.int(0, clusters.length - 1)] + rng.range(-40, 40) : rng.range(300, mapW - 300);
       this.pickups.push({ x: lx, y: GY, kind, alive: true, bob: rng.range(0, 6) });
     }
 
-    // -- enemy spawns: count + spacing scale with stage difficulty --
-    const enemyCount = Math.min(4 + Math.floor(stage / 2), 10);
+    // -- enemy spawns: count + spacing scale with stage difficulty. The cap
+    //    rose with MAP_W so the longer field stays populated rather than
+    //    turning into a walk between fights. --
+    const enemyCount = Math.min(6 + Math.floor(stage / 2), 16);
     const spacing = (mapW - 700) / enemyCount;
     for (let i = 0; i < enemyCount; i++) {
       const sx = 500 + spacing * i + rng.range(-60, 60);

@@ -442,6 +442,7 @@ class Game {
     hud.setTokens(this.progression.tokens);
     if (this.isBossStage) { hud.showBoss(true, this.enemies[0].name); hud.setBossHp(this.enemies[0].hp / this.enemies[0].maxHp); }
     else hud.showBoss(false);
+    hud.setAttempt(this.progression.attempts(this.stage));
     hud.showLore(LORE_HOLD);   // mission briefing on entering a fresh deployment
   }
 
@@ -449,6 +450,9 @@ class Game {
   // endless, so this rolls a fresh procedurally-generated stage rather than
   // ending the run. Player health/ammo/XP/unlocks carry over.
   nextStage() {
+    // Cleared the stage we were on, so its attempt tally resets — the counter
+    // only ever measures the wall the player is currently stuck behind.
+    this.progression.clearAttempts(this.stage);
     this.stage++;
     this.world.regenerate(this.stage);
     this.spawnEnemiesForStage();
@@ -461,6 +465,7 @@ class Game {
     this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
     hud.setObjective(0, this.enemies.length);
     hud.setStage(this.stage);
+    hud.setAttempt(this.progression.attempts(this.stage));
     const res = this.progression.addXp(50 + this.stage * 5);
     const leveled = this.handleLevelUp(res);
     if (this.isBossStage) {
@@ -774,21 +779,27 @@ class Game {
   finish() {
     const p = this.player;
     const acc = p.shots ? Math.round((p.hits / p.shots) * 100) : 0;
-    const t = Math.round(this.time - this.startTime);
+    // `elapsed`, not `t` — `t` is the translation function in this module.
+    const elapsed = Math.round(this.time - this.startTime);
     this.progression.recordShots(p.shots, p.hits);
-    this.progression.recordRun(this.stage, t);
+    this.progression.recordRun(this.stage, elapsed);
     this.progression.recordWeaponShots(this._weaponShotsThisRun);
     this._weaponShotsThisRun = {};
     this.progression.addPlaytime(this._playtimeAccumMs);
     this._playtimeAccumMs = 0;
+    // The operator went down on this stage: bank the failure so the next
+    // deployment opens on attempt N+1, and headline that number on the death
+    // screen the way a Geometry Dash run does.
+    const nextAttempt = this.progression.recordAttempt(this.stage);
+    this.lastRunStats = { stage: this.stage, attempts: nextAttempt - 1, kills: p.kills };
     this.progression.clearRun();   // the run is over — nothing to resume
     hud.end([
       `STAGE REACHED — ${this.stage}`,
       `HOSTILES ELIMINATED — ${p.kills} &nbsp;(${p.headshots} HEADSHOTS)`,
       `ACCURACY — ${acc}%`,
-      `MISSION TIME — ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`,
+      `MISSION TIME — ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`,
       `OPERATOR LEVEL — ${this.progression.data.level}`,
-    ].join('<br>'));
+    ].join('<br>'), t('hud.attempt', { n: nextAttempt - 1 }));
     this.setState('end');
   }
 
