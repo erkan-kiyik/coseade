@@ -268,4 +268,24 @@ export const EN = {
   'intel.log_12.title': 'PROTOCOL: CINDERFALL',
   'intel.log_12.source': '— no source —',
   'intel.log_12.body': 'Cinderfall is not the name of an attack. It is the name of an outcome. The protocol defines it: when a district is lost beyond recovery, it is not recovered — it is sealed, emptied, and left to burn. The ash is not evidence that the plan failed. It is evidence that it completed.\n\nSector 9 was not the first application. It will not be the last.',
+  // ---- player card (offline profile) ----
+  'profile.title': 'PROFILE',
+  'profile.short': 'PROFILE',
+  'profile.kicker': 'OPERATOR FILE',
+  'profile.score': 'SECTOR SCORE',
+  'profile.maxLevel': 'HIGHEST SECTOR',
+  'profile.bossKills': 'BOSSES DOWNED',
+  'profile.deaths': 'TOTAL DEATHS',
+  'profile.favorite': 'FAVOURITE WEAPON',
+  'profile.stockFinish': 'STOCK FINISH',
+  'profile.noWeapon': 'NO DATA YET',
+  'profile.close': 'CLOSE',
+  'profile.rankNext': '{points} PTS TO {rank}',
+  'profile.rankMax': 'TOP RANK — THE SECTOR IS YOURS',
+
+  // rank titles — resolved from the Sector Score, see game/progression.js
+  'rank.rookie': 'ROOKIE',
+  'rank.veteran': 'VETERAN',
+  'rank.elite': 'ELITE REBEL',
+  'rank.commander': 'SECTOR COMMANDER',
 };

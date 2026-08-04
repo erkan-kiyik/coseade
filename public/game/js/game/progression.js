@@ -76,7 +76,46 @@ function defaultProgress() {
     adTLRewardsClaimed: 0,
     // ---- intel logs (collectible lore) ----
     intel: {},                     // logId -> ts found
+    // ---- player card (offline profile) ----
+    // Four headline numbers the Profile screen reads. Each one is written in
+    // the same method as its legacy twin below, so the pair can never drift;
+    // existing saves get them backfilled once by _seedProfile().
+    maxLevelReached: 0,            // highest stage reached (mirrors longestSurvivalStage)
+    totalDeaths: 0,                // lifetime K.I.A. count (mirrors totalAttempts)
+    bossKills: 0,                  // bosses downed (mirrors bossesDefeated)
+    favoriteWeapon: null,          // { weaponId, skinId } snapshot, refreshed at run end
   };
+}
+
+// ---- Sector Score: the one number the player card leads with ----
+// Deliberately simple and fully offline — reaching further and downing bosses
+// pays, dying costs a little. Deaths can never drag it negative, so a rough
+// patch dents the score without erasing the campaign behind it.
+export const SCORE_PER_LEVEL = 100;
+export const SCORE_PER_BOSS = 500;
+export const SCORE_PER_DEATH = 10;
+
+export function sectorScore({ maxLevelReached = 0, bossKills = 0, totalDeaths = 0 }) {
+  const raw = maxLevelReached * SCORE_PER_LEVEL
+    + bossKills * SCORE_PER_BOSS
+    - totalDeaths * SCORE_PER_DEATH;
+  return Math.max(0, raw);
+}
+
+// ---- Rank titles ----
+// There is no server and no leaderboard, so rank is the whole progression
+// story: a band the player climbs on their own numbers. Ordered high -> low
+// and resolved by the first `min` the score clears, which keeps the boundary
+// rule in one place (a score of exactly 1000 is a Veteran, not a Rookie).
+export const RANKS = [
+  { id: 'commander', min: 6000, key: 'rank.commander', color: '#ffcc4d', glow: 'rgba(255,204,77,0.55)' },
+  { id: 'elite',     min: 3000, key: 'rank.elite',     color: '#c07bff', glow: 'rgba(192,123,255,0.45)' },
+  { id: 'veteran',   min: 1000, key: 'rank.veteran',   color: '#4fc3e8', glow: 'rgba(79,195,232,0.40)' },
+  { id: 'rookie',    min: 0,    key: 'rank.rookie',    color: '#8fae6a', glow: 'rgba(143,174,106,0.32)' },
+];
+
+export function rankFor(score) {
+  return RANKS.find((r) => score >= r.min) || RANKS[RANKS.length - 1];
 }
 
 // Tokens awarded per kill (headshots pay a premium).
@@ -134,6 +173,7 @@ const WEEKLY_TEMPLATES = [
 export class Progression {
   constructor() {
     this.data = this.load();
+    this._seedProfile();
   }
 
   load() {
@@ -142,6 +182,19 @@ export class Progression {
       if (raw) return { ...defaultProgress(), ...JSON.parse(raw) };
     } catch (e) { /* storage unavailable — play this session only */ }
     return defaultProgress();
+  }
+
+  // Backfills the player-card counters on a save written before they existed.
+  // They mirror counters the game has been keeping all along, so a returning
+  // player opens the Profile on their real campaign rather than on zeros.
+  // Max() rather than assignment: on an already-migrated save the live values
+  // are the authority and this becomes a no-op.
+  _seedProfile() {
+    const d = this.data;
+    d.maxLevelReached = Math.max(d.maxLevelReached || 0, d.longestSurvivalStage || 0, d.checkpoint || 0);
+    d.totalDeaths = Math.max(d.totalDeaths || 0, d.totalAttempts || 0);
+    d.bossKills = Math.max(d.bossKills || 0, d.bossesDefeated || 0);
+    if (!d.favoriteWeapon) d.favoriteWeapon = this._computeFavoriteWeapon();
   }
 
   save() {
@@ -189,6 +242,7 @@ export class Progression {
     this.data.attempts[stage] = next;
     // Best-effort lifetime tally for the stats screen / share card.
     this.data.totalAttempts = (this.data.totalAttempts || 0) + 1;
+    this.data.totalDeaths = this.data.totalAttempts;   // player card twin
     this.save();
     return next;
   }
@@ -294,6 +348,7 @@ export class Progression {
   // layers the bonus reward + lifetime tally on top.
   recordBossKill() {
     this.data.bossesDefeated++;
+    this.data.bossKills = this.data.bossesDefeated;   // player card twin
     this.addTokens(BOSS_KILL_TOKEN_BONUS);
     this.addGems(BOSS_KILL_DIAMOND_BONUS);
     this.save();
@@ -376,6 +431,7 @@ export class Progression {
     d.gamesPlayed++;
     if (stage > d.longestSurvivalStage) d.longestSurvivalStage = stage;
     if (survivalTime > d.longestSurvivalTime) d.longestSurvivalTime = survivalTime;
+    d.maxLevelReached = d.longestSurvivalStage;   // player card twin
     this.save();
   }
 
@@ -568,7 +624,19 @@ export class Progression {
     for (const [id, n] of Object.entries(shotsByWeapon)) {
       this.data.weaponShots[id] = (this.data.weaponShots[id] || 0) + n;
     }
+    // Recomputed here rather than read live by the Profile so the card shows
+    // the skin that was equipped while the weapon earned its place, not
+    // whatever happens to be equipped when the card is opened.
+    this.data.favoriteWeapon = this._computeFavoriteWeapon();
     this.save();
+  }
+
+  // Most-fired weapon plus the skin equipped on it, or null before a shot has
+  // ever been fired. Shape: { weaponId, skinId } — skinId is null on stock.
+  _computeFavoriteWeapon() {
+    const weaponId = this.mostUsedWeapon();
+    if (!weaponId) return null;
+    return { weaponId, skinId: this.equipped(`skin_${weaponId}`) || null };
   }
   mostUsedWeapon() {
     const entries = Object.entries(this.data.weaponShots);
@@ -617,6 +685,39 @@ export class Progression {
     if (res.kind === 'log') this.grantIntel(res.log.id);
     else if (res.kind === 'para') this.addTokens(res.amount);
     return res;
+  }
+
+  // ---- player card (offline profile) ----
+  // The Profile screen's whole data contract. Everything here is local: no
+  // request is made, no id is sent anywhere, and the numbers come from the
+  // same counters the rest of the game has always kept.
+  get maxLevelReached() { return this.data.maxLevelReached || 0; }
+  get totalDeaths() { return this.data.totalDeaths || 0; }
+  get bossKills() { return this.data.bossKills || 0; }
+  get favoriteWeapon() { return this.data.favoriteWeapon || null; }
+
+  sectorScore() {
+    return sectorScore({
+      maxLevelReached: this.maxLevelReached,
+      bossKills: this.bossKills,
+      totalDeaths: this.totalDeaths,
+    });
+  }
+
+  rank() { return rankFor(this.sectorScore()); }
+
+  // One call for the whole card, so the UI never has to know which counter
+  // backs which number.
+  profile() {
+    const score = this.sectorScore();
+    return {
+      maxLevelReached: this.maxLevelReached,
+      totalDeaths: this.totalDeaths,
+      bossKills: this.bossKills,
+      favoriteWeapon: this.favoriteWeapon,
+      score,
+      rank: rankFor(score),
+    };
   }
 
   // ---- ad-watch -> TL cashout (see engine/cashout.js for the payout side) ----

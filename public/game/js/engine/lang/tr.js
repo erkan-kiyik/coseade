@@ -270,4 +270,24 @@ export const TR = {
   'intel.log_12.title': 'PROTOKOL: CINDERFALL',
   'intel.log_12.source': '— kaynak yok —',
   'intel.log_12.body': 'Cinderfall bir saldırının adı değil. Bir sonucun adı. Protokol şunu tanımlar: bir bölge geri alınamayacak kadar kaybedildiğinde, geri alınmaz — kapatılır, boşaltılır ve yanması beklenir. Kül, planın başarısız olduğunun değil, tamamlandığının kanıtıdır.\n\nSektör 9 ilk uygulama değildi. Son uygulama da olmayacak.',
+  // ---- player card (offline profile) ----
+  'profile.title': 'PROFİL',
+  'profile.short': 'PROFİL',
+  'profile.kicker': 'OPERATÖR DOSYASI',
+  'profile.score': 'SEKTÖR PUANI',
+  'profile.maxLevel': 'EN YÜKSEK BÖLÜM',
+  'profile.bossKills': 'KESİLEN BOSS',
+  'profile.deaths': 'TOPLAM ÖLÜM',
+  'profile.favorite': 'EN ÇOK KULLANILAN SİLAH',
+  'profile.stockFinish': 'STANDART KAPLAMA',
+  'profile.noWeapon': 'HENÜZ VERİ YOK',
+  'profile.close': 'KAPAT',
+  'profile.rankNext': 'SONRAKİ RÜTBEYE {points} PUAN — {rank}',
+  'profile.rankMax': 'EN YÜKSEK RÜTBE — SEKTÖR SENİN',
+
+  // rank titles — resolved from the Sector Score, see game/progression.js
+  'rank.rookie': 'ÇAYLAK ASKER',
+  'rank.veteran': 'KIDEMLİ SAVAŞÇI',
+  'rank.elite': 'ELİT İSYANCI',
+  'rank.commander': 'SEKTÖR KOMUTANI',
 };

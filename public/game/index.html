@@ -147,6 +147,10 @@
       <header class="home-top">
         <div class="home-brand">CINDERFALL<span data-i18n="brand.sub">SECTOR 9</span></div>
         <div class="pill-row">
+          <button id="btn-profile" class="profile-pill" type="button" data-i18n-attr="title:profile.title" title="PROFILE">
+            <span class="profile-pill-ico">◎</span>
+            <span class="profile-pill-label" data-i18n="profile.short">PROFILE</span>
+          </button>
           <div class="token-pill"><canvas class="cur-icon cur-para" width="20" height="20"></canvas><span id="token-count">0</span></div>
           <div class="token-pill diamond-pill"><canvas class="cur-icon cur-diamond" width="20" height="20"></canvas><span id="diamond-count">0</span></div>
         </div>
@@ -362,6 +366,38 @@
       <div id="intel-read-body" class="intel-read-body"></div>
       <div class="intel-card-actions">
         <button id="btn-intel-close" class="btn quiet" data-i18n="intel.close">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player card — the offline profile. Built by game/profile.js; every
+       number on it is read from local storage, nothing is sent anywhere. -->
+  <div id="profile-overlay" class="overlay dim hidden">
+    <div id="profile-card" class="profile-card">
+      <div class="profile-head">
+        <span class="profile-kicker" data-i18n="profile.kicker">OPERATOR FILE</span>
+        <span class="profile-title" data-i18n="profile.title">PROFILE</span>
+      </div>
+
+      <div class="profile-score-block">
+        <div id="profile-score" class="profile-score">0</div>
+        <div id="profile-score-label" class="profile-score-label" data-i18n="profile.score">SECTOR SCORE</div>
+        <div id="profile-rank" class="profile-rank"></div>
+        <div class="profile-rank-track"><div id="profile-rank-fill" class="profile-rank-fill"></div></div>
+        <div id="profile-rank-next" class="profile-rank-next"></div>
+      </div>
+
+      <div id="profile-stats" class="profile-stats"></div>
+
+      <div class="profile-weapon">
+        <div class="profile-weapon-head" data-i18n="profile.favorite">FAVOURITE WEAPON</div>
+        <canvas id="profile-weapon-art" class="profile-weapon-art" width="200" height="72"></canvas>
+        <div id="profile-weapon-name" class="profile-weapon-name"></div>
+        <div id="profile-weapon-skin" class="profile-weapon-skin"></div>
+      </div>
+
+      <div class="profile-actions">
+        <button id="btn-profile-close" class="btn quiet" data-i18n="profile.close">CLOSE</button>
       </div>
     </div>
   </div>

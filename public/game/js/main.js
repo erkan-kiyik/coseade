@@ -28,6 +28,7 @@ import { MetaUI } from './game/metaui.js';
 import { StoreUI } from './game/storeui.js';
 import { StatsUI } from './game/statsui.js';
 import { ArchivesUI } from './game/archives.js';
+import { ProfileUI } from './game/profile.js';
 import { intelTitleKey } from './game/intel.js';
 import { TouchControls } from './engine/touch.js';
 import { watchRewardedAd } from './engine/ads.js';
@@ -229,6 +230,10 @@ async function boot() {
   document.querySelector('[data-tab="stats"]').addEventListener('click', () => game.statsUI.refresh());
   game.archivesUI = new ArchivesUI({ progression: game.progression, audio });
   game.archivesUI.mount();
+  game.profileUI = new ProfileUI({
+    progression: game.progression, weapons: assets.weapons, previewItem, audio,
+  });
+  game.profileUI.mount();
   game.touch = new TouchControls(input, { force: params.has('touch') });
   game.touch.mount();
 
