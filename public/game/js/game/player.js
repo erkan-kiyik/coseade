@@ -119,6 +119,15 @@ const REVERSAL_SPEED = 235;       // vx above which flipping input trips a stumb
 const REVERSAL_COOLDOWN = 0.5;    // keeps a wiggling stick from chain-stumbling
 const HARD_LAND_SPEED = 620;      // impact speed that starts costing composure
 
+// ---- energy emitter glow ----
+// The light an energy weapon's aperture throws while it is simply held, and
+// how far it swells under load (heat, charge, or a shot inside the last
+// 350ms). The idle floor is deliberately modest — enough that a plasma rifle
+// tints the operator's hands and the ground under the barrel, not so much that
+// carrying one washes out the scene the way a permanent muzzle flash would.
+const EMITTER_IDLE_A = 0.20, EMITTER_LOAD_A = 0.55;
+const EMITTER_IDLE_R = 54,   EMITTER_LOAD_R = 96;
+
 export class Player {
   constructor(parts, shadow, weapons, world, fx, cam, audio, hud) {
     this.parts = parts; this.shadow = shadow;
@@ -304,6 +313,13 @@ export class Player {
       this.crouchVel += landed / 950;
       this.fx.landDust(this.x, this.y, landed > 750);
       this.cam.landBounce(clamp(landed * 0.004, 0.8, 4.2));
+      // Impact shake, on top of the spring dip. The dip alone is a smooth
+      // vertical glide — it reads as the camera easing down, not as the
+      // operator hitting concrete. The trauma adds the short high-frequency
+      // rattle that makes the landing feel like it has weight. Only real drops
+      // qualify: a hop off a crate stays clean, so the shake keeps meaning
+      // something when it does fire.
+      if (landed > 620) this.cam.addTrauma(clamp((landed - 620) / 2600, 0.05, 0.34));
       // impact compression, proportional to how hard the landing was
       this.squash = clamp(landed / 900, 0.05, LAND_SQUASH_MAX);
       this.squashVel = 0;
@@ -908,10 +924,36 @@ export class Player {
     // crouching braces the weapon — tighter cone as a reward for a slow approach
     this.visSpread *= lerp(1, 0.68, this.crouchHold);
     this.applyWs(ws, offX, offY, rot);
+    // Emitter glow rides the *final* weapon transform, so it has to be driven
+    // after applyWs — anchored off a stale pose it would trail the barrel by a
+    // frame whenever the operator turns or the weapon kicks.
+    if (wpn.energy) this.driveEmitter(cur);
   }
 
   applyWs(ws, offX, offY, rot) {
     ws.offX = offX; ws.offY = offY; ws.rot = rot + (this.reloadRotHold || 0);
+  }
+
+  // Keeps a coloured light burning at an energy weapon's aperture.
+  //
+  // Intensity tracks the weapon's own state rather than being constant: a
+  // charging capacitor swells, a hot barrel keeps glowing after a burst, and a
+  // recent shot leaves the emitter lit while it bleeds off. That turns heat and
+  // charge — which otherwise only exist as a HUD meter — into something
+  // readable on the weapon itself.
+  driveEmitter(cur) {
+    const { wpn, ws } = cur;
+    const c = (wpn.projectile && wpn.projectile.color) ||
+              (wpn.beam && wpn.beam.color) || wpn.tracerColor || [120, 200, 255];
+    const sinceShot = clamp(1 - (this.time - (ws.lastFireT || -99)) / 0.35, 0, 1);
+    const load = Math.max(ws.heat || 0, ws.charge || 0, sinceShot);
+    // Idle floor so the aperture never goes fully dark while the weapon is out.
+    const a = EMITTER_IDLE_A + load * EMITTER_LOAD_A;
+    const r = EMITTER_IDLE_R + load * EMITTER_LOAD_R;
+    const pose = computePose(this);
+    const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
+    const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
+    this.fx.setEmitter(mzl.x, mzl.y, c, a, r);
   }
 
   startReload(cur) {
@@ -985,9 +1027,9 @@ export class Player {
       if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed, hitEnemy);
     } else if (wHit && wHit.tag === 'barrel') {
       game.damageBarrel(wHit.ref, dmg);
-      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny, wHit.mat);
     } else if (wHit) {
-      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny, wHit.mat);
     }
     this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy,
       wpn.tracerColor || null, wpn.tracerWidth || 1.4);

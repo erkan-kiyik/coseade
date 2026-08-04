@@ -7,6 +7,7 @@
 
 import * as env from '../art/environment.js';
 import { buildBackground } from '../art/background.js';
+import { makeShadowSprite } from '../art/soldier.js';
 import { makeCanvas, drawSprite, lingrad, radgrad, rr } from '../art/paint.js';
 import { clamp, rand, randSpread, makeRng } from '../engine/math.js';
 import { gradeAt, pickWeather, START_HOUR } from '../engine/daycycle.js';
@@ -70,6 +71,29 @@ export const BAG_W = 42 * OB_SCALE, BAG_H = 13 * OB_SCALE;
 export const WIRE_SCALE = 2.0;
 export const WIRE_W = 90 * WIRE_SCALE, WIRE_H = 22 * WIRE_SCALE;
 
+// ---- contact shadows ----
+// Everything standing on the street gets an elliptical shadow pooled at its
+// base. Without one, a prop is just a sprite pasted over the road and reads as
+// floating a few pixels above it — the single cheapest cue that an object is
+// actually resting on the ground. The blob is the same baked sprite the
+// characters use, stretched to the prop's footprint, so this costs one
+// drawImage per visible prop rather than a per-frame gradient build.
+//
+// SHADOW_SQUASH keeps the pool tighter than the object is wide (light comes
+// from above, not from the camera), and SHADOW_ALPHA sits under the
+// characters' own 0.9 so the operator still reads as the nearest subject.
+const SHADOW_SQUASH = 0.86;
+const SHADOW_ALPHA = 0.62;
+
+// ---- volumetric lamp shafts ----
+// A street lamp with a light in the light map but no visible beam reads as a
+// glowing bulb rather than a fixture throwing light through dust. The shaft is
+// a downward-tapering wedge, additive, fading out before it reaches the road
+// so it never becomes a hard-edged triangle sitting on the ground.
+const SHAFT_TOP_W = 26;      // width at the fixture head
+const SHAFT_BOT_W = 132;     // spread where it fades out
+const SHAFT_ALPHA = 0.085;
+
 // Stage 1 is the hand-authored, art-directed encounter layout.
 export const STAGE1_SPAWNS = [
   { x: 1080, min: 980, max: 1225, y: GROUND_Y - 40 },
@@ -92,6 +116,7 @@ export class World {
     this.bg = buildBackground();
     this.ground = env.groundStrip(MAP_W + 500, 90);
     this.emitters = [];    // ambient particle sources
+    this.shadowSpr = makeShadowSprite();   // reused for every prop contact shadow
     this.time = 0;
 
     // decal surface covering the playfield (persists across a stage, wiped
@@ -126,6 +151,7 @@ export class World {
     this.pickups = [];
     this.coverSpots = [];
     this.enemySpawns = [];
+    this.shafts = [];      // volumetric cones under lit street lamps
     this.colliders = this.baseColliders();
     this.setTime(ctx.hour, ctx.attempts, stage);
 
@@ -169,22 +195,25 @@ export class World {
     const GY = GROUND_Y;
     const P = (spr, x, y = GY) => this.props.push({ spr, x, y });
     const L = (x, y, r, c, a, flicker = 0) => this.lights.push({ x, y, r, c, a, flicker, seed: rand(0, 100) });
+    const S = (x, y) => this.shafts.push({ x, y });
 
     // Cover boxes are derived from the obstacle scale constants so the physics
     // always matches the (now much larger) art — see OB_SCALE / CONTAINER_SCALE.
+    // `mat` is presentation-only: it selects the impact particle recipe when a
+    // round lands here (see FX.impactWall). Nothing in the physics reads it.
     this.colliders.push(
-      { x: 950, y: GY - 40, w: 300, h: 40 },                        // loading dock
-      { x: 898, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },          // crate step
-      { x: 1750, y: GY - CONT_H, w: CONT_W, h: CONT_H },            // container
-      { x: 1798, y: GY - CONT_H * 2, w: CONT_W, h: CONT_H },        // stacked container
-      { x: 1702, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
-      { x: 2560, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
-      { x: 2596, y: GY - CRATE_H * 2, w: CRATE_W, h: CRATE_H * 2 },
-      { x: 3080, y: GY - CONT_H, w: CONT_W, h: CONT_H },
-      { x: 2250, y: GY - BAG_H, w: BAG_W, h: BAG_H },               // sandbags (vault)
-      { x: 3560, y: GY - BAG_H, w: BAG_W, h: BAG_H },
-      { x: 3900, y: GY - 40, w: 260, h: 40 },                       // second dock
-      { x: 3848, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
+      { x: 950, y: GY - 40, w: 300, h: 40, mat: 'wood' },           // loading dock
+      { x: 898, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },   // crate step
+      { x: 1750, y: GY - CONT_H, w: CONT_W, h: CONT_H, mat: 'metal' },    // container
+      { x: 1798, y: GY - CONT_H * 2, w: CONT_W, h: CONT_H, mat: 'metal' },// stacked container
+      { x: 1702, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
+      { x: 2560, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
+      { x: 2596, y: GY - CRATE_H * 2, w: CRATE_W, h: CRATE_H * 2, mat: 'wood' },
+      { x: 3080, y: GY - CONT_H, w: CONT_W, h: CONT_H, mat: 'metal' },
+      { x: 2250, y: GY - BAG_H, w: BAG_W, h: BAG_H, mat: 'sand' },  // sandbags (vault)
+      { x: 3560, y: GY - BAG_H, w: BAG_W, h: BAG_H, mat: 'sand' },
+      { x: 3900, y: GY - 40, w: 260, h: 40, mat: 'wood' },          // second dock
+      { x: 3848, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
     );
 
     // Building facades used to stand here, a few metres behind the player.
@@ -203,6 +232,7 @@ export class World {
     for (const lx of [560, 1470, 2440, 3420, 4240]) {
       P(env.lamp(LAMP_SCALE), lx);
       L(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y, 300, [255, 202, 128], 0.62, lx === 2440 ? 0.5 : 0.04);
+      S(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y);
     }
     P(env.dock(300, 40), 1100);            // matches collider at 950..1250
     P(env.crate(26, 20, OB_SCALE), 911 + CRATE_W / 2);
@@ -250,7 +280,7 @@ export class World {
     // shooting position, so it breaks up the run without adding more cover.
     for (const wx of [1450, 2880, 4520, 6300]) {
       P(env.razorWire(90, WIRE_SCALE), wx);
-      this.colliders.push({ x: wx - WIRE_W / 2, y: GY - WIRE_H, w: WIRE_W, h: WIRE_H });
+      this.colliders.push({ x: wx - WIRE_W / 2, y: GY - WIRE_H, w: WIRE_W, h: WIRE_H, mat: 'metal' });
     }
 
     // Civil-war aftermath: barrels burned down to soot along the block. These
@@ -275,15 +305,15 @@ export class World {
     // containers to break sightlines, a dock to fight up onto, barrels to
     // shoot — so the extended run still reads as one authored space.
     this.colliders.push(
-      { x: 4820, y: GY - CONT_H, w: CONT_W, h: CONT_H },            // container
-      { x: 4772, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
-      { x: 5400, y: GY - BAG_H, w: BAG_W, h: BAG_H },               // sandbags (vault)
-      { x: 5880, y: GY - 40, w: 280, h: 40 },                       // third dock
-      { x: 5828, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
-      { x: 6480, y: GY - CONT_H, w: CONT_W, h: CONT_H },
-      { x: 6528, y: GY - CONT_H * 2, w: CONT_W, h: CONT_H },        // stacked
-      { x: 6432, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H },
-      { x: 6980, y: GY - BAG_H, w: BAG_W, h: BAG_H },
+      { x: 4820, y: GY - CONT_H, w: CONT_W, h: CONT_H, mat: 'metal' },   // container
+      { x: 4772, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
+      { x: 5400, y: GY - BAG_H, w: BAG_W, h: BAG_H, mat: 'sand' },  // sandbags (vault)
+      { x: 5880, y: GY - 40, w: 280, h: 40, mat: 'wood' },          // third dock
+      { x: 5828, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
+      { x: 6480, y: GY - CONT_H, w: CONT_W, h: CONT_H, mat: 'metal' },
+      { x: 6528, y: GY - CONT_H * 2, w: CONT_W, h: CONT_H, mat: 'metal' },  // stacked
+      { x: 6432, y: GY - CRATE_H, w: CRATE_W, h: CRATE_H, mat: 'wood' },
+      { x: 6980, y: GY - BAG_H, w: BAG_W, h: BAG_H, mat: 'sand' },
     );
     P(env.container('containerBlue', 'VTX-889', 96, 38, CONTAINER_SCALE), 4820 + CONT_W / 2);
     P(env.crate(26, 20, OB_SCALE), 4772 + CRATE_W / 2);
@@ -303,6 +333,7 @@ export class World {
     for (const lx of [5080, 6000, 6900]) {
       P(env.lamp(LAMP_SCALE), lx);
       L(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y, 300, [255, 202, 128], 0.62, lx === 6000 ? 0.45 : 0.04);
+      S(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y);
     }
     for (const bx of [5320, 6340]) {
       this.barrels.push({ x: bx, y: GY, hp: 30, alive: true, spr: env.barrel('red', BARREL_SCALE) });
@@ -331,6 +362,7 @@ export class World {
     const rng = makeRng(stage * 92821 + 17);
     const P = (spr, x, y = GY) => this.props.push({ spr, x, y });
     const L = (x, y, r, c, a, flicker = 0) => this.lights.push({ x, y, r, c, a, flicker, seed: rng.range(0, 100) });
+    const S = (x, y) => this.shafts.push({ x, y });
 
     // Procedural stages used to raise the same near-wall facade line stage 1
     // had. That layer is gone (the near neon-city parallax band carries the
@@ -353,20 +385,20 @@ export class World {
         // (much larger) art — see the obstacle scale block at the top.
         const cw = 30 * OB_SCALE, ch = 25 * OB_SCALE;
         P(env.crate(30, 25, OB_SCALE), x);
-        this.colliders.push({ x: x - cw / 2, y: GY - ch, w: cw, h: ch });
+        this.colliders.push({ x: x - cw / 2, y: GY - ch, w: cw, h: ch, mat: 'wood' });
       } else if (kind === 'container') {
         const variant = rng.pick(['containerRed', 'containerBlue', 'containerGreen']);
         const cw = 108 * CONTAINER_SCALE, ch = 44 * CONTAINER_SCALE;
         P(env.container(variant, `${rng.pick(['HLC', 'MSU', 'KDR', 'TRX'])}-${rng.int(100, 999)}`, 108, 44, CONTAINER_SCALE), x);
-        this.colliders.push({ x: x - cw / 2, y: GY - ch, w: cw, h: ch });
+        this.colliders.push({ x: x - cw / 2, y: GY - ch, w: cw, h: ch, mat: 'metal' });
       } else if (kind === 'sandbags') {
         const bw = 40 * OB_SCALE, bh = 16 * OB_SCALE;
         P(env.sandbags(OB_SCALE), x);
-        this.colliders.push({ x: x - bw / 2, y: GY - bh, w: bw, h: bh });
+        this.colliders.push({ x: x - bw / 2, y: GY - bh, w: bw, h: bh, mat: 'sand' });
       } else if (kind === 'wire') {
         // Razor wire: a vault-or-detour hazard strip, not a shooting position.
         P(env.razorWire(90, WIRE_SCALE), x);
-        this.colliders.push({ x: x - WIRE_W / 2, y: GY - WIRE_H, w: WIRE_W, h: WIRE_H });
+        this.colliders.push({ x: x - WIRE_W / 2, y: GY - WIRE_H, w: WIRE_W, h: WIRE_H, mat: 'metal' });
       } else if (kind === 'barrel') {
         P(env.barrel(rng.pick(['rust', 'blue']), BARREL_SCALE), x);
       } else if (kind === 'dumpster') {
@@ -378,7 +410,7 @@ export class World {
       } else if (kind === 'dock') {
         const w = rng.range(180, 300);
         P(env.dock(w, 40), x);
-        this.colliders.push({ x: x - w / 2, y: GY - 40, w, h: 40 });
+        this.colliders.push({ x: x - w / 2, y: GY - 40, w, h: 40, mat: 'wood' });
       }
       clusters.push(x);
       x += gap;
@@ -395,7 +427,11 @@ export class World {
     // (power poles and the cable runs they carried were removed; the street
     // reads cleaner without a web of wires across the play area)
     for (let lx = 300; lx < mapW - 200; lx += rng.range(760, 980)) {
-      if (rng.chance(0.6)) { P(env.lamp(LAMP_SCALE), lx); L(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y, 290, [255, 202, 128], 0.6, rng.chance(0.25) ? 0.4 : 0.04); }
+      if (rng.chance(0.6)) {
+        P(env.lamp(LAMP_SCALE), lx);
+        L(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y, 290, [255, 202, 128], 0.6, rng.chance(0.25) ? 0.4 : 0.04);
+        S(lx + LAMP_HEAD_X, GY - LAMP_HEAD_Y);
+      }
     }
 
     // -- fencing, signage --
@@ -553,7 +589,7 @@ export class World {
   raycast(x0, y0, x1, y1) {
     let best = null, bestT = 1;
     const dx = x1 - x0, dy = y1 - y0;
-    const testRect = (rx, ry, rw, rh, tag, ref) => {
+    const testRect = (rx, ry, rw, rh, tag, ref, mat) => {
       let tmin = 0, tmax = 1, nx = 0, ny = 0;
       for (let axis = 0; axis < 2; axis++) {
         const o = axis ? y0 : x0, d = axis ? dy : dx;
@@ -568,12 +604,14 @@ export class World {
       }
       if (tmin > 0 && tmin < bestT) {
         bestT = tmin;
-        best = { x: x0 + dx * tmin, y: y0 + dy * tmin, nx, ny, tag, ref, t: tmin };
+        best = { x: x0 + dx * tmin, y: y0 + dy * tmin, nx, ny, tag, ref, mat, t: tmin };
       }
     };
-    for (const c of this.colliders) testRect(c.x, c.y, c.w, c.h, 'world', c);
+    // `mat` picks the impact particle recipe (FX.impactWall). Colliders without
+    // one — the ground plane and the map bounds — fall back to concrete.
+    for (const c of this.colliders) testRect(c.x, c.y, c.w, c.h, 'world', c, c.mat || 'concrete');
     for (const b of this.barrels) {
-      if (b.alive) testRect(b.x - 8, b.y - 21, 16, 21, 'barrel', b);
+      if (b.alive) testRect(b.x - 8, b.y - 21, 16, 21, 'barrel', b, 'metal');
     }
     return best;
   }
@@ -661,6 +699,22 @@ export class World {
     // are gone; nothing stands between this and the sky.
     const ns = Math.max(vw / 2048, 0.72) * 1.04;
     tile(this.bg.city, -cam.x * 0.42, groundY - (this.bg.city.height - 6) * ns, ns);
+
+    // Drifting haze bank, mid-depth: it parallaxes faster than the apartments
+    // and slower than the street, so it sits *between* them in the stack — the
+    // civil-war air the fight happens in. It also has a slow lateral crawl of
+    // its own on top of the parallax, so the band keeps moving when the player
+    // is standing still.
+    //
+    // Anchored from the *bottom* rather than the top. The band has to hang
+    // over the lower facades — where smoke actually collects on a street —
+    // and a top-anchored offset put it above the roofline, and mostly off the
+    // top of the frame, at anything but one viewport height. HAZE_FLOOR keeps
+    // its lowest wisps just clear of the road so it never fogs the strip the
+    // characters fight on.
+    const hs = Math.max(vw / 2048, 0.72) * 1.3;
+    const HAZE_FLOOR = 30;
+    tile(this.bg.haze, -(cam.x * 0.55 + time * 7), groundY - HAZE_FLOOR - this.bg.haze.height * hs, hs);
 
     // cool fog settling at street level
     g.fillStyle = lingrad(g, 0, groundY - 150, 0, groundY + 30, [
@@ -762,11 +816,81 @@ export class World {
     // its own bounded span rather than reusing it)
     const bandHalf = Number.isFinite(halfVis) ? halfVis + 400 : MAP_W;
     g.fillRect(camX - bandHalf, GROUND_Y - 4, bandHalf * 2, 100);
+
+    // Contact shadows go down first, as one batch: every prop's pool is laid
+    // in before any prop art, so a crate standing in front of another never
+    // has the neighbour's shadow painted over its face.
+    this.drawContactShadows(g, visible);
+
     for (const p of this.props) { if (visible(p.x)) drawSprite(g, p.spr, p.x, p.y); }
     for (const b of this.barrels) if (b.alive && visible(b.x)) drawSprite(g, b.spr, b.x, b.y);
+    this.drawShafts(g, visible);
     this.drawPickups(g, visible);
     // decals over ground/props, under characters
     g.drawImage(this.decalCv, 0, this.decalTop);
+  }
+
+  // Soft elliptical pools under every prop, barrel and pickup.
+  //
+  // The blob is sized from the sprite's own footprint rather than a constant,
+  // so a container gets a wide pool and a tyre stack a narrow one. A sprite's
+  // world-space width is spr.w and its anchor sits spr.ax*spr.s in from the
+  // left edge, which is what recentres the pool under the art — props are
+  // anchored at various points, and a shadow that ignored that would sit off
+  // to one side of anything not centre-anchored.
+  drawContactShadows(g, visible = () => true) {
+    const spr = this.shadowSpr;
+    if (!spr) return;
+    g.save();
+    g.globalAlpha = SHADOW_ALPHA;
+    const pool = (p) => {
+      const s = p.spr;
+      if (!s || !s.w) return;
+      const cx = p.x + (s.w / 2 - s.ax * s.s);
+      // Wider objects cast a proportionally *less* extended pool — the light is
+      // overhead, so the shadow tracks the footprint, not the silhouette.
+      drawSprite(g, spr, cx, p.y, 0, (s.w / spr.w) * SHADOW_SQUASH, 1);
+    };
+    for (const p of this.props) if (visible(p.x)) pool(p);
+    for (const b of this.barrels) if (b.alive && visible(b.x)) pool(b);
+    for (const p of this.pickups) {
+      // Pickups hover and bob, so theirs is a small fixed pool on the road
+      // directly beneath — it is what sells the float as deliberate.
+      if (!p.alive || !visible(p.x)) continue;
+      g.globalAlpha = SHADOW_ALPHA * 0.5;
+      drawSprite(g, spr, p.x, p.y, 0, 0.42, 1);
+      g.globalAlpha = SHADOW_ALPHA;
+    }
+    g.restore();
+  }
+
+  // Volumetric cones under the lit street lamps: a downward-tapering wedge of
+  // haze, drawn additively so it lifts whatever is behind it rather than
+  // greying it out. It fades to nothing well above the road, which is what
+  // keeps it reading as light through dust instead of a solid cone resting on
+  // the ground.
+  drawShafts(g, visible = () => true) {
+    if (!this.shafts.length) return;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (const s of this.shafts) {
+      if (!visible(s.x)) continue;
+      const h = GROUND_Y - s.y;
+      const grad = lingrad(g, 0, s.y, 0, GROUND_Y, [
+        [0, `rgba(255,214,158,${SHAFT_ALPHA})`],
+        [0.55, `rgba(255,206,150,${SHAFT_ALPHA * 0.42})`],
+        [1, 'rgba(255,200,145,0)'],
+      ]);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(s.x - SHAFT_TOP_W / 2, s.y);
+      g.lineTo(s.x + SHAFT_TOP_W / 2, s.y);
+      g.lineTo(s.x + SHAFT_BOT_W / 2, s.y + h);
+      g.lineTo(s.x - SHAFT_BOT_W / 2, s.y + h);
+      g.closePath();
+      g.fill();
+    }
+    g.restore();
   }
 
   drawPickups(g, visible = () => true) {
