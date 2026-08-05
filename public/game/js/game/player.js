@@ -5,15 +5,128 @@
 // heavy slashes. All transitions are spring- or envelope-blended.
 
 import {
-  clamp, lerp, damp, rand, randSpread, easeOutCubic, easeInOutQuad, TAU,
+  clamp, lerp, damp, rand, randSpread, easeOutCubic, easeInOutQuad, easeInCubic,
+  smootherstep, TAU, makeNoise1D,
 } from '../engine/math.js';
 import { newWeaponState, computePose, weaponAnchor, weaponPoint, toWorld } from './rig.js';
 import { drawSoldier } from './rig.js';
+
+// Footing wobble. Seeded and continuous, so the irregularity is repeatable
+// frame to frame (no per-frame jitter) but never lands on the same stride
+// twice — what separates a person walking from a rig cycling two poses.
+const gaitNoise = makeNoise1D(2291);
+// Seconds of sustained sprinting to reach full forward pitch, and to unwind
+// it again. Asymmetric on purpose: a runner leans in faster than they
+// straighten back up.
+// Carry-stance timing. RELAX_DELAY is how long after the last shot the weapon
+// starts to come down; RELAX_IN/OUT are the ease durations in each direction.
+const RELAX_DELAY = 1.15;
+const RELAX_IN = 0.85;
+const RELAX_OUT = 0.12;
+const RELAX_MAX_SPEED = 40;
+
+// ---- vault / hood slide ----
+// A run-up at speed into waist-or-chest cover is answered with a vault rather
+// than a jump: the operator plants a hand and slides across the top without
+// losing pace. Gravity is switched off for the duration — a parabolic arc is
+// exactly the floaty, speed-shedding feel this is meant to replace.
+const VAULT_MIN_SPEED = 210;     // below this it reads as clambering, not vaulting
+const VAULT_MIN_H = 50;          // waist
+const VAULT_MAX_H = 100;         // chest. Taller than this you climb, not vault.
+const VAULT_PROBE = 40;          // how far ahead the leading edge looks
+const VAULT_CLEAR = 16;          // px past the far edge the exit lands
+const VAULT_MIN_DUR = 0.20;
+const VAULT_MAX_DUR = 0.52;
+const VAULT_COOLDOWN = 0.22;     // stops a re-trigger on the frame we land
+const VAULT_RISE = 0.30;         // fraction of the vault spent getting on top
+const VAULT_FALL = 0.28;         // fraction spent coming off the far side
+const VAULT_HOVER = 6;           // px the body rides above the surface
+
+const SPRINT_LEAN_RAMP = 1.35;
+const SPRINT_LEAN_DECAY = 2.1;
+const SPRINT_LEAN_MAX = 0.14;
+
+// Recoil signatures by weapon feel. `kick` scales the rearward punch, `climb`
+// the muzzle rise, `shake` the camera trauma, and `vibe` seeds the energy
+// shudder envelope. A heavy weapon throws the whole frame around; an energy
+// emitter barely climbs but never stops humming while it fires.
+const RECOIL_FEEL = {
+  standard: { kick: 1,    climb: 1,    shake: 1,    vibe: 0,    vibeAxis: 'both' },
+  light:    { kick: 0.82, climb: 0.9,  shake: 0.8,  vibe: 0,    vibeAxis: 'both' },
+  heavy:    { kick: 1.45, climb: 1.5,  shake: 1.7,  vibe: 0,    vibeAxis: 'both' },
+  energy:   { kick: 0.9,  climb: 0.42, shake: 0.85, vibe: 0.55, vibeAxis: 'both' },
+  // A particle emitter has no cartridge to buck against, so it does not climb
+  // at all — `climb: 0` is literal. What it does instead is hum: a purely
+  // lateral shudder while the emitter is live.
+  beam:     { kick: 0.35, climb: 0,    shake: 0.5,  vibe: 0.8,  vibeAxis: 'x' },
+};
+
+// Spread models. `bloom` is how fast the cone opens under sustained fire and
+// `recover` how fast it closes again; `moveMul` weights how much movement
+// costs you. A pistol punishes sustained fire hard but forgives instantly; a
+// beam barely blooms at all but never fully tightens either.
+const SPREAD_MODEL = {
+  standard: { bloom: 1,    recover: 1,    moveMul: 1 },
+  light:    { bloom: 1.35, recover: 1.9,  moveMul: 0.9 },   // fast-recovering
+  heavy:    { bloom: 1.5,  recover: 0.62, moveMul: 1.35 },  // punishing to walk with
+  energy:   { bloom: 0.7,  recover: 1.15, moveMul: 0.85 },
+  beam:     { bloom: 0.25, recover: 0.8,  moveMul: 0.6 },   // near-constant cone
+};
+// Energy shudder: how fast it oscillates (rad/s) and how quickly it dies.
+const VIBE_FREQ = 46;
+const VIBE_DECAY = 4.2;
+
+// The rig's knifeReach is in weapon-local units; the blade tip sits a little
+// past it. This converts one to the other for the motion trail.
+const BLADE_TIP_SCALE = 1.32;
+
+// An energy blade should streak in its own colour; plain steel gets a cool
+// white. The finish's emissive colour is the natural source for this.
+function bladeTrailColor(wpn) {
+  const map = wpn.trailColors;
+  return (map && map[wpn.finish]) || 'rgba(226,240,255,0.5)';
+}
 
 // Movement feel: snappier ground acceleration and blends for more responsive
 // controls, without changing top speeds (preserves the existing game balance).
 const RUN = 300, SPRINT = 450, ACCEL = 2800, JUMP = -900;
 const STEALTH_RANGE = 56;      // reach for a takedown from directly behind
+// Collision height standing vs fully crouched (half). Drives the real hitbox,
+// not just the pose, so crouching fits under cover and shrinks the target.
+const STAND_H = 126, CROUCH_H = 63;
+
+// ---- squash & stretch --------------------------------------------------
+// One signed value drives it: positive squashes (wide + short), negative
+// stretches (tall + narrow). It's a spring, so impulses overshoot and settle
+// instead of stepping. Scaling happens around the feet, so the operator never
+// sinks into or floats above the street.
+const JUMP_SQUASH = 0.10;      // pop at the instant of take-off (+10% wide / -10% tall)
+const LAND_SQUASH_MAX = 0.16;  // hardest possible landing compression
+const AIR_STRETCH = 0.15;      // full-speed airborne elongation (+15% tall)
+const AIR_STRETCH_DELAY = 0.06;  // hold the stretch off this long after take-off…
+const AIR_STRETCH_RAMP = 0.10;   // …then blend it in over this long
+const SQUASH_K = 260;          // spring stiffness
+const SQUASH_DAMP = 13;        // spring damping
+const SQUASH_LIMIT = 0.22;     // clamp so a freak impulse can't deform the rig
+
+// ---- stumble -----------------------------------------------------------
+// A brief, readable loss of composure: the body tilts, the camera is knocked,
+// and control authority dips. Fires on a hard landing, on a hard reversal at
+// speed, and on taking a solid hit.
+const STUMBLE_TILT_FWD = 0.175;   // ~10deg, pitching forward
+const STUMBLE_TILT_BACK = 0.087;  // ~5deg, rocked backward
+const REVERSAL_SPEED = 235;       // vx above which flipping input trips a stumble
+const REVERSAL_COOLDOWN = 0.5;    // keeps a wiggling stick from chain-stumbling
+const HARD_LAND_SPEED = 620;      // impact speed that starts costing composure
+
+// ---- energy emitter glow ----
+// The light an energy weapon's aperture throws while it is simply held, and
+// how far it swells under load (heat, charge, or a shot inside the last
+// 350ms). The idle floor is deliberately modest — enough that a plasma rifle
+// tints the operator's hands and the ground under the barrel, not so much that
+// carrying one washes out the scene the way a permanent muzzle flash would.
+const EMITTER_IDLE_A = 0.20, EMITTER_LOAD_A = 0.55;
+const EMITTER_IDLE_R = 54,   EMITTER_LOAD_R = 96;
 
 export class Player {
   constructor(parts, shadow, weapons, world, fx, cam, audio, hud) {
@@ -23,11 +136,13 @@ export class Player {
 
     this.x = 260; this.y = 0; // y set by spawn
     this.vx = 0; this.vy = 0;
-    this.halfW = 10; this.h = 126;
+    this.halfW = 10; this.h = STAND_H;
     this.onGround = false; this.airTime = 0;
     this.facing = 1;
     this.aimLocal = 0; this.aimSmooth = 0; this.aimWorld = 0;
     this.gaitPhase = 0; this.speedNorm = 0;
+    this.sprintHold = 0;    // integrated sprint time → forward torso pitch
+    this.gaitNoise = 0;     // per-stride footing irregularity, read by the rig
     this.breathT = rand(0, 9); this.lean = 0;
     this.crouchSpring = 0; this.crouchVel = 0;
     this.crouchHold = 0;          // 0..1 held-crouch blend (feeds the rig pose)
@@ -35,14 +150,38 @@ export class Player {
     this.stealth = null;          // active takedown timeline
     this.stealthTarget = null;    // hostile that can currently be taken down
     this.hurtT = 0; this.deadT = 0;
+    this.onDeath = null;          // optional hook set by Game (stats: kill-streak reset)
 
     this.hp = 100; this.maxHp = 100;
     this.armor = 0; this.maxArmor = 0;
+    // ---- perk modifiers ----
+    // Neutral defaults so the player is fully playable with nothing equipped;
+    // applyPerks() (game/meta.js) overwrites these from the loadout.
+    // vault state machine — see tryVault()/updateVault()
+    this.vault = null;     // active vault, or null
+    this.vaultK = 0;       // 0..1 progress, read by the rig for the pose
+    this.vaultCdT = 0;
+    this.perks = {};
+    this.moveMul = 1;      // top speed multiplier
+    this.reloadMul = 1;    // <1 = faster reload
+    this.recoilMul = 1;    // <1 = less kick
+    this.dmgMul = 1;       // outgoing damage multiplier
+    this.stealthMul = 1;   // <1 = enemies gain awareness slower
+    this.luckMul = 1;      // loot roll multiplier
     this.stamina = 100; this.sprinting = false; this.sprintBlend = 0;
     this.kills = 0; this.headshots = 0; this.shots = 0; this.hits = 0;
     this.lastHurtT = -99; this.lastShotT = -99;
     this.stunT = 0;
     this.time = 0;
+
+    // squash/stretch: spring value + the per-frame scales the rig reads
+    this.squash = 0; this.squashVel = 0;
+    this.squashX = 1; this.squashY = 1;
+    // stumble: countdown, its own duration (for a stable 1->0 envelope),
+    // direction (+1 pitches forward, -1 rocks back) and the resulting tilt
+    this.stumbleT = 0; this.stumbleDur = 0; this.stumbleDir = 0;
+    this.stumbleLean = 0;
+    this.lastReversalT = -99;
 
     this.weapons = weapons;   // base defs, for finish/unlock lookups
     this.arsenal = {
@@ -100,9 +239,19 @@ export class Player {
 
     // ---- crouch: hold to lower stance (slower, steadier, harder to spot).
     // Smoothly blended so the pose eases down/up rather than snapping.
-    const wantCrouch = input.crouch && this.onGround && this.stunT <= 0 && !this.reload;
+    let wantCrouch = input.crouch && this.onGround && this.stunT <= 0 && !this.reload;
+    // Standing back up is refused when there's no headroom, so releasing the
+    // key under a low ledge can't shove the operator's head into geometry.
+    if (!wantCrouch && this.crouchHold > 0.02 &&
+        this.world.rectHit(this.x - this.halfW, this.y - STAND_H,
+                           this.halfW * 2, STAND_H - CROUCH_H)) {
+      wantCrouch = true;
+    }
     this.crouchHold = damp(this.crouchHold, wantCrouch ? 1 : 0, 12, dt);
     this.crouched = this.crouchHold > 0.5;
+    // The collision box shrinks with the pose — crouching genuinely fits under
+    // low cover and presents a smaller target, rather than only looking lower.
+    this.h = lerp(STAND_H, CROUCH_H, this.crouchHold);
 
     // ---- movement
     this.stunT = Math.max(0, this.stunT - dt);
@@ -112,18 +261,51 @@ export class Player {
     this.sprinting = wantSprint;
     this.sprintBlend = damp(this.sprintBlend, wantSprint ? 1 : 0, 9, dt);
     const crouchMul = lerp(1, 0.5, this.crouchHold);
-    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul * crouchMul;
+    const top = lerp(RUN, SPRINT, this.sprintBlend) * stunMul * crouchMul * this.moveMul;
     const target = mx * top;
+    // Hard reversal: cutting from a run into the opposite direction throws the
+    // operator's weight against the turn before it catches. Rate-limited so
+    // flicking the stick can't chain-stumble.
+    if (this.onGround && mx !== 0 && Math.abs(this.vx) > REVERSAL_SPEED &&
+        Math.sign(mx) !== Math.sign(this.vx) &&
+        this.time - this.lastReversalT > REVERSAL_COOLDOWN) {
+      this.lastReversalT = this.time;
+      this.stumble(-1, clamp(Math.abs(this.vx) / SPRINT, 0, 1) * 0.6);
+    }
+
     const rate = (this.onGround ? ACCEL : ACCEL * 0.45) * stunMul;
     this.vx = this.vx > target
       ? Math.max(target, this.vx - rate * dt)
       : Math.min(target, this.vx + rate * dt);
 
-    if (input.jump && this.onGround) {
+    // ---- vault ----
+    // Checked before the jump so a run-up into chest cover vaults instead of
+    // hopping. Only fires while genuinely moving at pace; at a walk the
+    // ordinary jump/step-up still handles the same obstacle.
+    this.vaultCdT = Math.max(0, this.vaultCdT - dt);
+    if (!this.vault && this.onGround && this.vaultCdT <= 0 &&
+        Math.abs(this.vx) >= VAULT_MIN_SPEED && mx !== 0 &&
+        Math.sign(mx) === Math.sign(this.vx)) {
+      this.tryVault();
+    }
+
+    if (input.jump && this.onGround && !this.vault) {
       this.vy = JUMP;
       this.onGround = false;
       this.fx.landDust(this.x, this.y, false);
       this.cam.landBounce(-1.4);
+      this.squash = JUMP_SQUASH;      // compress off the launch, then stretch in the air
+      this.squashVel = 0;
+    }
+
+    // A vault owns the body outright: position is driven along a scripted
+    // path, so gravity and the collision sweep are both skipped for its
+    // duration. Running moveEntity here would fight the lerp and shove the
+    // operator back out of the obstacle it is crossing.
+    if (this.vault) {
+      this.updateVault(dt);
+      this.airTime = 0;
+      return;
     }
 
     const landed = this.world.moveEntity(this, dt);
@@ -131,15 +313,69 @@ export class Player {
       this.crouchVel += landed / 950;
       this.fx.landDust(this.x, this.y, landed > 750);
       this.cam.landBounce(clamp(landed * 0.004, 0.8, 4.2));
+      // Impact shake, on top of the spring dip. The dip alone is a smooth
+      // vertical glide — it reads as the camera easing down, not as the
+      // operator hitting concrete. The trauma adds the short high-frequency
+      // rattle that makes the landing feel like it has weight. Only real drops
+      // qualify: a hop off a crate stays clean, so the shake keeps meaning
+      // something when it does fire.
+      if (landed > 620) this.cam.addTrauma(clamp((landed - 620) / 2600, 0.05, 0.34));
+      // impact compression, proportional to how hard the landing was
+      this.squash = clamp(landed / 900, 0.05, LAND_SQUASH_MAX);
+      this.squashVel = 0;
+      // a genuinely heavy landing also costs composure
+      if (landed > HARD_LAND_SPEED) {
+        this.stumble(1, clamp((landed - HARD_LAND_SPEED) / 700, 0.15, 1));
+      }
       if (landed > 1000) this.hurt(Math.floor((landed - 1000) / 40), 0);
     }
     this.airTime = this.onGround ? 0 : this.airTime + dt;
+
+    // Airborne elongation, driven by vertical speed. It has to be held off for
+    // a beat after take-off: vy is at its maximum on the very first airborne
+    // frame, so an un-ramped stretch cancels the launch squash outright and
+    // the compression never reads. Squash pops first, stretch takes over as
+    // the spring relaxes.
+    const stretchRamp = clamp((this.airTime - AIR_STRETCH_DELAY) / AIR_STRETCH_RAMP, 0, 1);
+    const airStretch = this.onGround
+      ? 0
+      : clamp(Math.abs(this.vy) / 850, 0, 1) * AIR_STRETCH * stretchRamp;
+    const s = clamp(this.squash - airStretch, -SQUASH_LIMIT, SQUASH_LIMIT);
+    this.squashY = 1 - s;
+    this.squashX = 1 + s * 0.95;
+
+    // stumble envelope: eases in and back out over the hit's lifetime
+    if (this.stumbleT > 0) {
+      this.stumbleT = Math.max(0, this.stumbleT - dt);
+      const k = this.stumbleDur > 0 ? this.stumbleT / this.stumbleDur : 0;
+      const amp = this.stumbleDir > 0 ? STUMBLE_TILT_FWD : STUMBLE_TILT_BACK;
+      this.stumbleLean = this.stumbleDir * amp * Math.sin(k * Math.PI);
+    } else {
+      this.stumbleLean = 0;
+    }
 
     // gait, lean, breathing
     const sp = Math.abs(this.vx);
     this.gaitPhase += sp * dt / 23;
     this.speedNorm = sp / SPRINT;
-    this.lean = damp(this.lean, (this.vx / SPRINT) * 0.15 * this.facing, 6, dt);
+
+    // Sustained-sprint torso lean. A runner doesn't reach their forward
+    // pitch instantly — it builds over the first seconds of a sprint and
+    // unwinds slowly once they drop back to a jog, so this integrates
+    // sprint time rather than reading sprintBlend directly.
+    this.sprintHold = clamp(
+      this.sprintHold + (this.sprinting ? dt / SPRINT_LEAN_RAMP : -dt / SPRINT_LEAN_DECAY),
+      0, 1
+    );
+    const baseLean = (this.vx / SPRINT) * 0.15 * this.facing;
+    const runLean = this.sprintHold * SPRINT_LEAN_MAX * this.facing;
+    this.lean = damp(this.lean, baseLean + runLean, 6, dt);
+
+    // Footing noise: a slow, seeded wobble that makes each stride land
+    // slightly differently instead of stamping the same two frames forever.
+    // Amplitude scales with speed — a walk is tidy, a sprint gets sloppy.
+    this.gaitNoise = gaitNoise(this.gaitPhase * 0.37) * this.speedNorm;
+
     this.breathT += dt;
 
     // footsteps
@@ -274,11 +510,33 @@ export class Player {
     if (k >= 1) { this.stealth = null; this.lean = 0; }
   }
 
+  // Knocks the operator off balance for a moment: the torso pitches, the
+  // camera takes a jolt, and movement authority dips (stunT feeds stunMul in
+  // update). `dir` is +1 to pitch forward, -1 to rock back; `strength` 0..1
+  // scales how long and how hard. A stronger stumble always wins over one
+  // already running rather than cutting it short.
+  stumble(dir, strength = 0.5) {
+    const s = clamp(strength, 0, 1);
+    const dur = lerp(0.22, 0.42, s);
+    if (dur < this.stumbleT) return;   // a bigger stumble is already running
+    this.stumbleDir = dir;
+    this.stumbleDur = dur;
+    this.stumbleT = dur;
+    this.stunT = Math.max(this.stunT, lerp(0.05, 0.14, s));
+    this.cam.addTrauma(clamp(0.1 + s * 0.22, 0.1, 0.32));
+  }
+
   integrateSprings(dt) {
     // landing crouch spring
     this.crouchVel += -this.crouchSpring * 120 * dt;
     this.crouchVel *= Math.exp(-10 * dt);
     this.crouchSpring = Math.max(0, this.crouchSpring + this.crouchVel * dt * 34);
+
+    // squash/stretch spring — impulses set `squash` directly and this pulls it
+    // back to neutral with a little overshoot, which is what reads as weight
+    this.squashVel += -this.squash * SQUASH_K * dt;
+    this.squashVel *= Math.exp(-SQUASH_DAMP * dt);
+    this.squash = clamp(this.squash + this.squashVel * dt, -SQUASH_LIMIT, SQUASH_LIMIT);
   }
 
   // ------------------------------------------------------------- weapons
@@ -289,7 +547,13 @@ export class Player {
     const base = this.weapons[slot];
     if (!base || !base.finishes || !base.finishes[finishKey]) return;
     const cur = this.arsenal[slot];
-    cur.wpn = finishKey === 'default' ? base : { ...base, body: base.finishes[finishKey], finish: finishKey };
+    const fin = base.finishes[finishKey];
+    // A skin repaints the detachable magazine too (see buildSkinSet), so take
+    // the finish's own mag when it has one — otherwise a coated weapon runs
+    // around with the default-palette magazine bolted to it.
+    cur.wpn = finishKey === 'default'
+      ? base
+      : { ...base, body: fin, mag: fin.mag || base.mag, finish: finishKey };
   }
 
   switchTo(slot) {
@@ -299,6 +563,123 @@ export class Player {
     this.reload = null;
     this.inspectT = -1;
     this.audio.equip();
+  }
+
+  // ---- vault: detection ----
+  //
+  // Looks for a waist-to-chest obstacle directly ahead and, if the far side is
+  // clear, commits to a slide across it. Everything is measured off the live
+  // collider list, so it automatically tracks the obstacle scale constants in
+  // world.js rather than duplicating their numbers.
+  tryVault() {
+    const dir = Math.sign(this.vx);
+    const lead = this.x + dir * this.halfW;           // leading edge
+    const feet = this.y;
+    let best = null;
+
+    for (const c of this.world.colliders) {
+      // ground plane and the map bounds are not vaultable
+      if (c.h >= 400 || c.w > 340) continue;
+      const top = feet - c.y;                         // height of the top surface
+      if (top < VAULT_MIN_H || top > VAULT_MAX_H) continue;
+      // must be ahead of us and within reach
+      const nearFace = dir > 0 ? c.x : c.x + c.w;
+      const gap = (nearFace - lead) * dir;
+      if (gap < -this.halfW || gap > VAULT_PROBE) continue;
+      // nearest one wins
+      if (!best || gap < best.gap) best = { c, gap };
+    }
+    if (!best) return false;
+
+    const c = best.c;
+    const exitX = dir > 0 ? c.x + c.w + VAULT_CLEAR : c.x - VAULT_CLEAR;
+    const surfaceY = c.y - VAULT_HOVER;
+
+    // Refuse if the body could not pass through the exit.
+    //
+    // This has to be measured against the volume the body actually travels
+    // through — a box standing on the obstacle's top plane — not against the
+    // entry foot level. Testing at the feet rejected every crate that steps up
+    // onto a loading dock, because the dock beyond it registered as "blocked"
+    // when in fact it is just the surface you land on.
+    if (this.world.rectHit(exitX - this.halfW, c.y - this.h, this.halfW * 2, this.h - 4)) {
+      return false;
+    }
+    // Refuse if there is no headroom over the surface to pass through.
+    if (this.world.rectHit(c.x, c.y - this.h, c.w, this.h - VAULT_HOVER - 2)) {
+      return false;
+    }
+
+    // Where the exit actually lands. The far side may be higher than the
+    // approach (a crate stepping onto a dock), so the drop-off targets the
+    // real surface rather than assuming the ground we started from.
+    const landY = this.groundAt(exitX, c.y, feet);
+
+    const speed = Math.abs(this.vx);
+    const dist = Math.abs(exitX - this.x);
+    this.vault = {
+      t: 0,
+      dur: clamp(dist / Math.max(1, speed), VAULT_MIN_DUR, VAULT_MAX_DUR),
+      x0: this.x, x1: exitX,
+      y0: feet, surfaceY, y1: landY,
+      dir, speed,
+    };
+    this.vaultK = 0;
+    this.vy = 0;
+    this.onGround = false;
+    this.fx.landDust(this.x, this.y, false);
+    if (this.audio && this.audio.footstep) this.audio.footstep(0.9);
+    return true;
+  }
+
+  // Highest walkable surface under `x` between `fromY` (exclusive, the
+  // obstacle top) and `maxY` (the approach ground). Used to land a vault on
+  // whatever is actually on the far side.
+  groundAt(x, fromY, maxY) {
+    let best = maxY;
+    for (const c of this.world.colliders) {
+      if (x < c.x || x > c.x + c.w) continue;
+      if (c.y < fromY || c.y > maxY) continue;    // above the obstacle, or below the floor
+      if (c.y < best) best = c.y;
+    }
+    return best;
+  }
+
+  // ---- vault: motion ----
+  //
+  // Position is lerped, not integrated. Horizontal travel is linear so pace is
+  // visibly preserved end to end; the vertical component rises onto the
+  // surface, holds flat across it, then drops off the far side — the hood-slide
+  // read, rather than an arc.
+  updateVault(dt) {
+    const v = this.vault;
+    v.t += dt;
+    const k = clamp(v.t / v.dur, 0, 1);
+    this.vaultK = k;
+
+    // linear in x: no speed shed while crossing
+    this.x = lerp(v.x0, v.x1, k);
+
+    // up onto the surface, flat, then down
+    const rise = smootherstep(clamp(k / VAULT_RISE, 0, 1));
+    const fall = smootherstep(clamp((k - (1 - VAULT_FALL)) / VAULT_FALL, 0, 1));
+    const onTop = lerp(v.y0, v.surfaceY, rise);
+    this.y = lerp(onTop, v.y1, fall);
+
+    // keep the reported velocity honest so the gait/lean systems and anything
+    // reading vx during the vault see the real ground speed
+    this.vx = v.dir * v.speed;
+    this.vy = 0;
+
+    if (k >= 1) {
+      this.vault = null;
+      this.vaultK = 0;
+      this.vaultCdT = VAULT_COOLDOWN;
+      // exits at full pace, which is the whole point
+      this.vx = v.dir * v.speed;
+      this.onGround = false;          // the next sweep settles us onto the ground
+      this.fx.landDust(this.x, this.y, false);
+    }
   }
 
   updateWeapon(dt, input, enemies, game) {
@@ -321,16 +702,57 @@ export class Player {
     ws.recoilRot += ws.recoilRotVel * dt * 40;
     ws.flashT = Math.max(0, ws.flashT - dt * 14);
     ws.boltBack = Math.max(0, ws.boltBack - dt * 9);
+
+    // ---- carry stance ----
+    // A soldier does not stand at a two-handed ready grip indefinitely; the
+    // support hand comes off and the muzzle drops the moment nothing needs
+    // shooting. `relax` drives that: 0 = weapon up in both hands, 1 = carried
+    // one-handed at the side. It falls away far faster than it builds, so
+    // bringing the weapon back on target is instant while settling into a
+    // relaxed carry takes a beat — which is how the real motion reads.
+    const holdingFire = input && input.mouse && input.mouse.down;
+    // A vault forces the one-handed carry outright: the support hand is busy
+    // on the obstacle, so the weapon cannot be in a two-handed grip.
+    if (this.vault) { ws.relax = 1; }
+    const idle = !holdingFire
+      && this.time - (ws.lastFireT || -99) > RELAX_DELAY
+      && Math.abs(this.vx) < RELAX_MAX_SPEED
+      && ws.magHand !== true;
+    ws.relax = clamp(
+      (ws.relax || 0) + (idle ? dt / RELAX_IN : -dt / RELAX_OUT),
+      0, 1,
+    );
     ws.slideBack = Math.max(0, ws.slideBack - dt * 10);
+    // Energy-weapon vibration envelope: emitters don't buck like a cartridge
+    // gun, they hum. This decays much faster than the recoil spring and is
+    // read below as a high-frequency shudder rather than a single kick.
+    ws.vibe = Math.max(0, (ws.vibe || 0) - dt * VIBE_DECAY);
     this.fireCd -= dt;
     // aim-drift bloom recovers faster → tighter sustained accuracy
-    this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.17);
+    // Recovery rate is per-class too — a sidearm settles almost instantly,
+    // an LMG stays open long after the trigger is released.
+    const spreadModel = SPREAD_MODEL[wpn.recoilFeel] || SPREAD_MODEL.standard;
+    this.recoilAccum = Math.max(0, this.recoilAccum - dt * 0.17 * spreadModel.recover);
     // energy weapons cool between shots; overheat clears once cooled enough
     ws.heat = Math.max(0, ws.heat - dt * (wpn.heatCool || 0.6));
     if (ws.overheated && ws.heat <= 0.2) ws.overheated = false;
 
     // baseline pose modifiers
     let offX = 0, offY = 0, rot = 0;
+    // Energy shudder: a fast oscillation while the vibration envelope is
+    // live. Frequency is fixed and high enough to read as a buzz at 60fps
+    // rather than a wobble; amplitude rides the envelope down.
+    if (ws.vibe > 0.001) {
+      const feel = RECOIL_FEEL[wpn.recoilFeel] || RECOIL_FEEL.standard;
+      const v = ws.vibe * (wpn.vibeAmp || 1);
+      offX += Math.sin(this.time * VIBE_FREQ * 1.37) * 0.6 * v;
+      // A beam emitter shudders laterally only — no vertical component at all,
+      // so the reticle never walks up the screen while it's firing.
+      if (feel.vibeAxis !== 'x') {
+        offY += Math.sin(this.time * VIBE_FREQ) * 0.9 * v;
+        rot += Math.sin(this.time * VIBE_FREQ * 0.83) * 0.012 * v;
+      }
+    }
     // idle sway + breathing
     rot += Math.sin(this.breathT * 1.7) * 0.014 * (1 - this.speedNorm);
     offY += Math.sin(this.breathT * 1.7 + 1) * 0.4;
@@ -357,7 +779,11 @@ export class Player {
       this.unequipT += dt;
       const T = 0.2;
       const k = clamp(this.unequipT / T, 0, 1);
-      rot += k * 1.1; offY += k * 14;
+      // Stow accelerates away rather than ramping linearly — the arm starts
+      // the motion and gravity/momentum finishes it. A straight ramp here is
+      // the single most mechanical-looking frame in a weapon switch.
+      const e = easeInCubic(k);
+      rot += e * 1.1; offY += e * 14;
       if (k >= 1) {
         this.current = this.pendingSwitch;
         this.pendingSwitch = null;
@@ -488,14 +914,46 @@ export class Player {
     // surface heat / charge to the HUD
     if (this.hud.setWeaponMeter) this.hud.setWeaponMeter(ws.heat, ws.overheated, ws.charge);
 
-    this.visSpread = wpn.spread + this.speedNorm * 0.045 + (this.onGround ? 0 : 0.05) + this.recoilAccum;
+    // Per-class spread model: how much movement costs, and how much the
+    // sustained-fire bloom this weapon has accumulated actually widens it.
+    const sm = SPREAD_MODEL[wpn.recoilFeel] || SPREAD_MODEL.standard;
+    this.visSpread = wpn.spread
+      + this.speedNorm * 0.045 * sm.moveMul
+      + (this.onGround ? 0 : 0.05 * sm.moveMul)
+      + this.recoilAccum * sm.bloom;
     // crouching braces the weapon — tighter cone as a reward for a slow approach
     this.visSpread *= lerp(1, 0.68, this.crouchHold);
     this.applyWs(ws, offX, offY, rot);
+    // Emitter glow rides the *final* weapon transform, so it has to be driven
+    // after applyWs — anchored off a stale pose it would trail the barrel by a
+    // frame whenever the operator turns or the weapon kicks.
+    if (wpn.energy) this.driveEmitter(cur);
   }
 
   applyWs(ws, offX, offY, rot) {
     ws.offX = offX; ws.offY = offY; ws.rot = rot + (this.reloadRotHold || 0);
+  }
+
+  // Keeps a coloured light burning at an energy weapon's aperture.
+  //
+  // Intensity tracks the weapon's own state rather than being constant: a
+  // charging capacitor swells, a hot barrel keeps glowing after a burst, and a
+  // recent shot leaves the emitter lit while it bleeds off. That turns heat and
+  // charge — which otherwise only exist as a HUD meter — into something
+  // readable on the weapon itself.
+  driveEmitter(cur) {
+    const { wpn, ws } = cur;
+    const c = (wpn.projectile && wpn.projectile.color) ||
+              (wpn.beam && wpn.beam.color) || wpn.tracerColor || [120, 200, 255];
+    const sinceShot = clamp(1 - (this.time - (ws.lastFireT || -99)) / 0.35, 0, 1);
+    const load = Math.max(ws.heat || 0, ws.charge || 0, sinceShot);
+    // Idle floor so the aperture never goes fully dark while the weapon is out.
+    const a = EMITTER_IDLE_A + load * EMITTER_LOAD_A;
+    const r = EMITTER_IDLE_R + load * EMITTER_LOAD_R;
+    const pose = computePose(this);
+    const wa = weaponAnchor(pose, wpn, ws, this.aimSmooth);
+    const mzl = toWorld(this, weaponPoint(wa, wpn.muzzle));
+    this.fx.setEmitter(mzl.x, mzl.y, c, a, r);
   }
 
   startReload(cur) {
@@ -510,6 +968,9 @@ export class Player {
     const { wpn, ws } = cur;
     cur.mag--;
     this.shots++;
+    // in-memory only (no I/O) — flushed to Progression once at run end via
+    // Game.finish(), so a full-auto weapon never triggers per-shot writes
+    if (game) game.recordWeaponShot(wpn.id);
     this.fireCd = 60 / wpn.rpm;
     this.lastShotT = this.time;
 
@@ -527,14 +988,14 @@ export class Player {
       for (let i = 0; i < n; i++) {
         this.fx.spawnProjectile(mzl.x, mzl.y, shotAng(), {
           color: pj.color, radius: pj.radius, speed: pj.speed * (0.85 + 0.4 * chargeMul),
-          dmg: wpn.dmg * chargeMul, headMul: pj.headMul || 1.6,
+          dmg: wpn.dmg * chargeMul * this.dmgMul, headMul: pj.headMul || 1.6,
           blast: (pj.blast || 0) * chargeMul, pierce: pj.pierce || 0, life: pj.life || 1.6,
         });
       }
     } else if (mode === 'beam') {
-      for (let i = 0; i < n; i++) this.beamShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+      for (let i = 0; i < n; i++) this.beamShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul * this.dmgMul);
     } else {
-      for (let i = 0; i < n; i++) this.hitscanShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul);
+      for (let i = 0; i < n; i++) this.hitscanShot(mzl, shotAng(), wpn, enemies, game, wpn.dmg * chargeMul * this.dmgMul);
     }
 
     this.presentShot(cur, mzl, ejl, baseAng, chargeMul);
@@ -548,12 +1009,13 @@ export class Player {
     let hitEnemy = null;
     for (const e of enemies) {
       if (e.deadT > 0) continue;
-      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
+      const hs = e.hitboxScale || 1;
+      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13 * hs, e.y - 134 * hs, 26 * hs, 134 * hs);
       if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
     }
     const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
     if (hitEnemy) {
-      const headshot = hy < hitEnemy.y - 108;
+      const headshot = hy < hitEnemy.y - 108 * (hitEnemy.hitboxScale || 1);
       const d = dmg * (headshot ? 1.9 : 1);
       this.hits++;
       if (headshot) this.headshots++;
@@ -562,12 +1024,12 @@ export class Player {
       this.fx.blood(hx, hy, Math.sign(ex - mzl.x));
       this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
       if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
-      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
+      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed, hitEnemy);
     } else if (wHit && wHit.tag === 'barrel') {
       game.damageBarrel(wHit.ref, dmg);
-      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny, wHit.mat);
     } else if (wHit) {
-      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny, wHit.mat);
     }
     this.fx.tracer(mzl.x + Math.cos(ang) * 14, mzl.y + Math.sin(ang) * 14, hx, hy,
       wpn.tracerColor || null, wpn.tracerWidth || 1.4);
@@ -581,13 +1043,14 @@ export class Player {
     let hitEnemy = null;
     for (const e of enemies) {
       if (e.deadT > 0) continue;
-      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13, e.y - 134, 26, 134);
+      const hs = e.hitboxScale || 1;
+      const t = segVsBox(mzl.x, mzl.y, ex - mzl.x, ey - mzl.y, e.x - 13 * hs, e.y - 134 * hs, 26 * hs, 134 * hs);
       if (t !== null && t < bestT) { bestT = t; hitEnemy = e; }
     }
     const hx = mzl.x + (ex - mzl.x) * bestT, hy = mzl.y + (ey - mzl.y) * bestT;
     const col = wpn.beam.color;
     if (hitEnemy) {
-      const headshot = hy < hitEnemy.y - 108;
+      const headshot = hy < hitEnemy.y - 108 * (hitEnemy.hitboxScale || 1);
       const d = dmg * (headshot ? 1.7 : 1);
       this.hits++;
       if (headshot) this.headshots++;
@@ -596,7 +1059,7 @@ export class Player {
       this.fx.energyImpact(hx, hy, col, 0);
       this.hud.hitmark(killed ? 'kill' : headshot ? 'headshot' : 'hit');
       if (killed) this.hud.notify(headshot ? 'HOSTILE ELIMINATED — HEADSHOT' : 'HOSTILE ELIMINATED');
-      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed);
+      if (game && game.onPlayerHit) game.onPlayerHit(headshot, killed, hitEnemy);
     } else if (wHit) {
       if (wHit.tag === 'barrel') game.damageBarrel(wHit.ref, dmg);
       this.fx.energyImpact(hx, hy, col, 0);
@@ -617,13 +1080,24 @@ export class Player {
     const pat = wpn.recoilPattern;
     const patMul = pat ? pat[ws.shotIndex % pat.length] : 1;
     ws.shotIndex = (ws.shotIndex || 0) + 1;
-    ws.recoilVel += wpn.recoilKick * 2.1 * patMul * chargeMul;
-    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul * chargeMul;
+    // Per-class recoil signature. `recoilFeel` lets a weapon say how its kick
+    // should be shaped rather than just how big it is:
+    //   heavy  — everything amplified, and the muzzle climbs harder
+    //   energy — flatter climb (no cartridge to buck against) but it leaves a
+    //            vibration envelope behind, so it reads as powered, not inert
+    // Anything without a declared feel keeps the original conventional curve.
+    const feel = RECOIL_FEEL[wpn.recoilFeel] || RECOIL_FEEL.standard;
+    const spread = SPREAD_MODEL[wpn.recoilFeel] || SPREAD_MODEL.standard;
+    // recoilMul is the equipped perk block's recoil-control bonus (1 = none).
+    const rm = this.recoilMul;
+    ws.recoilVel += wpn.recoilKick * 2.1 * patMul * chargeMul * feel.kick * rm;
+    ws.recoilRotVel -= wpn.recoilRot * 18 * patMul * chargeMul * feel.climb * rm;
+    if (feel.vibe) ws.vibe = Math.min(1, (ws.vibe || 0) + feel.vibe * chargeMul);
     if (wpn.bolt) ws.boltBack = 1;
     if (wpn.slide) ws.slideBack = 1;
-    this.recoilAccum = Math.min(0.05, this.recoilAccum + 0.008);
-    this.cam.recoil(wpn.camKick * chargeMul);
-    this.cam.addTrauma(wpn.camTrauma * chargeMul);
+    this.recoilAccum = Math.min(0.05, this.recoilAccum + 0.008 * spread.bloom);
+    this.cam.recoil(wpn.camKick * chargeMul * feel.kick * rm);
+    this.cam.addTrauma(wpn.camTrauma * chargeMul * feel.shake * rm);
     if (wpn.heatPerShot) {
       ws.heat = Math.min(1, ws.heat + wpn.heatPerShot);
       if (ws.heat >= 1) { ws.overheated = true; if (this.audio.overheat) this.audio.overheat(); }
@@ -687,13 +1161,22 @@ export class Player {
       const windEnd = 0.32, strikeEnd = 0.62;
       const back = s.heavy ? -1.65 : -1.05;
       const fwd = s.heavy ? 1.5 : 1.2;
+      // Follow-through: the blade carries a little past where the swing was
+      // aimed before the arm reels it back, which is what makes a slash read
+      // as weight being thrown rather than a value being set.
+      const over = fwd + (s.heavy ? 0.22 : 0.14);
+      // Rest reach, and the reach the strike returns to at full extension's
+      // end. Both phases must agree on this number or the blade visibly
+      // snaps at the seam (it used to jump 20 -> 34 here).
+      const REST_REACH = 25, TUCK_REACH = 20;
       if (k < windEnd) {
-        const e = easeInOutQuad(k / windEnd);
-        ang = lerp(0.42, back, e); reach = lerp(25, 20, e); wrist = 0.5;
+        const e = smootherstep(k / windEnd);
+        ang = lerp(0.42, back, e); reach = lerp(REST_REACH, TUCK_REACH, e); wrist = 0.5;
       } else if (k < strikeEnd) {
         const e = easeOutCubic((k - windEnd) / (strikeEnd - windEnd));
-        ang = lerp(back, fwd, e);
-        reach = lerp(20, s.heavy ? 38 : 34, Math.sin(e * Math.PI));
+        ang = lerp(back, over, e);
+        // sin bump: tucked at both ends, fully extended through the middle
+        reach = lerp(TUCK_REACH, s.heavy ? 38 : 34, Math.sin(e * Math.PI));
         wrist = lerp(0.5, -0.1, e);
         if (!s.sounded) {
           s.sounded = true;
@@ -706,9 +1189,22 @@ export class Player {
           this.knifeHit(enemies, s.heavy, game);
         }
       } else {
-        const e = easeInOutQuad((k - strikeEnd) / (1 - strikeEnd));
-        ang = lerp(fwd, 0.42, e); reach = lerp(34, 25, e); wrist = lerp(-0.1, 0.34, e);
+        // Recovery starts from exactly where the strike left the blade —
+        // `over` and TUCK_REACH — so there is no discontinuity to see.
+        const e = smootherstep((k - strikeEnd) / (1 - strikeEnd));
+        ang = lerp(over, 0.42, e);
+        reach = lerp(TUCK_REACH, REST_REACH, e);
+        wrist = lerp(-0.1, 0.34, e);
       }
+      // Feed the blade tip to the motion ribbon every frame of the swing, so
+      // the trail follows the arc the blade actually travelled. Same pivot and
+      // facing convention the impact wedge uses.
+      const tipR = reach * BLADE_TIP_SCALE;
+      this.fx.bladeTrail(
+        this.x + Math.cos(ang) * tipR * this.facing,
+        (this.y - 92) + Math.sin(ang) * tipR,
+        bladeTrailColor(wpn)
+      );
       if (k >= 1) this.slash = null;
     }
 
@@ -732,7 +1228,7 @@ export class Player {
         this.fx.blood(e.x - this.facing * 6, e.y - 92, this.facing);
         this.hud.hitmark(killed ? 'kill' : 'hit');
         if (killed) this.hud.notify('HOSTILE ELIMINATED — MELEE');
-        if (game && game.onPlayerHit) game.onPlayerHit(false, killed);
+        if (game && game.onPlayerHit) game.onPlayerHit(false, killed, e);
         hit = true;
       }
     }
@@ -756,6 +1252,16 @@ export class Player {
     this.stunT = Math.max(this.stunT, dmg > 14 ? 0.16 : 0.06);
     this.audio.hurt();
     this.cam.addTrauma(clamp(0.15 + dmg * 0.009, 0.15, 0.4));
+    // A solid hit rocks the body away from where it came from: shot from the
+    // front and the torso pitches back, shot from behind and it pitches
+    // forward. Light chip damage is left alone so sustained fire doesn't turn
+    // into a permanent wobble.
+    if (dmg > 8) {
+      const fromFront = sourceX === undefined
+        ? true
+        : Math.sign(sourceX - this.x) === Math.sign(this.facing || 1);
+      this.stumble(fromFront ? -1 : 1, clamp(dmg / 34, 0.25, 1));
+    }
     this.hud.damageFlash(this.hp / this.maxHp);
     this.fx.blood(this.x, this.y - 90, dirX);
     this.hud.damageDirection(sourceX === undefined ? 0 : sourceX - this.x, sourceX === undefined);
@@ -763,12 +1269,13 @@ export class Player {
       this.hp = 0;
       this.deadT = 0.001;
       this.cam.addTrauma(0.7);
+      if (this.onDeath) this.onDeath();
     }
   }
 
-  draw(g) {
+  draw(g, opts = null) {
     const cur = this.cur;
-    drawSoldier(g, this.parts, this.shadow, this, { wpn: cur.wpn, ws: cur.ws });
+    drawSoldier(g, this.parts, this.shadow, this, { wpn: cur.wpn, ws: cur.ws }, opts);
   }
 }
 

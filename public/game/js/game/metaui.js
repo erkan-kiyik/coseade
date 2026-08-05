@@ -4,8 +4,13 @@
 
 import {
   CATALOG, RARITY, CRATE_COST, DUPLICATE_REFUND, LOADOUT_SLOTS,
-  rollCrate, itemsForSlot, itemById,
+  rollCrate, itemsForSlot, itemById, weaponVariantIds, LOOT_POOL, describePerk,
 } from './meta.js';
+import { weaponStatRows, weaponForItem } from './weaponstats.js';
+import { AD_CRATE_DAILY_LIMIT } from './progression.js';
+import { watchRewardedAd } from '../engine/ads.js';
+import { playCurrencyGain, animateCount } from './currencyfx.js';
+import { t, onLangChange } from '../engine/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,11 +27,11 @@ export class MetaUI {
 
   // display name for a card's item (weapons resolve to their live def name)
   itemLabel(item) {
-    if (!item) return 'STOCK';
+    if (!item) return t('item.stock');
     if (item.weaponId && this.weapons[item.weaponId]) return this.weapons[item.weaponId].name;
     return item.name;
   }
-  itemOwned(item) { return !item || item.always || this.p.owns(item.id); }
+  itemOwned(item) { return !item || this.p.owns(item.id); }
 
   mount() {
     // bottom tabs
@@ -34,17 +39,45 @@ export class MetaUI {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
     $('btn-open-crate').addEventListener('click', () => this.openCrate());
+    $('btn-watch-ad').addEventListener('click', () => this.openCrateWithAd());
     $('reveal-done').addEventListener('click', () => this.closeReveal());
     $('crate-cost').textContent = String(CRATE_COST);
+    // inspect sheet
+    $('btn-inspect-close').addEventListener('click', () => this.closeInspect());
+    $('inspect').addEventListener('click', (e) => {
+      // tapping the dimmed backdrop dismisses; taps inside the card do not
+      if (e.target === $('inspect')) this.closeInspect();
+    });
+    $('btn-inspect-equip').addEventListener('click', () => {
+      const ctx = this._inspect;
+      if (!ctx || ctx.locked) return;
+      this.p.equip(ctx.slotKey, ctx.item ? ctx.item.id : null);
+      if (this.audio) (this.audio.equip ? this.audio.equip() : this.audio.ui());
+      this.closeInspect();
+      this.renderLoadout();
+    });
+    // Labels built here (slot heads, rarity chips, ad button) aren't static
+    // markup, so they need an explicit repaint when the language changes.
+    onLangChange(() => this.refresh());
     this.refresh();
   }
 
   // Re-read progression and repaint everything (call on menu show / after runs).
   refresh() {
     this.renderTokens();
-    this.renderLoadoutChips();
     this.renderLoadout();
     this.renderCollection();
+    this.renderAdButton();
+  }
+
+  renderAdButton() {
+    const btn = $('btn-watch-ad');
+    if (!btn) return;
+    const left = this.p.adCratesRemaining();
+    btn.querySelector('.ad-remaining').textContent = left > 0
+      ? t('crates.leftToday', { n: left, max: AD_CRATE_DAILY_LIMIT })
+      : t('crates.comeBack');
+    btn.disabled = left <= 0;
   }
 
   switchTab(name) {
@@ -54,26 +87,13 @@ export class MetaUI {
   }
 
   renderTokens() {
-    $('token-count').textContent = String(this.p.tokens);
-  }
-
-  // Compact equipped-gear summary shown on the PLAY tab.
-  renderLoadoutChips() {
-    const wrap = $('loadout-chips');
-    wrap.innerHTML = '';
-    const chips = [];
-    for (const slot of LOADOUT_SLOTS) {
-      const id = this.p.equipped(slot.key);
-      const item = id && itemById(id);
-      const label = item ? this.itemLabel(item).replace(/^.*·\s*/, '') : 'STOCK';
-      chips.push(`${slot.label}: ${label}`);
-    }
-    for (const text of chips) {
-      const c = document.createElement('span');
-      c.className = 'chip';
-      c.textContent = text;
-      wrap.appendChild(c);
-    }
+    const el = $('token-count');
+    const n = this.p.tokens;
+    const prev = this._lastTokenCount;
+    this._lastTokenCount = n;
+    if (prev == null || n <= prev) { el.textContent = String(n); return; }   // init / spend: snap
+    animateCount(el, prev, n);
+    playCurrencyGain(document.querySelector('.token-pill'), 'para', this.audio);
   }
 
   renderLoadout() {
@@ -88,8 +108,8 @@ export class MetaUI {
       const head = document.createElement('div');
       head.className = 'loadout-slot-head';
       const eqItem = equippedId && itemById(equippedId);
-      head.innerHTML = `<span class="loadout-slot-label">${slot.label}</span>` +
-        `<span class="loadout-slot-equipped">${eqItem ? this.itemLabel(eqItem) : 'STOCK'}</span>`;
+      head.innerHTML = `<span class="loadout-slot-label">${t(slot.labelKey)}</span>` +
+        `<span class="loadout-slot-equipped">${eqItem ? this.itemLabel(eqItem) : t('item.stock')}</span>`;
       box.appendChild(head);
 
       const row = document.createElement('div');
@@ -108,7 +128,10 @@ export class MetaUI {
     const card = document.createElement('div');
     const rarity = item ? RARITY[item.rarity] : null;
     card.className = 'item-card' + (equipped ? ' equipped' : '') + (locked ? ' locked' : '');
-    if (rarity) card.style.borderColor = rarity.color;
+    if (rarity) {
+      card.style.setProperty('--rarity', rarity.color);
+      card.style.setProperty('--rarity-glow', rarity.glow);
+    }
 
     const cv = document.createElement('canvas');
     cv.className = 'item-preview';
@@ -123,14 +146,31 @@ export class MetaUI {
       const r = document.createElement('div');
       r.className = 'item-rarity';
       r.style.color = rarity.color;
-      r.textContent = locked ? 'LOCKED' : rarity.label;
+      r.textContent = locked ? t('item.locked') : t(rarity.labelKey);
       card.appendChild(r);
       if (item.tag) {
-        const t = document.createElement('div');
-        t.className = 'item-tag';
-        t.textContent = item.tag;
-        card.appendChild(t);
+        const tagEl = document.createElement('div');
+        tagEl.className = 'item-tag';
+        tagEl.textContent = item.tag;
+        card.appendChild(tagEl);
       }
+    }
+
+    // Inspect affordance. The card body still equips on tap — that one-tap
+    // flow is the fast path and shouldn't get slower — so inspect gets its own
+    // thumb-sized target instead of stealing the tap or needing a long-press
+    // (long-press competes with scrolling on a touch device).
+    if (item) {
+      const info = document.createElement('button');
+      info.className = 'item-info';
+      info.type = 'button';
+      info.textContent = 'i';
+      info.setAttribute('aria-label', t('inspect.title'));
+      info.addEventListener('click', (e) => {
+        e.stopPropagation();          // don't equip on the way past
+        this.openInspect(item, slotKey, locked);
+      });
+      card.appendChild(info);
     }
 
     // draw preview after it's in the DOM (needs a layout size)
@@ -138,14 +178,128 @@ export class MetaUI {
 
     if (!locked) {
       card.addEventListener('click', () => {
-        if (item && item.always) { this.p.data.loadout[slotKey] = item.id; this.p.save(); }
-        else this.p.equip(slotKey, item ? item.id : null);
+        this.p.equip(slotKey, item ? item.id : null);
         if (this.audio) this.audio.equip ? this.audio.equip() : this.audio.ui();
         this.renderLoadout();
-        this.renderLoadoutChips();
       });
     }
     return card;
+  }
+
+  // ---- weapon inspect sheet ----------------------------------------
+  // Renders the stat readout for a tapped item. Every label goes through
+  // t(), and the metric keys live in weaponstats.js — nothing here spells a
+  // stat name out, so a new metric or a new language needs no change to this
+  // function.
+  openInspect(item, slotKey, locked = false) {
+    this._inspect = { item, slotKey, locked };
+    const rarity = item ? RARITY[item.rarity] : null;
+
+    const card = document.querySelector('.inspect-card');
+    if (rarity) {
+      card.style.setProperty('--rarity', rarity.color);
+      card.style.setProperty('--rarity-glow', rarity.glow);
+    }
+    $('inspect-name').textContent = this.itemLabel(item);
+    const rr = $('inspect-rarity');
+    rr.textContent = rarity
+      ? (locked ? t('item.locked') : t(rarity.labelKey))
+      : '';
+
+    const body = $('inspect-body');
+    body.innerHTML = '';
+
+    // --- ballistics ---
+    const weapon = weaponForItem(item, this.weapons);
+    const rows = weaponStatRows(weapon, this.weapons);
+    if (rows.length) {
+      body.appendChild(this.statGroupTitle(t('inspect.title')));
+      for (const r of rows) body.appendChild(this.statRow(r));
+    } else if (weapon) {
+      // a real weapon with no ballistics — the knife
+      const p = document.createElement('div');
+      p.className = 'inspect-empty';
+      p.textContent = t('inspect.noStats');
+      body.appendChild(p);
+    }
+
+    // --- perks (operators, boss redeemables, some skins) ---
+    const perks = describePerk(item && item.perk);
+    if (perks.length) {
+      body.appendChild(this.statGroupTitle(t('inspect.perks')));
+      for (const p of perks) {
+        const row = document.createElement('div');
+        row.className = 'perk-row';
+        const l = document.createElement('span');
+        l.className = 'perk-label';
+        // perk rows carry their own i18n key from PERK_DEFS
+        l.textContent = t(p.key);
+        const v = document.createElement('span');
+        v.className = 'perk-value';
+        v.textContent = p.value;
+        row.appendChild(l); row.appendChild(v);
+        body.appendChild(row);
+      }
+    }
+
+    // --- actions ---
+    const eqBtn = $('btn-inspect-equip');
+    const isEquipped = item && this.p.equipped(slotKey) === item.id;
+    eqBtn.textContent = locked ? t('item.locked')
+      : isEquipped ? t('inspect.equipped') : t('inspect.equip');
+    eqBtn.disabled = !!locked || !!isEquipped;
+
+    $('inspect').classList.remove('hidden');
+    // preview needs a laid-out canvas, and the bars animate from zero — both
+    // have to wait a frame after the sheet becomes visible
+    requestAnimationFrame(() => {
+      this.previewItem(item, $('inspect-preview'));
+      body.querySelectorAll('.stat-fill').forEach((el) => {
+        el.style.width = `${(parseFloat(el.dataset.fill) * 100).toFixed(1)}%`;
+      });
+    });
+    if (this.audio) this.audio.ui();
+  }
+
+  closeInspect() {
+    $('inspect').classList.add('hidden');
+    this._inspect = null;
+  }
+
+  statGroupTitle(text) {
+    const h = document.createElement('div');
+    h.className = 'stat-group-title';
+    h.textContent = text;
+    return h;
+  }
+
+  // label + value on one line, proportional bar underneath. `fill` is already
+  // normalised so a long bar always means "better", whichever direction the
+  // underlying metric runs (see weaponstats.js).
+  statRow(r) {
+    const row = document.createElement('div');
+    row.className = 'stat-row';
+
+    const top = document.createElement('div');
+    top.className = 'stat-row-top';
+    const l = document.createElement('span');
+    l.className = 'stat-label';
+    l.textContent = r.label;
+    const v = document.createElement('span');
+    v.className = 'stat-value';
+    v.textContent = r.value;
+    top.appendChild(l); top.appendChild(v);
+
+    const track = document.createElement('div');
+    track.className = 'stat-track';
+    const fill = document.createElement('div');
+    fill.className = 'stat-fill';
+    fill.style.setProperty('--stat-color', r.color);
+    fill.dataset.fill = String(r.fill);   // width applied next frame, so it animates
+    track.appendChild(fill);
+
+    row.appendChild(top); row.appendChild(track);
+    return row;
   }
 
   renderCollection() {
@@ -158,7 +312,8 @@ export class MetaUI {
       const rarity = RARITY[item.rarity];
       const card = document.createElement('div');
       card.className = 'item-card' + (has ? '' : ' locked');
-      card.style.borderColor = rarity.color;
+      card.style.setProperty('--rarity', rarity.color);
+      card.style.setProperty('--rarity-glow', rarity.glow);
       const cv = document.createElement('canvas');
       cv.className = 'item-preview';
       card.appendChild(cv);
@@ -169,7 +324,7 @@ export class MetaUI {
       const r = document.createElement('div');
       r.className = 'item-rarity';
       r.style.color = rarity.color;
-      r.textContent = has ? rarity.label : 'LOCKED';
+      r.textContent = has ? t(rarity.labelKey) : t('item.locked');
       card.appendChild(r);
       grid.appendChild(card);
       requestAnimationFrame(() => this.previewItem(has ? item : null, cv));
@@ -177,19 +332,19 @@ export class MetaUI {
     $('collection-count').textContent = `${owned} / ${CATALOG.length}`;
   }
 
-  // ---- crate open: spend, roll, spin the reel, reveal ----
-  openCrate() {
+  // ---- crate open: spend (tokens or a watched ad), roll, spin, reveal ----
+  openCrate({ free = false } = {}) {
     if (this.busy) return;
     const msg = $('crate-msg');
-    if (this.p.tokens < CRATE_COST) {
-      msg.textContent = 'NOT ENOUGH TOKENS — ELIMINATE HOSTILES TO EARN MORE';
+    if (!free && this.p.tokens < CRATE_COST) {
+      msg.textContent = t('crates.notEnough');
       msg.classList.add('warn');
       return;
     }
     msg.classList.remove('warn');
     msg.textContent = '';
     this.busy = true;
-    this.p.spendTokens(CRATE_COST);
+    if (!free) this.p.spendTokens(CRATE_COST);
     this.p.data.cratesOpened++;
     this.renderTokens();
     if (this.audio) this.audio.ui();
@@ -198,9 +353,37 @@ export class MetaUI {
     const isDup = this.p.owns(drop.id);
     let refund = 0;
     if (isDup) { refund = Math.round(CRATE_COST * DUPLICATE_REFUND); this.p.addTokens(refund); }
+    else if (drop.weaponId) { for (const vid of weaponVariantIds(drop.weaponId)) this.p.grant(vid); }
     else this.p.grant(drop.id);
 
     this.playCaseOpen(() => this.spinReel(drop, () => this.showReveal(drop, isDup, refund)));
+  }
+
+  // Free crate paid for by finishing a rewarded ad instead of tokens.
+  openCrateWithAd() {
+    if (this.busy) return;
+    const msg = $('crate-msg');
+    if (this.p.adCratesRemaining() <= 0) {
+      msg.textContent = t('crates.adLimit');
+      msg.classList.add('warn');
+      return;
+    }
+    msg.classList.remove('warn');
+    msg.textContent = t('crates.loadingAd');
+    this.busy = true;
+    watchRewardedAd(
+      () => {
+        this.p.recordAdCrateWatch();
+        this.renderAdButton();
+        this.busy = false;
+        msg.textContent = '';
+        this.openCrate({ free: true });
+      },
+      () => {
+        this.busy = false;
+        msg.textContent = '';
+      }
+    );
   }
 
   // Plays a short "case cracks open" beat on the static crate display — lid
@@ -232,7 +415,7 @@ export class MetaUI {
     const WIN_INDEX = 44;
     const total = 52;
     for (let i = 0; i < total; i++) {
-      const item = i === WIN_INDEX ? winner : CATALOG[Math.floor(Math.random() * CATALOG.length)];
+      const item = i === WIN_INDEX ? winner : LOOT_POOL[Math.floor(Math.random() * LOOT_POOL.length)];
       const rarity = RARITY[item.rarity];
       const cell = document.createElement('div');
       cell.className = 'reel-cell';
@@ -275,13 +458,13 @@ export class MetaUI {
     const card = $('reveal-card');
     card.style.borderColor = rarity.color;
     card.style.boxShadow = `0 0 40px ${rarity.glow}`;
-    $('reveal-rarity').textContent = rarity.label;
+    $('reveal-rarity').textContent = t(rarity.labelKey);
     $('reveal-rarity').style.color = rarity.color;
     $('reveal-name').textContent = item.name;
     $('reveal-kind').textContent = item.kind + (item.tag ? ` · ${item.tag}` : '');
     const status = $('reveal-status');
-    if (isDup) { status.textContent = `DUPLICATE — +${refund} ◈ REFUNDED`; status.style.color = 'var(--ink-dim)'; }
-    else { status.textContent = 'NEW — ADDED TO COLLECTION'; status.style.color = rarity.color; }
+    if (isDup) { status.textContent = t('reveal.duplicate', { n: refund }); status.style.color = 'var(--ink-dim)'; }
+    else { status.textContent = t('reveal.new'); status.style.color = rarity.color; }
     card.classList.remove('hidden');
     $('reveal-done').classList.remove('hidden');
     if (this.audio) {

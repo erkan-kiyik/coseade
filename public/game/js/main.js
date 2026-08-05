@@ -10,23 +10,60 @@ import { audio } from './engine/audio.js';
 import { clamp, damp, lerp, rand, randSpread, makeNoise1D } from './engine/math.js';
 import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
 import { quality } from './engine/quality.js';
+import { device, applyDeviceProfile } from './engine/device.js';
+import { Intro } from './engine/intro.js';
+import { t, applyTranslations, cycleLang, getLang, LANGS } from './engine/i18n.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
 import { FX } from './game/fx.js';
 import { Player } from './game/player.js';
-import { Enemy, getGlobalDetection } from './game/enemy.js';
+import { Enemy, Boss, BOSS_STAGE_INTERVAL, BOSS_WEAPONS, getGlobalDetection } from './game/enemy.js';
+import { aiSkill, enemyHp, dmgMul, isBossStage, bossTier } from './game/difficulty.js';
 import { Hud } from './game/hud.js';
 import { Progression, UNLOCKS } from './game/progression.js';
-import { applyLoadout, ALL_WEAPON_IDS } from './game/meta.js';
+import { DayCycle, formatHour } from './engine/daycycle.js';
+import { applyLoadout } from './game/meta.js';
 import { MetaUI } from './game/metaui.js';
+import { StoreUI } from './game/storeui.js';
+import { StatsUI } from './game/statsui.js';
+import { ArchivesUI } from './game/archives.js';
+import { ProfileUI } from './game/profile.js';
+import { intelTitleKey } from './game/intel.js';
 import { TouchControls } from './engine/touch.js';
+import { watchRewardedAd } from './engine/ads.js';
+import { mountCurrencyIcons } from './art/currency.js';
+import { dailyStatus, claimDaily, DAILY_REWARDS } from './game/retention.js';
+import { paintShareCard, shareCard } from './game/sharecard.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const hud = new Hud();
+mountCurrencyIcons(document);   // paint the static header-pill / HUD currency icons
 const params = new URLSearchParams(location.search);
 const DEMO = params.has('demo');
+// Stats page: a kill within this many seconds of the last one extends the
+// combo; longer than this and the next kill starts a fresh combo of 1.
+const COMBO_WINDOW = 4.0;
+
+// Ground-accent colour: the single hairline under a character's feet that
+// replaced the old stamped contour (see rig.js). Warm accent rather than a
+// dark tint — it reads as a deliberate marker, not a leftover shadow.
+const CHAR_ACCENT_COLOR = 'rgba(255,120,96,0.55)';
+
+// Reticle bloom gains. Measured against the live weapon state: visSpread runs
+// ~0.025 at rest and peaks ~0.115 while spraying on the move, and the recoil
+// spring peaks ~1.45. These two land the reticle around 11px at rest and ~36px
+// at worst — wide enough to tell the player to stop spraying, tight enough to
+// still aim with. A literal projection of the cone would read past 50px.
+const CROSSHAIR_SPREAD_GAIN = 190;
+const CROSSHAIR_RECOIL_GAIN = 6;
+
+// Screen point -> world point, for reticle target testing.
+const cam2world = (cam, sx, sy) => cam.screenToWorld(sx, sy, vw, vh);
+
+// Seconds the mission briefing stays up before fading itself out.
+const LORE_HOLD = 3;
 
 let vw = 0, vh = 0, dpr = 1;
 let lightCv, lightG, glowCv, glowG, grainCv;
@@ -47,6 +84,8 @@ function resize() {
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   const l = makeCanvas(vw * dpr, vh * dpr); lightCv = l.cv; lightG = l.g;
   const g = makeCanvas(vw * dpr, vh * dpr); glowCv = g.cv; glowG = g.g;
+  // refresh --ui-scale so the DOM overlay tracks the new viewport
+  applyDeviceProfile();
   // keep the framing right across orientation / resize (not mid-cinematic)
   if (game && game.cam && game.state !== 'intro') game.cam.zoom = baseZoom();
 }
@@ -146,7 +185,13 @@ function previewItem(item, cv) {
 }
 
 async function boot() {
+  applyTranslations();          // fill static markup before the first paint
   hud.show('loading');
+  // The animated boot sequence runs *while* assets paint, so the wait is the
+  // show rather than a static card. It holds for its own minimum runtime and
+  // then waits on assetsDone(), whichever is later — see engine/intro.js.
+  const intro = new Intro(document.getElementById('intro-canvas'));
+  const introDone = intro.run();
   // bake sprites at the resolution the chosen quality tier calls for — set
   // once, before the first paint call, since assets are only built here
   setAssetScale(quality.preset.assetScale);
@@ -155,6 +200,8 @@ async function boot() {
   assets.ranger = buildSoldier('ranger');
   assets.phantom = buildSoldier('phantom');
   assets.nomad = buildSoldier('nomad');
+  assets.viper = buildSoldier('viper');
+  assets.arctic = buildSoldier('arctic');
   assets.shadow = makeShadowSprite();
   hud.setLoad(0.3, 'MACHINING WEAPONS…');
   await raf();
@@ -167,9 +214,6 @@ async function boot() {
   game = new Game();
   if (DEMO) window.__game = game;  // scripted-screenshot / test hook only
 
-  // every weapon is freely selectable in the loadout (not crate loot)
-  for (const id of ALL_WEAPON_IDS) if (!game.progression.owns(id)) game.progression.grant(id);
-
   // meta screens (loadout / crates) + on-screen controls
   game.metaUI = new MetaUI({
     progression: game.progression,
@@ -178,13 +222,33 @@ async function boot() {
     audio,
   });
   game.metaUI.mount();
+  game.storeUI = new StoreUI({ progression: game.progression, previewItem, audio });
+  game.storeUI.mount();
+  document.querySelector('[data-tab="store"]').addEventListener('click', () => game.storeUI.refresh());
+  game.statsUI = new StatsUI({ progression: game.progression, weapons: assets.weapons, audio });
+  game.statsUI.mount();
+  document.querySelector('[data-tab="stats"]').addEventListener('click', () => game.statsUI.refresh());
+  game.archivesUI = new ArchivesUI({ progression: game.progression, audio });
+  game.archivesUI.mount();
+  game.profileUI = new ProfileUI({
+    progression: game.progression, weapons: assets.weapons, previewItem, audio,
+  });
+  game.profileUI.mount();
   game.touch = new TouchControls(input, { force: params.has('touch') });
   game.touch.mount();
 
   hud.setLoad(1, 'READY');
-  await raf();
+  // hand the intro its cue, then wait for it to finish its fade
+  intro.assetsDone();
+  await introDone;
   if (DEMO) game.deploy();
-  else { hud.show('menu'); game.state = 'menu'; game.metaUI.refresh(); }
+  else {
+    hud.show('menu'); game.state = 'menu';
+    game.metaUI.refresh(); game.storeUI.refresh(); game.statsUI.refresh();
+    game.archivesUI.render();
+    game.refreshLevelSelect();   // boot sets state directly, bypassing setState()
+    game.offerDailyReward();   // lands on the menu, never mid-run
+  }
   requestAnimationFrame(frame);
 }
 
@@ -199,6 +263,8 @@ class Game {
     this.fx = new FX(this.particles, audio, this.cam, this.world);
     this.fx.bindGame(this);   // lets energy projectiles resolve damage
     this.progression = new Progression();
+    // TimeShift clock — advances on death and on stage clear, never on frame time.
+    this.day = new DayCycle();
     this.state = 'menu';
     this.time = 0;
     this.menuPanT = 0;
@@ -207,6 +273,7 @@ class Game {
     this.chainQueue = [];
     this.stage = 1;
     this.pendingResume = null;   // run snapshot to restore on the next reset()
+    this.pendingStage = null;    // explicit stage picked from the level select
     this._autosaveT = 0;
     this._prevDetState = 'hidden';
     // the full walk-in cinematic only plays once per session (and never in
@@ -214,9 +281,32 @@ class Game {
     this.introShown = DEMO;
     this.introBeats = new Set();
     this.introEnding = false;
+    this.reviveOffered = false;   // one watch-ad continue per deploy
+    this._reviveTimer = null;
+    // ---- stats page: all in-memory, flushed to Progression in batches
+    // (never per-shot/per-frame) so tracking never touches localStorage at
+    // a frequency that could cost a frame ----
+    this._weaponShotsThisRun = {};
+    this._playtimeAccumMs = 0;
+    this.currentKillStreak = 0;
+    this.comboCount = 0; this.comboTimer = 0;
+    this.isBossStage = false;
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
+      // Level select: launching a specific sector is always a fresh mission
+      // into that stage, so any half-finished run snapshot is discarded first.
+      pickStage: (n) => {
+        // Belt-and-braces: the UI only renders replayable arenas, but the
+        // handler refuses anything else so a stale DOM node can't launch an
+        // intermediate stage out of order.
+        if (!this.progression.canReplay(n)) return;
+        audio.resume(); audio.ui();
+        this.progression.clearRun();
+        this.pendingResume = null;
+        this.pendingStage = n;
+        this.deploy();
+      },
       resume: () => { audio.ui(); this.setState('play'); },
       // restart is an explicit fresh mission — discard the resume snapshot
       restart: () => { audio.ui(); this.progression.clearRun(); this.pendingResume = null; this.reset(); this.setState('play'); },
@@ -229,21 +319,52 @@ class Game {
         resize();
         hud.setGraphicsTier(quality.preset.name);
       },
+      watchAdRevive: () => { audio.ui(); this.reviveViaAd(); },
+      skipRevive: () => { audio.ui(); this.declineRevive(); },
+      // Cycles TR ⇄ EN. The static markup is re-filled by i18n itself; the
+      // screens that build their labels in JS repaint through onLangChange.
+      language: () => { audio.ui(); cycleLang(); hud.setLanguage(); },
+      share: () => { audio.ui(); this.openShareCard(); },
+      shareSend: () => { audio.ui(); this.sendShareCard(); },
+      shareClose: () => { audio.ui(); hud.showShareCard(false); },
+      claimDaily: () => { audio.ui(); this.claimDailyReward(); },
     });
     hud.setGraphicsTier(quality.preset.name);
+    hud.setLanguage();
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
 
   spawnEnemiesForStage() {
-    const diff = clamp(this.stage - 1, 0, 8);
-    this.enemies = this.world.enemySpawns.map((s) => {
-      const e = new Enemy(assets.phantom, assets.shadow, assets.weapons.rifle, this.world, this.fx, audio, s.x, s.min, s.max);
-      e.y = s.y;
-      e.difficulty = diff;
-      e.maxHp = 100 + Math.min(60, diff * 5);
-      e.hp = e.maxHp;
-      return e;
-    });
+    // Every scaling number comes from game/difficulty.js. The clamps that used
+    // to live here (`clamp(stage - 1, 0, 8)`, `Math.min(60, diff * 5)`) meant
+    // difficulty stopped growing at stage 9 — stage 40 played exactly like
+    // stage 10, which is what made the endless campaign feel finite.
+    const skill = aiSkill(this.stage);
+    this.isBossStage = isBossStage(this.stage);
+    if (this.isBossStage) {
+      // one heavyweight encounter in place of the regular squad — spawned at
+      // the map's middle spawn point (a reasonable, already-clear patrol lane)
+      // so no map/world-generation code needs to know bosses exist
+      const spawns = this.world.enemySpawns;
+      const mid = spawns[Math.floor(spawns.length / 2)] || { x: MAP_W * 0.55, y: GROUND_Y, min: MAP_W * 0.4, max: MAP_W * 0.75 };
+      // Bosses carry heavy weapons, never an infantry rifle — the weapon id
+      // is chosen by tier in the Boss constructor (see BOSS_WEAPONS).
+      const tier = bossTier(this.stage);
+      const bossWpn = assets.weapons[BOSS_WEAPONS[tier % BOSS_WEAPONS.length]] || assets.weapons.rifle;
+      const boss = new Boss(assets.phantom, assets.shadow, bossWpn, this.world, this.fx, audio, mid.x, mid.min, mid.max, this.stage);
+      boss.y = mid.y;
+      this.enemies = [boss];
+    } else {
+      this.enemies = this.world.enemySpawns.map((s) => {
+        const e = new Enemy(assets.phantom, assets.shadow, assets.weapons.rifle, this.world, this.fx, audio, s.x, s.min, s.max);
+        e.y = s.y;
+        e.difficulty = skill;
+        e.maxHp = enemyHp(this.stage);
+        e.hp = e.maxHp;
+        e.dmgMul = dmgMul(this.stage);
+        return e;
+      });
+    }
   }
 
   // Re-applies every unlock the player has already earned (across sessions)
@@ -273,17 +394,20 @@ class Game {
     for (const u of res.newUnlocks) this.applyUnlock(u);
     hud.setSlot4Visible(this.player.smgUnlocked);
     const extra = res.newUnlocks.length ? ' — ' + res.newUnlocks.map((u) => u.label).join(', ') : '';
-    hud.notify(`LEVEL UP — ${res.newLevel}${extra}`);
+    hud.notify(t('notify.levelUp', { n: res.newLevel }) + extra);
     return true;
   }
 
-  onPlayerHit(headshot, killed) {
+  onPlayerHit(headshot, killed, enemy) {
     if (!killed) return;
     this.progression.recordKill(headshot);   // also awards tokens
     this.progression.addBpXp(headshot ? 20 : 12);   // battle-pass progress (currency system stays intact even though the shop UI is gone)
     hud.setTokens(this.progression.tokens);
     const res = this.progression.addXp(10 + (headshot ? 15 : 0));
     this.handleLevelUp(res);
+    this.registerKill();
+    this.rollIntel(enemy);
+    if (enemy && enemy.isBoss) this.onBossDefeated(enemy);
   }
 
   // Silent takedown reward: counts as an elimination, with a small bonus for
@@ -294,6 +418,85 @@ class Game {
     hud.setTokens(this.progression.tokens);
     const res = this.progression.addXp(14);
     this.handleLevelUp(res);
+    this.registerKill();
+    this.rollIntel(enemy);
+    if (enemy && enemy.isBoss) this.onBossDefeated(enemy);
+  }
+
+  // Intel log drop. Rolled on every elimination, silent-takedown included —
+  // a body is a body, and gating lore behind loud kills would have punished
+  // exactly the stealth play the takedown mechanic exists to encourage.
+  //
+  // Called before onBossDefeated so a boss's intel toast lands ahead of the
+  // boss-down banner rather than on top of it.
+  rollIntel(enemy) {
+    const isBoss = !!(enemy && enemy.isBoss);
+    const res = this.progression.rollIntel(isBoss, this.stage, this.player ? this.player.luckMul : 1);
+    if (!res) return;
+    if (res.kind === 'log') {
+      hud.showIntel(t(intelTitleKey(res.log.id)), t('intel.found'));
+    } else {
+      // Archive already complete — the roll still paid, so say what it paid.
+      hud.setTokens(this.progression.tokens);
+      hud.showIntel('', t('intel.para', { n: res.amount }));
+    }
+    audio.ui();
+  }
+
+  // Bonus payout + a distinct toast on top of the regular kill reward —
+  // boss stages otherwise play through the exact same reward path as any
+  // other elimination.
+  onBossDefeated(boss) {
+    this.progression.recordBossKill();
+    hud.setTokens(this.progression.tokens);
+    hud.showBoss(false);
+    hud.notify(t('notify.bossDown', { name: boss.name }));
+
+    // Boss Redeemable roll — 1/1000, boss kills only. This is the sole way
+    // these items enter a save; nothing in the crate or the Diamond store
+    // can produce one. Loot Luck from the equipped perk block scales it.
+    const drop = this.progression.rollBossReward(this.player ? this.player.luckMul : 1);
+    if (drop) {
+      hud.notify(t('notify.bossDrop', { name: drop.name }));
+      audio.ui();
+      // A drop this rare deserves its own beat rather than a queued toast.
+      if (hud.showBossDrop) hud.showBossDrop(drop);
+    }
+  }
+
+  // Stats page: kill streak (kills since the operator last went down) and
+  // combo (kills landed within COMBO_WINDOW of each other) — both just
+  // record new personal bests; the live counters reset via resetKillStreak
+  // (on death) and the comboTimer countdown in update() (on a lull).
+  registerKill() {
+    this.currentKillStreak++;
+    this.progression.recordKillStreak(this.currentKillStreak);
+    this.comboCount = this.comboTimer > 0 ? this.comboCount + 1 : 1;
+    this.comboTimer = COMBO_WINDOW;
+    this.progression.recordCombo(this.comboCount);
+  }
+
+  resetKillStreak() { this.currentKillStreak = 0; }
+
+  // Called by Player.fire() every trigger pull — in-memory only, flushed to
+  // Progression in one batch at run end (see finish()).
+  recordWeaponShot(weaponId) {
+    this._weaponShotsThisRun[weaponId] = (this._weaponShotsThisRun[weaponId] || 0) + 1;
+  }
+
+  // The run state the world's look is derived from — the clock hour and how
+  // many times this stage has beaten the player back. Weather and the sky
+  // wash both come off this (see World.setTime / engine/daycycle.js), so a
+  // stage that has killed you six times looks materially worse than a fresh one.
+  runCtx() {
+    return { hour: this.day.hour, attempts: this.progression.attempts(this.stage) };
+  }
+
+  // Repaints the level-select grid from current progress. Called whenever the
+  // menu is shown, so clearing a stage makes it immediately replayable.
+  refreshLevelSelect() {
+    // Boss arenas only — see Progression.bossStages / Hud.renderLevelSelect.
+    hud.renderLevelSelect(this.progression.clearedBossStages());
   }
 
   // Persist the live mission state so a reload continues from here.
@@ -311,10 +514,17 @@ class Game {
   reset() {
     // resume a saved run if one was queued (deploy → CONTINUE), else fresh
     const resume = this.pendingResume; this.pendingResume = null;
-    this.stage = resume ? resume.stage : 1;
-    this.world.regenerate(this.stage);
+    // Stage selection, in priority order:
+    //   1. an explicit level-select pick
+    //   2. a mid-run snapshot being resumed
+    //   3. the checkpoint — the stage after the last one cleared
+    // (3) is what stops a death sending the operator back to stage 1.
+    const picked = this.pendingStage; this.pendingStage = null;
+    this.stage = picked || (resume ? resume.stage : this.progression.resumeStage);
+    this.world.regenerate(this.stage, this.runCtx());
     this.player = new Player(assets.ranger, assets.shadow, assets.weapons, this.world, this.fx, this.cam, audio, hud);
     this.player.x = 260; this.player.y = GROUND_Y;
+    this.player.onDeath = () => this.resetKillStreak();
     this.applyAllUnlocks();
     applyLoadout(this.player, this.progression, assets);   // equipped crate cosmetics win
     if (resume) {
@@ -329,20 +539,36 @@ class Game {
     this.fx.tracers.length = 0; this.fx.lights.length = 0; this.fx.slashes.length = 0;
     this.chainQueue.length = 0;
     this.endDelay = 0;
+    this.reviveOffered = false;
+    if (this._reviveTimer) { clearInterval(this._reviveTimer); this._reviveTimer = null; }
+    hud.showRevive(false);
+    this._weaponShotsThisRun = {};
+    this.currentKillStreak = 0; this.comboCount = 0; this.comboTimer = 0;
     this.startTime = this.time;
     this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
     hud.setObjective(0, this.enemies.length);
     hud.setStage(this.stage);
     hud.setProgress(this.progression.data.level, this.progression.xpProgress());
     hud.setTokens(this.progression.tokens);
+    if (this.isBossStage) { hud.showBoss(true, this.enemies[0].name); hud.setBossHp(this.enemies[0].hp / this.enemies[0].maxHp); }
+    else hud.showBoss(false);
+    hud.setAttempt(this.progression.attempts(this.stage));
+    hud.showLore(LORE_HOLD);   // mission briefing on entering a fresh deployment
   }
 
   // Called when every hostile in the current stage is down: the campaign is
   // endless, so this rolls a fresh procedurally-generated stage rather than
   // ending the run. Player health/ammo/XP/unlocks carry over.
   nextStage() {
+    // Cleared the stage we were on, so its attempt tally resets — the counter
+    // only ever measures the wall the player is currently stuck behind.
+    this.progression.clearAttempts(this.stage);
+    // Bank the clear so a later death restarts here rather than at stage 1.
+    this.progression.recordStageCleared(this.stage);
+    // Taking ground costs time — the sky walks forward with the campaign.
+    this.day.onStageCleared();
     this.stage++;
-    this.world.regenerate(this.stage);
+    this.world.regenerate(this.stage, this.runCtx());
     this.spawnEnemiesForStage();
     this.player.x = 260; this.player.y = GROUND_Y; this.player.vx = 0; this.player.vy = 0;
     this.player.onGround = false;
@@ -353,9 +579,18 @@ class Game {
     this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
     hud.setObjective(0, this.enemies.length);
     hud.setStage(this.stage);
+    hud.setAttempt(this.progression.attempts(this.stage));
     const res = this.progression.addXp(50 + this.stage * 5);
     const leveled = this.handleLevelUp(res);
-    if (!leveled) hud.notify(`STAGE ${this.stage} — HOSTILES INBOUND`);
+    if (this.isBossStage) {
+      const boss = this.enemies[0];
+      hud.showBoss(true, boss.name);
+      hud.setBossHp(1);
+      if (!leveled) hud.notify(t('notify.bossIncoming', { name: boss.name }));
+    } else {
+      hud.showBoss(false);
+      if (!leveled) hud.notify(`STAGE ${this.stage} — HOSTILES INBOUND`);
+    }
     this.snapshotRun();   // checkpoint the new stage so a reload resumes here
   }
 
@@ -466,6 +701,12 @@ class Game {
     hud.show(s);
     if (s === 'play') this.snapshotRun();   // checkpoint as soon as play begins
     if (s === 'menu' && this.metaUI) this.metaUI.refresh();
+    if (s === 'menu' && this.storeUI) this.storeUI.refresh();
+    if (s === 'menu' && this.statsUI) this.statsUI.refresh();
+    // Logs are found mid-run, so the Archives are stale the moment a mission
+    // ends — repaint on the way back to the menu, not just on tab click.
+    if (s === 'menu' && this.archivesUI) this.archivesUI.render();
+    if (s === 'menu') this.refreshLevelSelect();
     if (this.touch) this.touch.setVisible(s === 'play');
   }
 
@@ -513,6 +754,7 @@ class Game {
       else if (this.state === 'pause') this.setState('play');
     }
     if (this.state === 'pause') { input.endFrame(); return; }
+    if (this.state === 'revive') { input.endFrame(); return; }
 
     this.world.update(dt);
     this.fx.update(dt);
@@ -553,6 +795,11 @@ class Game {
 
     const kills = this.enemies.filter((e) => e.deadT > 0).length;
     hud.setObjective(kills, this.enemies.length);
+    if (this.isBossStage) {
+      const boss = this.enemies[0];
+      if (boss.deadT > 0) hud.showBoss(false);
+      else hud.setBossHp(boss.hp / boss.maxHp);
+    }
 
     const det = getGlobalDetection(this.enemies);
     hud.setDetection(det.state, det.value);
@@ -580,7 +827,13 @@ class Game {
     if (this.state === 'play') {
       if (p.deadT > 0) {
         this.endDelay += dt;
-        if (this.endDelay > 2.4) this.finish();
+        // one chance to watch an ad and get back up before the run ends —
+        // offerRevive() moves to the 'revive' state, which freezes update()
+        // (see the early-return above), so this only ever fires once.
+        if (!this.reviveOffered && this.endDelay > 1.2) {
+          this.reviveOffered = true;
+          this.offerRevive();
+        }
       } else if (this.enemies.length > 0 && kills === this.enemies.length) {
         this.endDelay += dt;
         if (this.endDelay > 1.6) this.nextStage();
@@ -588,26 +841,133 @@ class Game {
       // lightweight periodic checkpoint — "save & continue" per spec: state
       // is captured frequently so a reload/close always resumes in place
       this._autosaveT += dt;
-      if (this._autosaveT > 4) { this._autosaveT = 0; this.snapshotRun(); }
+      this._playtimeAccumMs += dt * 1000;
+      if (this.comboTimer > 0) this.comboTimer -= dt;
+      if (this._autosaveT > 4) {
+        this._autosaveT = 0;
+        this.snapshotRun();
+        this.progression.addPlaytime(this._playtimeAccumMs);
+        this._playtimeAccumMs = 0;
+      }
     }
     input.endFrame();
+  }
+
+  // ---- revive: one watch-an-ad continue per deploy, offered right after
+  // going down. Accepting keeps the stage/kills/loadout exactly as they
+  // were — only HP resets — so the run's streak of stages isn't broken.
+  offerRevive() {
+    this.setState('revive');
+    hud.showRevive(true);
+    let secs = 6;
+    hud.setReviveCountdown(secs);
+    this._reviveTimer = setInterval(() => {
+      secs--;
+      hud.setReviveCountdown(secs);
+      if (secs <= 0) { clearInterval(this._reviveTimer); this._reviveTimer = null; this.declineRevive(); }
+    }, 1000);
+  }
+
+  reviveViaAd() {
+    if (this._reviveTimer) { clearInterval(this._reviveTimer); this._reviveTimer = null; }
+    hud.showRevive(false);
+    watchRewardedAd(
+      () => { this.progression.recordAdWatched(); this.doRevive(); },
+      () => this.declineRevive()
+    );
+  }
+
+  doRevive() {
+    const p = this.player;
+    p.deadT = 0; p.hp = Math.round(p.maxHp * 0.6);
+    p.hurtT = 0; p.stunT = 0;
+    this.endDelay = 0;
+    hud.showRevive(false);
+    this.setState('play');
+    this.snapshotRun();
+    hud.notify('BACK IN THE FIGHT');
+  }
+
+  declineRevive() {
+    if (this._reviveTimer) { clearInterval(this._reviveTimer); this._reviveTimer = null; }
+    hud.showRevive(false);
+    this.finish();
   }
 
   finish() {
     const p = this.player;
     const acc = p.shots ? Math.round((p.hits / p.shots) * 100) : 0;
-    const t = Math.round(this.time - this.startTime);
+    // `elapsed`, not `t` — `t` is the translation function in this module.
+    const elapsed = Math.round(this.time - this.startTime);
     this.progression.recordShots(p.shots, p.hits);
-    this.progression.recordRun(this.stage, t);
+    this.progression.recordRun(this.stage, elapsed);
+    this.progression.recordWeaponShots(this._weaponShotsThisRun);
+    this._weaponShotsThisRun = {};
+    this.progression.addPlaytime(this._playtimeAccumMs);
+    this._playtimeAccumMs = 0;
+    // The operator went down on this stage: bank the failure so the next
+    // deployment opens on attempt N+1, and headline that number on the death
+    // screen the way a Geometry Dash run does.
+    const nextAttempt = this.progression.recordAttempt(this.stage);
+    // TimeShift: every ATTEMPT tick pushes the sector's clock an hour on, so
+    // the sky is a running record of how long this wall has held the player.
+    this.day.onAttempt();
+    this.lastRunStats = { stage: this.stage, attempts: nextAttempt - 1, kills: p.kills };
     this.progression.clearRun();   // the run is over — nothing to resume
     hud.end([
       `STAGE REACHED — ${this.stage}`,
       `HOSTILES ELIMINATED — ${p.kills} &nbsp;(${p.headshots} HEADSHOTS)`,
       `ACCURACY — ${acc}%`,
-      `MISSION TIME — ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`,
+      `MISSION TIME — ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`,
       `OPERATOR LEVEL — ${this.progression.data.level}`,
-    ].join('<br>'));
+    ].join('<br>'), t('hud.attempt', { n: nextAttempt - 1 }));
     this.setState('end');
+  }
+
+  // ---- retention ----
+
+  // Offers today's login reward. Called when the menu becomes visible, so
+  // it lands on the screen the player is already looking at rather than
+  // interrupting a run.
+  offerDailyReward() {
+    // Never on a brand-new install. A first-time player should reach the
+    // DEPLOY button and be shooting within seconds, not read a streak chart
+    // for a streak they haven't started — the reward is there to pull people
+    // *back*, so it waits until they've actually played once.
+    if (!this.progression.data.totalKills && !this.progression.totalAttempts) return;
+    const st = dailyStatus();
+    if (!st.available) return;
+    hud.showDaily(true, { rewards: DAILY_REWARDS, day: st.day, streak: st.streak });
+  }
+
+  claimDailyReward() {
+    const reward = claimDaily();
+    if (!reward) { hud.showDaily(false); return; }
+    if (reward.kind === 'diamonds') this.progression.addDiamonds(reward.amount);
+    else this.progression.addTokens(reward.amount);
+    hud.markDailyClaimed();
+    if (audio.levelUp) audio.levelUp();
+    // Repaint the balances behind the overlay, then close it.
+    if (this.metaUI) this.metaUI.refresh();
+    if (this.storeUI) this.storeUI.refresh();
+    setTimeout(() => hud.showDaily(false), 900);
+  }
+
+  // Paints and shows the score card for the run that just ended.
+  // lastRunStats is set by finish().
+  openShareCard() {
+    const stats = this.lastRunStats || { stage: this.stage, attempts: 0, kills: 0 };
+    stats.tokens = this.progression.tokens;
+    const cv = hud.shareCanvasEl();
+    if (!cv) return;
+    paintShareCard(cv, stats);
+    hud.showShareCard(true);
+  }
+
+  async sendShareCard() {
+    const stats = this.lastRunStats || { stage: this.stage, attempts: 0, kills: 0 };
+    const kind = await shareCard(hud.shareCanvasEl(), stats);
+    hud.setShareResult(kind);
   }
 
   ambient(dt) {
@@ -643,6 +1003,23 @@ class Game {
           });
           if (Math.random() < 0.4) ventSmoke(this.particles, em.x, em.y - 10, -Math.PI / 2, 'soot', { sizeMul: 0.85 });
         }
+      } else if (em.kind === 'smolder') {
+        // Civil-war dressing: a barrel that has already burned out. No flame
+        // left, just a slow soot column and the odd ember lifting off the rim
+        // — the aftermath of a fight rather than one in progress.
+        if (!onScreen) continue;
+        em.t -= dt * mul;
+        if (em.t <= 0) {
+          em.t = em.rate;
+          ventSmoke(this.particles, em.x, em.y - 6, -Math.PI / 2, 'soot', { sizeMul: 1.25 });
+          if (Math.random() < 0.28) {
+            this.particles.spawn(K.EMBER, {
+              x: em.x + randSpread(6), y: em.y,
+              vx: randSpread(10), vy: -rand(20, 52),
+              life: rand(0.6, 1.5), size: rand(1.1, 2.1), drag: 1.7,
+            });
+          }
+        }
       } else if (em.kind === 'sparks') {
         E.sparks -= dt * mul;
         if (E.sparks <= 0) {
@@ -665,6 +1042,21 @@ class Game {
   // ------------------------------------------------------------ render
 
   render() {
+    // Hard reset of every piece of global canvas state at the top of the
+    // frame. The pass below composites with 'multiply', 'screen' and 'lighter'
+    // and applies `filter`; if any of those ever escaped (an early return, an
+    // exception mid-pass, a WebView that restores state differently), the next
+    // frame would composite the whole scene through it — which shows up as
+    // dark rectangles around sprites. Resetting unconditionally makes that
+    // class of bug impossible rather than relying on every path unwinding.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.filter = 'none';
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // background parallax stack (screen space)
     this.world.drawBackground(ctx, this.cam, vw, vh, this.time);
@@ -673,9 +1065,18 @@ class Game {
     ctx.save();
     this.cam.applyTransform(ctx, vw, vh);
     this.world.drawBack(ctx, this.cam, vw);
-    for (const e of this.enemies) if (e.deadT > 0) e.draw(ctx);
-    for (const e of this.enemies) if (e.deadT <= 0) e.draw(ctx);
-    if (this.state !== 'menu') this.player.draw(ctx);
+
+    // Characters draw last in this layer and carry a contour, so they read as
+    // the foreground subject against the (deliberately dimmed, desaturated)
+    // environment behind them. Off-screen hostiles are skipped outright —
+    // an endless stage can hold far more of them than are ever in frame, and
+    // the contour is the priciest per-character work in the loop.
+    const charOpts = this.characterDrawOpts();
+    const halfVis = vw / (2 * this.cam.zoom) + 220;
+    const onScreen = (e) => Math.abs(e.x - this.cam.x) < halfVis;
+    for (const e of this.enemies) if (e.deadT > 0 && onScreen(e)) e.draw(ctx);
+    for (const e of this.enemies) if (e.deadT <= 0 && onScreen(e)) e.draw(ctx);
+    if (this.state !== 'menu') this.player.draw(ctx, charOpts);
     this.particles.draw(ctx, false);
     this.fx.draw(ctx);
     ctx.save();
@@ -684,12 +1085,21 @@ class Game {
     ctx.restore();
     ctx.restore();
 
-    // foreground silhouettes
-    this.world.drawForeground(ctx, this.cam, vw, vh);
-
     this.compositeLighting();
     this.grade();
     if (this.state === 'play' && this.player.deadT <= 0) this.crosshair();
+  }
+
+  // Per-frame character draw options (ground-accent colour/width), rebuilt
+  // cheaply each frame so a graphics-tier change takes effect immediately.
+  // Returns null on tiers with the accent disabled.
+  characterDrawOpts() {
+    const px = quality.preset.accentPx;
+    if (!px) return null;
+    if (!this._charOpts || this._charOpts.accent.px !== px) {
+      this._charOpts = { accent: { color: CHAR_ACCENT_COLOR, px } };
+    }
+    return this._charOpts;
   }
 
   gatherLights() {
@@ -707,9 +1117,9 @@ class Game {
     lightG.globalCompositeOperation = 'source-over';
     const gsy = (vh / 2 + (GROUND_Y - this.cam.y) * this.cam.zoom) * dpr;
     const amb = lightG.createLinearGradient(0, 0, 0, Math.max(gsy, 1));
-    amb.addColorStop(0, 'rgb(138,144,164)');
-    amb.addColorStop(0.72, 'rgb(158,155,158)');
-    amb.addColorStop(1, 'rgb(182,170,156)');
+    amb.addColorStop(0, 'rgb(182,188,206)');
+    amb.addColorStop(0.72, 'rgb(204,201,204)');
+    amb.addColorStop(1, 'rgb(224,214,200)');
     lightG.fillStyle = amb;
     lightG.fillRect(0, 0, lightCv.width, lightCv.height);
     lightG.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -717,9 +1127,9 @@ class Game {
     lightG.globalCompositeOperation = 'lighter';
 
     // glow map only feeds the bloom pass below — skip filling it entirely
-    // when the quality tier has bloom off, rather than painting into it and
-    // then discarding the result
-    const bloomOn = quality.preset.bloom;
+    // when bloom won't run, rather than painting into it and then discarding
+    // the result (the device probe can veto bloom as well as the tier)
+    const bloomOn = quality.preset.bloom && device.canvasFilter;
     if (bloomOn) {
       glowG.setTransform(1, 0, 0, 1, 0, 0);
       glowG.globalCompositeOperation = 'source-over';
@@ -757,7 +1167,12 @@ class Game {
     // wrap rather than a hazy wash (reduced bloom / less visual noise).
     // A canvas-wide blur filter is one of the pricier steps here, so weaker
     // quality tiers skip it outright rather than merely shrinking it.
-    if (quality.preset.bloom) {
+    // Gated on the live capability probe, not just the quality tier: where
+    // ctx.filter is unimplemented (older Android WebViews) the blur is a
+    // silent no-op, and this pass would screen the glow map over the scene
+    // completely unblurred — a bright haze that appears only in the APK.
+    // Better to ship no bloom there than a broken one.
+    if (quality.preset.bloom && device.canvasFilter) {
       ctx.globalCompositeOperation = 'screen';
       ctx.globalAlpha = 0.42;
       ctx.filter = `blur(${quality.preset.bloomBlur}px)`;
@@ -789,13 +1204,13 @@ class Game {
     ctx.fillRect(0, 0, vw, vh);
     // cool shadow tint
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = 'rgba(48,68,116,0.10)';
+    ctx.fillStyle = 'rgba(48,68,116,0.06)';
     ctx.fillRect(0, 0, vw, vh);
     // vignette — softer, larger falloff
     ctx.globalCompositeOperation = 'source-over';
     const v = ctx.createRadialGradient(vw / 2, vh * 0.46, Math.min(vw, vh) * 0.5, vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
     v.addColorStop(0, 'rgba(5,6,10,0)');
-    v.addColorStop(1, 'rgba(4,5,9,0.3)');
+    v.addColorStop(1, 'rgba(4,5,9,0.16)');
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, vw, vh);
     // film grain — subtle; skipped on weaker quality tiers (a canvas-wide
@@ -811,30 +1226,86 @@ class Game {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // True when the aim point is inside a live hostile's hitbox — the same box
+  // the weapons actually test against, so the reticle's target state can't
+  // disagree with where a shot would land.
+  aimOnTarget(wx, wy) {
+    for (const e of this.enemies) {
+      if (e.deadT > 0) continue;
+      const hs = e.hitboxScale || 1;
+      if (wx >= e.x - 13 * hs && wx <= e.x + 13 * hs &&
+          wy >= e.y - 134 * hs && wy <= e.y) return true;
+    }
+    return false;
+  }
+
   crosshair() {
     const inp = DEMO ? demoDriver : input;
     const mx = inp.mouse.x, my = inp.mouse.y;
     const p = this.player;
+    const w = cam2world(this.cam, mx, my);
+    const hot = this.aimOnTarget(w.x, w.y);
+    // Neon green idle / neon red on target. Each stroke goes down twice — a
+    // dark backing pass then the lit colour — so the reticle stays readable
+    // over a muzzle flash or a lit window, not just over the dimmed scene.
+    const neon = hot ? '#ff3b46' : '#4dffa0';
+    const glow = hot ? 'rgba(255,59,70,0.85)' : 'rgba(77,255,160,0.8)';
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.strokeStyle = 'rgba(235,232,222,0.9)';
-    ctx.fillStyle = 'rgba(235,232,222,0.9)';
-    ctx.lineWidth = 1.6;
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 2;
+    ctx.lineCap = 'round';
+
     if (p.cur.wpn.kind === 'gun') {
-      const gap = 7 + p.visSpread * 300 + p.cur.ws.recoil * 2;
-      const len = 7;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      // Bloom: the reticle opens with the weapon's live cone (movement, hip
+      // fire, airborne) and kicks out on each shot via the recoil spring,
+      // then settles as the spring decays — so accuracy is readable at a
+      // glance instead of only felt through where rounds land.
+      const gap = 6 + p.visSpread * CROSSHAIR_SPREAD_GAIN + p.cur.ws.recoil * CROSSHAIR_RECOIL_GAIN;
+      const len = hot ? 9 : 7;
+      const ticks = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      // backing pass
+      ctx.strokeStyle = 'rgba(3,5,8,0.85)'; ctx.lineWidth = 3.6; ctx.shadowBlur = 0;
+      for (const [dx, dy] of ticks) {
         ctx.beginPath();
         ctx.moveTo(mx + dx * gap, my + dy * gap);
         ctx.lineTo(mx + dx * (gap + len), my + dy * (gap + len));
         ctx.stroke();
       }
-      ctx.beginPath(); ctx.arc(mx, my, 1.2, 0, Math.PI * 2); ctx.fill();
+      // lit pass
+      ctx.strokeStyle = neon; ctx.lineWidth = 1.7;
+      ctx.shadowColor = glow; ctx.shadowBlur = 7;
+      for (const [dx, dy] of ticks) {
+        ctx.beginPath();
+        ctx.moveTo(mx + dx * gap, my + dy * gap);
+        ctx.lineTo(mx + dx * (gap + len), my + dy * (gap + len));
+        ctx.stroke();
+      }
+      // centre dot
+      ctx.fillStyle = 'rgba(3,5,8,0.85)'; ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(mx, my, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = neon; ctx.shadowColor = glow; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(mx, my, 1.3, 0, Math.PI * 2); ctx.fill();
+      // target brackets confirm a hostile is under the reticle
+      if (hot) {
+        const r = gap + len + 3;
+        ctx.strokeStyle = neon; ctx.lineWidth = 1.9; ctx.shadowBlur = 7;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          ctx.beginPath();
+          ctx.moveTo(mx + sx * r, my + sy * (r - 4));
+          ctx.lineTo(mx + sx * r, my + sy * r);
+          ctx.lineTo(mx + sx * (r - 4), my + sy * r);
+          ctx.stroke();
+        }
+      }
     } else {
-      ctx.beginPath(); ctx.arc(mx, my, 3.4, 0, Math.PI * 2); ctx.stroke();
+      // melee: a simple ring, same two-pass treatment
+      ctx.strokeStyle = 'rgba(3,5,8,0.85)'; ctx.lineWidth = 3.4; ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(mx, my, 3.8, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = neon; ctx.lineWidth = 1.6;
+      ctx.shadowColor = glow; ctx.shadowBlur = 7;
+      ctx.beginPath(); ctx.arc(mx, my, 3.8, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.shadowBlur = 0;
+    ctx.lineCap = 'butt';
   }
 }
 
@@ -888,7 +1359,7 @@ function frame(now) {
     if (lowPerfT > 4) {
       lowPerfT = -1e9;   // one check is enough; tryAutoLower() is one-shot anyway
       const lowered = quality.tryAutoLower();
-      if (lowered) { hud.notify(`GRAPHICS — AUTO-LOWERED TO ${quality.preset.name}`); resize(); }
+      if (lowered) { hud.notify(t('notify.graphicsLowered', { tier: quality.preset.name })); resize(); }
     }
   }
 
@@ -896,3 +1367,12 @@ function frame(now) {
 }
 
 boot();
+
+// Register the service worker for offline play + faster repeat loads. Guarded
+// to secure http(s) contexts (never file://, and harmless if unsupported) and
+// deferred to idle so it never competes with first-load asset painting.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is best-effort */ });
+  });
+}

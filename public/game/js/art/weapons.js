@@ -8,6 +8,7 @@ import {
   makeSprite, lingrad, radgrad, rr, grunge, scratches, shade, withA, COL,
 } from './paint.js';
 import { makeRng } from '../engine/math.js';
+import { buildSkinSet } from './skins.js';
 
 const rng = makeRng(4242);
 
@@ -182,8 +183,11 @@ function paintRifleBody(variant, finish) {
     rr(g, 24, -11.6, 3, 1.4, 0.4); g.fill();
 
     // -- wear pass
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
     scratches(g, -18, -10, 56, 16, rng, { n: 26, color: 'rgba(200,208,220,0.16)' });
     grunge(g, -19, -11, 58, 18, rng, { n: 70, dark: 0.1, light: 0.04 });
+    g.restore();
     speckle(g, -19, -8, 14, 9, 40);
     speckle(g, 10.5, -10, 16, 7, 40);
     // top edge light
@@ -309,7 +313,10 @@ function paintPistolSlide() {
     g.fillRect(-5.6, -6.5, 0.6, 0.6);
     g.strokeStyle = 'rgba(255,215,165,0.25)'; g.lineWidth = 0.5;
     g.beginPath(); g.moveTo(-6.2, -5.9); g.lineTo(11.2, -5.9); g.stroke();
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
     scratches(g, -6, -6.6, 17, 4, rng, { n: 10 });
+    g.restore();
   });
 }
 
@@ -380,7 +387,10 @@ function paintKnife(finish) {
     // jimping on spine
     g.fillStyle = 'rgba(0,0,0,0.5)';
     for (let i = 0; i < 5; i++) g.fillRect(1 + i * 0.7, -3, 0.35, 0.7);
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
     scratches(g, 1, -2.4, 13, 4, rng, { n: 8, color: 'rgba(235,240,248,0.3)' });
+    g.restore();
   });
 }
 
@@ -388,6 +398,92 @@ function paintKnife(finish) {
 // Original compact submachine gun: stamped-steel receiver, folding stock,
 // stubby handguard, straight box mag. Same grip-point convention as the
 // rifle (origin = trigger-hand grip, muzzle at +x).
+// ---- Laser SMG ----
+//
+// This was the last genuine palette swap left in the roster: it called
+// paintSmgBody, so it was the P-12 in red. The occupancy-grid uniqueness test
+// only ever separated the two by the random wear speckle they happened to get
+// from the shared rng, which is not a silhouette difference at all — it was a
+// false pass, and shifting the rng stream elsewhere exposed it.
+//
+// The frame here shares nothing with the P-12 but its size class: a slab
+// emitter housing instead of an upper receiver, an exposed lens stack down the
+// top deck, a vertical foregrip, and a side-mounted battery instead of a
+// bottom magazine well. Box matches paintSmgBody (x −14..+24, anchor (14,9))
+// so the smg mount points and hand IK still apply.
+function paintLaserSmg(finish) {
+  const rec = (finish && finish.rec) || '#3a1420';
+  const poly = (finish && finish.poly) || '#280d16';
+  const core = (finish && finish.core) || [255, 70, 90];
+  const [cr, cg, cb] = core;
+  return makeSprite(40, 17, 14, 9, (g) => {
+    g.translate(14, 9);
+    const emissive = (x, y, w, h, a) => {
+      g.save(); g.globalCompositeOperation = 'lighter';
+      g.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+      g.fillRect(x, y, w, h); g.restore();
+    };
+
+    // rear counterweight block — no folding wire stock at all
+    g.fillStyle = metal(g, -12, -2, shade(rec, -0.14));
+    rr(g, -13.5, -6.2, 8, 7.4, 1.6); g.fill();
+    emissive(-12.6, -4.6, 1.4, 4.2, 0.5);
+
+    // slab emitter housing: one continuous wedge, deeper at the front
+    g.fillStyle = metal(g, -6, -3, rec);
+    g.beginPath();
+    g.moveTo(-6, -7.4); g.lineTo(17, -8.6); g.lineTo(19, -3.6);
+    g.lineTo(8.4, -1.4); g.lineTo(-6, -1.8);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.10)';
+    g.fillRect(-6, -7.4, 23, 0.9);
+
+    // lens stack down the top deck — three rings, brightest at the muzzle
+    for (let i = 0; i < 3; i++) {
+      const x = 4 + i * 4.6;
+      g.fillStyle = shade(rec, -0.24);
+      rr(g, x, -9.4, 3, 2.4, 0.6); g.fill();
+      emissive(x + 0.4, -9, 2.2, 1.6, 0.35 + i * 0.16);
+    }
+    // muzzle aperture
+    g.fillStyle = shade(rec, 0.14);
+    rr(g, 19, -8.2, 3.4, 4.6, 1); g.fill();
+    emissive(20.6, -7.6, 1.6, 3.4, 0.7);
+
+    // side battery, clipped flat to the housing flank (not a hanging mag)
+    g.fillStyle = polymer(g, -3, 2, poly);
+    rr(g, -2.4, -5.8, 9, 4.4, 1); g.fill();
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(${cr},${cg},${cb},0.42)`;
+    rr(g, -1.2, -4.8, 6.6, 1.4, 0.6); g.fill();
+    g.restore();
+
+    // pistol grip (hand anchors at 0,0 — same as the P-12 so the IK holds)
+    g.fillStyle = polymer(g, -0.6, 7, poly);
+    g.beginPath();
+    g.moveTo(-0.8, -1.4); g.quadraticCurveTo(-2.2, 2.6, -3.6, 5.6);
+    g.quadraticCurveTo(-3.8, 6.9, -2, 6.9);
+    g.quadraticCurveTo(-0.2, 6.7, 0.4, 4.2); g.lineTo(1.4, -1);
+    g.closePath(); g.fill();
+    g.strokeStyle = shade(rec, -0.15); g.lineWidth = 0.9;
+    g.beginPath(); g.moveTo(1.2, -0.4); g.quadraticCurveTo(3.4, 2.4, 5.6, 0); g.stroke();
+
+    // vertical foregrip — nothing else in the size class has one
+    g.fillStyle = polymer(g, 9, 6, shade(poly, 0.06));
+    rr(g, 9.4, -1.4, 3.2, 6.6, 1.3); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 0.35;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath(); g.moveTo(9.6, 0.4 + i * 1.7); g.lineTo(12.4, 0.4 + i * 1.7); g.stroke();
+    }
+
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -14, -10, 37, 18, rng, { n: 6 });
+    grunge(g, -14, -10, 37, 18, rng, { n: 30, dark: 0.1 });
+    g.restore();
+  });
+}
+
 function paintSmgBody(finish) {
   const rec = (finish && finish.rec) || '#3a3d42';
   const poly = (finish && finish.poly) || '#26282b';
@@ -456,8 +552,11 @@ function paintSmgBody(finish) {
     g.fillStyle = 'rgba(210,218,228,0.28)';
     g.font = '1.5px monospace';
     g.fillText('P-12', -3, -6);
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
     scratches(g, -13, -8, 36, 12, rng, { n: 20, color: 'rgba(200,208,220,0.15)' });
     grunge(g, -14, -8.5, 38, 15, rng, { n: 50, dark: 0.1, light: 0.04 });
+    g.restore();
     speckle(g, 8.6, -7.6, 11, 5, 28);
     g.strokeStyle = 'rgba(255,215,165,0.22)'; g.lineWidth = 0.5;
     g.beginPath(); g.moveTo(-4, -8.5); g.lineTo(14, -8.5); g.stroke();
@@ -484,12 +583,18 @@ function paintSmgMag() {
 
 // ============================ "RAVAGE" bowie (knife finish) ============
 // Alternate blade geometry for the TALON-7 grip: straight clip-point bowie
-// with a blackened Cerakote finish, unlocked as a knife variant.
-function paintKnifeBowie() {
+// with a blackened Cerakote finish, unlocked as a knife variant. `finish`
+// optionally overrides the handle wrap colour and/or swaps the blade for an
+// emissive energy edge (same convention as paintKnife's `blade` override),
+// so higher-rarity bowie variants can read as visibly distinct without a
+// second geometry.
+function paintKnifeBowie(finish) {
+  const handle = (finish && finish.handle) || ['#2a2c26', '#1e201a', '#121310'];
+  const blade = finish && finish.blade;
   return makeSprite(22, 9, 6, 4.5, (g) => {
     g.translate(6, 4.5);
     g.fillStyle = lingrad(g, 0, -2.6, 0, 2.8, [
-      [0, '#2a2c26'], [0.5, '#1e201a'], [1, '#121310'],
+      [0, handle[0]], [0.5, handle[1]], [1, handle[2]],
     ]);
     g.beginPath();
     g.moveTo(-0.8, -2.2);
@@ -506,10 +611,15 @@ function paintKnifeBowie() {
     g.beginPath(); g.arc(-4.7, 0.2, 0.7, 0, Math.PI * 2); g.fill();
     g.fillStyle = lingrad(g, 0, -3.2, 0, 3.2, [[0, '#3c3e40'], [1, '#18191b']]);
     rr(g, -0.9, -3, 1.6, 6, 0.6); g.fill();
-    // straight clip-point blade, blackened
-    g.fillStyle = lingrad(g, 0, -2.6, 0, 2.2, [
-      [0, '#4c4e50'], [0.4, '#33353a'], [1, '#1c1d20'],
-    ]);
+    // straight clip-point blade — blackened steel, or an emissive energy edge
+    g.fillStyle = blade
+      ? lingrad(g, 0, -2.6, 0, 2.2, [
+          [0, '#eafcff'], [0.38, blade], [0.62, shade(blade, -0.35)], [1, shade(blade, -0.6)],
+        ])
+      : lingrad(g, 0, -2.6, 0, 2.2, [
+          [0, '#4c4e50'], [0.4, '#33353a'], [1, '#1c1d20'],
+        ]);
+    if (blade) { g.shadowColor = blade; g.shadowBlur = 5; }
     g.beginPath();
     g.moveTo(0.7, -2.4);
     g.lineTo(11.4, -2.3);
@@ -517,7 +627,10 @@ function paintKnifeBowie() {
     g.quadraticCurveTo(11.5, 1.2, 6, 1.7);
     g.quadraticCurveTo(2.8, 1.9, 0.7, 1.7);
     g.closePath(); g.fill();
-    g.fillStyle = lingrad(g, 0, 0.2, 0, 1.9, [[0, 'rgba(150,155,160,0.6)'], [1, 'rgba(90,95,100,0.1)']]);
+    g.shadowBlur = 0;
+    g.fillStyle = blade
+      ? lingrad(g, 0, 0.2, 0, 1.9, [[0, 'rgba(240,253,255,0.95)'], [1, withA(blade, 0.25)]])
+      : lingrad(g, 0, 0.2, 0, 1.9, [[0, 'rgba(150,155,160,0.6)'], [1, 'rgba(90,95,100,0.1)']]);
     g.beginPath();
     g.moveTo(1, 1); g.quadraticCurveTo(6, 1.3, 11.4, 0.5); g.quadraticCurveTo(14, -0.3, 16.1, 0.3);
     g.quadraticCurveTo(11.5, 1.3, 6, 1.75); g.quadraticCurveTo(2.8, 1.95, 1, 1.75);
@@ -526,7 +639,831 @@ function paintKnifeBowie() {
     g.beginPath(); g.moveTo(2, -1.4); g.lineTo(10.6, -1.4); g.stroke();
     g.fillStyle = 'rgba(0,0,0,0.55)';
     for (let i = 0; i < 5; i++) g.fillRect(1 + i * 0.7, -3, 0.35, 0.7);
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
     scratches(g, 1, -2.2, 14, 4, rng, { n: 6, color: 'rgba(160,168,178,0.22)' });
+    g.restore();
+  });
+}
+
+// ==================== purpose-built energy weapon bodies ====================
+// The energy roster used to be the VK-77 receiver in different colours, which
+// meant a PARTICLE BEAM read as a rifle wearing a costume. These are their own
+// silhouettes: no magazine well, no ejection port, no stock comb — the shapes
+// come from what the weapon is supposed to *be* (a coil emitter, a rail, a
+// pressurised tank) instead of from a cartridge gun.
+//
+// They share the rifle's weapon-space contract so the rig needs no changes:
+// origin (0,0) is the trigger-hand grip, +x is the muzzle direction, and the
+// support hand lands near x=17, y=-5.
+
+// Shared: pistol grip + trigger guard at the origin. Every one of these is
+// held the same way, so the grip is drawn once.
+function energyGrip(g, poly, rec) {
+  g.fillStyle = polymer(g, -1, 8, poly);
+  g.beginPath();
+  g.moveTo(-1.2, -1);
+  g.quadraticCurveTo(-2.8, 3.4, -4.4, 6.6);
+  g.quadraticCurveTo(-4.6, 8, -2.6, 8);
+  g.quadraticCurveTo(-0.4, 7.8, 0.4, 5);
+  g.lineTo(1.6, -0.6);
+  g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.4;
+  for (let i = 0; i < 3; i++) {
+    g.beginPath();
+    g.moveTo(-1.8 - i * 0.8, 1.5 + i * 1.6);
+    g.lineTo(0.2 - i * 0.7, 2 + i * 1.6);
+    g.stroke();
+  }
+  g.strokeStyle = shade(rec, -0.15); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(1.6, 0); g.quadraticCurveTo(4.6, 3.6, 7.4, 0.4); g.stroke();
+  g.strokeStyle = '#1a1b1e'; g.lineWidth = 1.1;
+  g.beginPath(); g.moveTo(3.8, 0.2); g.quadraticCurveTo(3.4, 1.8, 4.4, 2.6); g.stroke();
+}
+
+// Glowing coil ring seen edge-on — the motif that says "this accelerates
+// something" rather than "this contains gunpowder".
+function coilRing(g, x, yTop, yBot, c, w = 2.4) {
+  const [r, gg, b] = c;
+  g.fillStyle = `rgba(${r},${gg},${b},0.25)`;
+  rr(g, x - w / 2, yTop, w, yBot - yTop, w / 2); g.fill();
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.fillStyle = `rgba(${Math.min(255, r + 70)},${Math.min(255, gg + 70)},${Math.min(255, b + 70)},0.75)`;
+  rr(g, x - w / 4, yTop + 0.6, w / 2, yBot - yTop - 1.2, w / 4); g.fill();
+  g.restore();
+}
+
+// ---- PARTICLE BEAM: coil emitter. Stacked accelerator rings down an open
+// cage, twin plasma feed lines along the spine, no barrel at all — the
+// business end is a flared emitter throat. ----
+function paintParticleThrower(finish) {
+  const rec = (finish && finish.rec) || '#2a1d55';
+  const poly = (finish && finish.poly) || '#1c1440';
+  const core = (finish && finish.core) || [190, 120, 255];
+  const [cr, cg, cb] = core;
+  return makeSprite(60, 20, 20, 12, (g) => {
+    g.translate(20, 12);
+
+    // rear energy cell — a fat cylinder where a stock would be
+    g.fillStyle = metal(g, -9, 2, shade(rec, -0.1));
+    rr(g, -19, -8.6, 12, 10.4, 3.2); g.fill();
+    g.fillStyle = 'rgba(8,9,14,0.75)';
+    rr(g, -17.4, -7, 3.2, 7.4, 1.2); g.fill();
+    // charge indicator bars on the cell
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle = `rgba(${cr},${cg},${cb},${0.85 - i * 0.22})`;
+      g.fillRect(-13.2, -6.4 + i * 2.6, 4.4, 1.5);
+    }
+
+    // main spine housing (grip mounts to this)
+    g.fillStyle = metal(g, -6, 3, rec);
+    g.beginPath();
+    g.moveTo(-7.4, -7);
+    g.lineTo(9.5, -7);
+    g.lineTo(9.5, -0.6);
+    g.lineTo(-7.4, -0.6);
+    g.closePath(); g.fill();
+    energyGrip(g, poly, rec);
+
+    // twin plasma feed lines running the length of the spine
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = `rgba(${cr},${cg},${cb},0.55)`; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(-8, -5.6); g.lineTo(24, -5.6); g.stroke();
+    g.beginPath(); g.moveTo(-8, -2.2); g.lineTo(22, -2.2); g.stroke();
+    g.restore();
+
+    // open accelerator cage: two rails with coil rings threaded along them,
+    // deliberately skeletal so the silhouette is unmistakable
+    g.fillStyle = metal(g, -10.4, -8.6, shade(rec, 0.14));
+    g.fillRect(9.5, -10.2, 22, 1.8);
+    g.fillRect(9.5, 0.4, 22, 1.8);
+    for (let i = 0; i < 5; i++) {
+      coilRing(g, 12.5 + i * 4.6, -10.4, 2.4, core, 2.6);
+    }
+
+    // flared emitter throat — the "muzzle", a cone not a tube
+    g.fillStyle = metal(g, -12, 3, shade(rec, 0.06));
+    g.beginPath();
+    g.moveTo(31.5, -9.4);
+    g.lineTo(38.5, -12.4);
+    g.lineTo(38.5, 3.6);
+    g.lineTo(31.5, 1.2);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 0.7; g.stroke();
+    // throat mouth glow
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const throat = lingrad(g, 36, -12, 40, 3.6, [
+      [0, `rgba(${cr},${cg},${cb},0)`],
+      [1, `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},0.9)`],
+    ]);
+    g.fillStyle = throat;
+    g.beginPath();
+    g.moveTo(37, -11.6); g.lineTo(39, -12.4); g.lineTo(39, 3.6); g.lineTo(37, 2.8);
+    g.closePath(); g.fill();
+    g.restore();
+
+    // support-hand shroud under the cage (hand lands ~x17,y-5)
+    g.fillStyle = polymer(g, -3, 2, poly);
+    rr(g, 13, -2.4, 11, 3.4, 1.2); g.fill();
+
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -18, -11, 56, 15, rng, { n: 18, color: 'rgba(200,190,240,0.14)' });
+    g.restore();
+  });
+}
+
+// ---- GAUSS RAILGUN: two long parallel rails with a capacitor bank slung
+// underneath. Reads as a linear accelerator — nothing about it is a rifle. ----
+// ---- energy sidearms ----
+// raygun and quantum were the last true palette swap in the roster: both were
+// the C-9 pistol frame in a different colour. They get their own frames here,
+// differing at the emitter, the top deck and the grip angle.
+//
+// Box matches paintPistolBody (x -7..+11, y -8..+7, anchor at the grip) so the
+// hand IK and the pistol mount points still apply.
+function paintEnergyPistol(variant, finish) {
+  const grip = (finish && (finish.grip || finish.poly)) || '#2a2c30';
+  const frame = (finish && (finish.frame || finish.rec)) || '#303236';
+  const core = (finish && finish.core) || [200, 110, 255];
+  const [cr, cg, cb] = core;
+  const glow = (x, y, w, h, a) => {
+    g0.save(); g0.globalCompositeOperation = 'lighter';
+    g0.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+    g0.fillRect(x, y, w, h);
+    g0.restore();
+  };
+  let g0;
+  return makeSprite(18, 15, 7, 8, (g) => {
+    g0 = g;
+    g.translate(7, 8);
+
+    // grip — raked back on the raygun, near-vertical on the quantum
+    const rake = variant === 'bell' ? 2.2 : 0.6;
+    g.fillStyle = polymer(g, -1, 6, grip);
+    g.beginPath();
+    g.moveTo(-1.4, -1); g.lineTo(2.2, -1);
+    g.lineTo(1.4 - rake * 0.3, 6.6); g.lineTo(-2.6 - rake, 6.6);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.32)'; g.lineWidth = 0.35;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath();
+      g.moveTo(-1.6 - i * 0.5, 1 + i * 1.5); g.lineTo(1.4 - i * 0.4, 1.3 + i * 1.5); g.stroke();
+    }
+
+    if (variant === 'bell') {
+      // ---- RAY GUN: retro bulb emitter on a stubby frame ----
+      g.fillStyle = metal(g, -6, 0, frame);
+      rr(g, -5.4, -5.6, 11, 5.4, 1.4); g.fill();
+      // spherical charge bulb sitting on top
+      const bg = g.createRadialGradient(-1.4, -8, 0.5, -1.4, -8, 4.2);
+      bg.addColorStop(0, `rgba(${cr},${cg},${cb},0.95)`);
+      bg.addColorStop(1, `rgba(${cr},${cg},${cb},0.10)`);
+      g.fillStyle = bg;
+      g.beginPath(); g.arc(-1.4, -8, 4.2, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = shade(frame, 0.14); g.lineWidth = 1;
+      g.beginPath(); g.arc(-1.4, -8, 4.2, 0, Math.PI * 2); g.stroke();
+      // flared muzzle bell
+      g.fillStyle = metal(g, -7, -1, shade(frame, 0.1));
+      g.beginPath();
+      g.moveTo(5.6, -5.2); g.lineTo(11, -8.2); g.lineTo(11, 0.6); g.lineTo(5.6, -0.6);
+      g.closePath(); g.fill();
+      glow(9.4, -7, 1.6, 7.2, 0.55);
+      // ring around the bell throat
+      g.strokeStyle = shade(frame, -0.2); g.lineWidth = 0.9;
+      g.beginPath(); g.moveTo(7.4, -6.4); g.lineTo(7.4, 0); g.stroke();
+    } else {
+      // ---- QUANTUM: flat slab frame with a split prism barrel ----
+      g.fillStyle = metal(g, -7, 0, frame);
+      rr(g, -6.4, -7, 13.4, 6.6, 0.8); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.10)';
+      g.fillRect(-6.4, -7, 13.4, 0.9);
+      // twin prism rails with an open slot between them
+      g.fillStyle = metal(g, -6.6, -4.6, shade(frame, 0.08));
+      rr(g, 7, -6.8, 4.2, 2, 0.5); g.fill();
+      rr(g, 7, -2.6, 4.2, 2, 0.5); g.fill();
+      glow(7, -4.9, 4.2, 2.4, 0.6);
+      // floating core cube in a cutout on the deck
+      g.fillStyle = 'rgba(8,9,14,0.8)';
+      rr(g, -3.4, -6, 5, 4.4, 0.6); g.fill();
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.translate(-0.9, -3.8); g.rotate(Math.PI / 4);
+      g.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
+      g.fillRect(-1.3, -1.3, 2.6, 2.6);
+      g.restore();
+      // rear vent fins
+      g.fillStyle = shade(frame, -0.22);
+      for (let i = 0; i < 3; i++) g.fillRect(-6.2 + i * 1.7, -9.2, 1.1, 2.4);
+    }
+
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -6, -8, 17, 13, rng, { n: 6 });
+    grunge(g, -6, -8, 17, 13, rng, { n: 34, dark: 0.1 });
+    g.restore();
+  });
+}
+
+// =====================================================================
+//                        MODULAR WEAPON CHASSIS
+// =====================================================================
+// Eleven weapons used to share one rifle body with nothing but the receiver
+// and polymer colours swapped — a Cryo Rifle was a Plasma Rifle was a Battle
+// Rifle in a different shade. This builds each of them out of genuinely
+// different structural parts instead.
+//
+// The grip zone (x -6..10, hand anchored at 0,0) is deliberately held
+// constant across every chassis: gripA/gripB and the magazine attachment
+// points are inherited from the rifle def, so the two-bone hand IK keeps
+// landing exactly on the grips. Everything *outside* that zone — the stock
+// behind it, the barrel assembly and muzzle ahead of it, the magazine below,
+// the accessory above — is what varies, which is precisely what a silhouette
+// is made of.
+
+// ---- stocks (behind the grip, x < -6) ----
+function chassisStock(g, kind, rec, poly, core) {
+  const [cr, cg, cb] = core || [140, 190, 255];
+  if (kind === 'solid') {
+    // full rifle stock: straight comb, thick butt pad
+    g.fillStyle = polymer(g, -9, 2, poly);
+    g.beginPath();
+    g.moveTo(-6, -7.6); g.lineTo(-21, -6.4); g.lineTo(-21.6, 2.2); g.lineTo(-6, -0.6);
+    g.closePath(); g.fill();
+    g.fillStyle = '#191a1c';
+    g.fillRect(-22.4, -6.6, 1.8, 9);
+    g.fillStyle = polymer(g, -9, -6, shade(poly, 0.08));
+    rr(g, -17, -9, 8, 2.6, 1); g.fill();
+  } else if (kind === 'skeleton') {
+    // open frame: two thin rails and a hollow centre
+    g.strokeStyle = shade(rec, -0.05); g.lineWidth = 2.1;
+    g.beginPath(); g.moveTo(-6, -6.6); g.lineTo(-20, -5.4); g.stroke();
+    g.beginPath(); g.moveTo(-6, -1.2); g.lineTo(-19, 0.6); g.stroke();
+    g.strokeStyle = shade(rec, -0.2); g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(-20, -5.4); g.lineTo(-19.6, 0.8); g.stroke();
+    g.fillStyle = '#191a1c';
+    g.fillRect(-21.4, -6, 1.7, 7.6);
+  } else if (kind === 'folded') {
+    // side-folded stock: a short stub tucked along the receiver
+    g.fillStyle = metal(g, -8, -3, shade(rec, -0.12));
+    rr(g, -14, -8.2, 8.5, 3, 1.2); g.fill();
+    g.fillStyle = polymer(g, -3, 1, poly);
+    rr(g, -9, -5.4, 3.4, 5.4, 1); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.09)';
+    g.fillRect(-14, -8.2, 8.5, 0.8);
+  } else if (kind === 'brace') {
+    // single-strut brace with a shoulder pad
+    g.fillStyle = metal(g, -6, -2, shade(rec, -0.06));
+    g.fillRect(-17, -5.4, 11, 2.4);
+    g.fillStyle = polymer(g, -8, 2, poly);
+    g.beginPath();
+    g.moveTo(-17, -8.4); g.lineTo(-13.5, -8); g.lineTo(-13.5, 1.6); g.lineTo(-17, 2);
+    g.closePath(); g.fill();
+  } else if (kind === 'tank') {
+    // pressure vessel where a stock would be — the energy-weapon read
+    g.fillStyle = metal(g, -9, 2, shade(rec, -0.08));
+    rr(g, -21, -8.4, 15, 11, 5); g.fill();
+    g.strokeStyle = 'rgba(8,9,14,0.5)'; g.lineWidth = 0.9;
+    for (let i = 1; i < 4; i++) {
+      g.beginPath(); g.moveTo(-21 + i * 3.6, -8.2); g.lineTo(-21 + i * 3.6, 2.4); g.stroke();
+    }
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(${cr},${cg},${cb},0.5)`;
+    rr(g, -19, -6.6, 2.2, 7.6, 1); g.fill();
+    g.restore();
+  }
+  // 'none' draws nothing — the receiver simply ends
+}
+
+// ---- barrel assemblies (ahead of the handguard, x > 10) ----
+function chassisBarrel(g, kind, rec, core) {
+  const [cr, cg, cb] = core || [140, 190, 255];
+  const emissive = (x, y, w, h, a) => {
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+    g.fillRect(x, y, w, h);
+    g.restore();
+  };
+
+  if (kind === 'long') {
+    g.fillStyle = metal(g, -6.6, -4, shade(rec, -0.08));
+    g.fillRect(24, -6.2, 22, 2.2);
+    g.fillStyle = metal(g, -7.6, -3.6, rec);
+    rr(g, 44, -7.2, 5, 4, 1); g.fill();          // slim brake
+    g.fillStyle = '#0e0f11';
+    g.fillRect(45.4, -7.6, 0.9, 4.8);
+  } else if (kind === 'heavy') {
+    // thick fluted barrel with a bipod stub
+    g.fillStyle = metal(g, -7.4, -3, shade(rec, -0.05));
+    rr(g, 22, -7.4, 20, 4.6, 1.4); g.fill();
+    g.strokeStyle = 'rgba(8,9,12,0.4)'; g.lineWidth = 0.7;
+    for (let i = 0; i < 5; i++) {
+      g.beginPath(); g.moveTo(25 + i * 3.4, -7); g.lineTo(25 + i * 3.4, -3.2); g.stroke();
+    }
+    g.fillStyle = shade(rec, -0.3);
+    g.fillRect(30, -2.6, 1.8, 7);                 // bipod leg
+    g.fillRect(33.5, -2.6, 1.8, 7);
+  } else if (kind === 'shroud') {
+    // perforated cooling shroud over a thin barrel
+    g.fillStyle = metal(g, -8, -2.6, shade(rec, 0.04));
+    rr(g, 21, -8, 20, 6, 2); g.fill();
+    g.fillStyle = 'rgba(8,9,12,0.75)';
+    for (let i = 0; i < 6; i++) {
+      g.beginPath(); g.arc(24 + i * 2.9, -5, 1.05, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = metal(g, -6.4, -4.4, shade(rec, -0.15));
+    g.fillRect(41, -6.2, 6, 2.2);
+  } else if (kind === 'coil') {
+    // induction coils stacked along an exposed rail
+    g.fillStyle = metal(g, -6, -4, shade(rec, -0.2));
+    g.fillRect(20, -5.8, 26, 1.8);
+    for (let i = 0; i < 5; i++) {
+      const x = 22 + i * 5;
+      g.fillStyle = metal(g, -8.4, -1.4, shade(rec, i % 2 ? -0.16 : 0.12));
+      rr(g, x, -8.6, 2.6, 7.4, 1); g.fill();
+      emissive(x, -5.6, 2.6, 1.6, 0.55);
+    }
+    emissive(20, -5.4, 28, 1.1, 0.5);
+  } else if (kind === 'twin') {
+    // twin accelerator rails with an open gap between them
+    g.fillStyle = metal(g, -8.4, -6, shade(rec, 0.06));
+    rr(g, 20, -8.6, 26, 2.4, 0.9); g.fill();
+    g.fillStyle = metal(g, -3.4, -1, shade(rec, -0.18));
+    rr(g, 20, -3.6, 26, 2.4, 0.9); g.fill();
+    emissive(20, -6.4, 26, 2.6, 0.42);
+    g.fillStyle = shade(rec, -0.28);
+    g.fillRect(43, -9.4, 2.2, 8);                 // muzzle bridge
+  } else if (kind === 'nozzle') {
+    // flared emitter bell
+    g.fillStyle = metal(g, -6, -3, shade(rec, -0.06));
+    g.fillRect(20, -6.4, 14, 3);
+    g.fillStyle = metal(g, -9, 1, shade(rec, 0.1));
+    g.beginPath();
+    g.moveTo(34, -6.8); g.lineTo(44, -10.2); g.lineTo(44, 3.4); g.lineTo(34, -0.2);
+    g.closePath(); g.fill();
+    emissive(41.6, -9, 2.4, 11, 0.5);
+    g.fillStyle = 'rgba(8,9,12,0.5)';
+    g.fillRect(37, -8.4, 0.9, 9.4);
+  } else if (kind === 'vent') {
+    // ported heat-vent block over a short barrel
+    g.fillStyle = metal(g, -7.2, -3.4, shade(rec, -0.04));
+    rr(g, 21, -7.6, 17, 5, 1.4); g.fill();
+    g.fillStyle = 'rgba(8,9,12,0.72)';
+    for (let i = 0; i < 4; i++) g.fillRect(23.5 + i * 3.6, -7.6, 1.5, 3.4);
+    emissive(23.5, -4.6, 13, 1.2, 0.45);
+    g.fillStyle = metal(g, -6.2, -4.2, rec);
+    rr(g, 38, -6.6, 5.5, 3.2, 1); g.fill();
+  } else if (kind === 'stub') {
+    // short heavy muzzle with a wide choke
+    g.fillStyle = metal(g, -7.6, -2.6, shade(rec, -0.02));
+    rr(g, 20, -7.8, 11, 5.4, 1.6); g.fill();
+    g.fillStyle = metal(g, -8.6, -1.6, shade(rec, 0.12));
+    rr(g, 31, -8.6, 4.6, 7, 1.6); g.fill();
+    g.fillStyle = '#0d0e10';
+    g.beginPath(); g.ellipse(35.4, -5, 1.1, 3, 0, 0, Math.PI * 2); g.fill();
+  }
+}
+
+// ---- magazines / feed (below the receiver) ----
+function chassisMag(g, kind, rec, poly, core) {
+  const [cr, cg, cb] = core || [140, 190, 255];
+  if (kind === 'stick') {
+    g.fillStyle = polymer(g, 1, 12, poly);
+    g.beginPath();
+    g.moveTo(6.4, 0.2); g.lineTo(12.4, 0.2); g.lineTo(11.2, 12); g.lineTo(5.6, 12);
+    g.closePath(); g.fill();
+  } else if (kind === 'box') {
+    g.fillStyle = polymer(g, 1, 9, poly);
+    rr(g, 5.4, 0.2, 8, 9, 1); g.fill();
+    g.fillStyle = 'rgba(8,9,12,0.35)';
+    g.fillRect(5.4, 4, 8, 0.9);
+  } else if (kind === 'drum') {
+    g.fillStyle = metal(g, 1, 14, shade(rec, -0.12));
+    g.beginPath(); g.arc(9.4, 7.4, 6.6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = shade(rec, 0.1);
+    g.beginPath(); g.arc(9.4, 7.4, 2.4, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(8,9,12,0.4)'; g.lineWidth = 0.8;
+    g.beginPath(); g.arc(9.4, 7.4, 4.6, 0, Math.PI * 2); g.stroke();
+  } else if (kind === 'belt') {
+    // ammo belt hanging out of a feed tray
+    g.fillStyle = metal(g, 0, 6, shade(rec, -0.2));
+    rr(g, 4.6, 0.2, 10, 5.4, 1); g.fill();
+    g.fillStyle = '#8a6a2a';
+    for (let i = 0; i < 6; i++) {
+      g.fillRect(5.4 + i * 1.9, 5.4 + Math.sin(i * 0.9) * 1.2, 1.4, 4.2);
+    }
+  } else if (kind === 'cell') {
+    // translucent energy cell with a charge window
+    g.fillStyle = polymer(g, 1, 10, shade(poly, -0.05));
+    rr(g, 5.6, 0.2, 7.6, 10, 1.6); g.fill();
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(${cr},${cg},${cb},0.55)`;
+    rr(g, 7, 1.6, 4.8, 7, 1); g.fill();
+    g.restore();
+    g.fillStyle = 'rgba(8,9,12,0.45)';
+    g.fillRect(7, 4.4, 4.8, 0.8);
+  }
+  // 'none' — no feed device at all (gravity/beam weapons)
+}
+
+// ---- topside accessory ----
+function chassisTop(g, kind, rec, core) {
+  const [cr, cg, cb] = core || [140, 190, 255];
+  if (kind === 'carry') {
+    // fixed carry handle — a very distinctive outline
+    g.fillStyle = metal(g, -16, -11, shade(rec, 0.02));
+    g.beginPath();
+    g.moveTo(-2, -10.4); g.lineTo(-2, -15.4); g.lineTo(14, -15.4); g.lineTo(14, -10.4);
+    g.lineTo(11.6, -10.4); g.lineTo(11.6, -13.4); g.lineTo(0.4, -13.4); g.lineTo(0.4, -10.4);
+    g.closePath(); g.fill();
+  } else if (kind === 'scope') {
+    g.fillStyle = shade(rec, -0.3);
+    g.fillRect(1, -11.6, 2, 2.4);
+    g.fillRect(10, -11.6, 2, 2.4);
+    g.fillStyle = metal(g, -17, -11, shade(rec, 0.06));
+    rr(g, -1.5, -16.4, 17, 5, 2.4); g.fill();
+    g.fillStyle = 'rgba(120,190,230,0.5)';
+    rr(g, 14, -15.6, 1.5, 3.4, 0.6); g.fill();
+  } else if (kind === 'emitter') {
+    // dorsal emitter fin with a lit slot
+    g.fillStyle = metal(g, -15, -10, shade(rec, -0.1));
+    g.beginPath();
+    g.moveTo(-1, -10.2); g.lineTo(3, -15.2); g.lineTo(12, -15.2); g.lineTo(14, -10.2);
+    g.closePath(); g.fill();
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(${cr},${cg},${cb},0.6)`;
+    g.fillRect(3.4, -13.4, 8, 1.5);
+    g.restore();
+  } else if (kind === 'fins') {
+    // heat-sink fin stack
+    g.fillStyle = shade(rec, -0.16);
+    for (let i = 0; i < 5; i++) g.fillRect(0.5 + i * 2.7, -14.4, 1.7, 4.4);
+    g.fillStyle = shade(rec, 0.08);
+    g.fillRect(0, -10.6, 14.5, 1.2);
+  }
+}
+
+// The magazine as a detachable sprite.
+//
+// Anchored at the weapon-space ORIGIN (0,0), not at the magazine itself, and
+// painted with chassisMag's own coordinates. Drawing it at magPos {0,0} then
+// reproduces exactly where the body expects the well to be filled — the
+// alignment is structural, not a number somebody has to keep in sync.
+function paintChassisMag(kind, rec, poly, core) {
+  if (!kind || kind === 'none') return null;
+  // Box covers every feed device's extent: x 2.8..16, y 0.2..14 (the drum is
+  // the widest and the stick the deepest), plus margin for the wear pass.
+  const AX = 4, AY = 4;
+  return makeSprite(24, 22, AX, AY, (g) => {
+    g.translate(AX, AY);
+    chassisMag(g, kind, rec, poly, core);
+    scratches(g, 2, 0, 15, 15, rng, { n: 3 });
+    grunge(g, 2, 0, 15, 15, rng, { n: 16, dark: 0.1 });
+  });
+}
+
+// Composes one complete weapon body from its structural parts.
+function paintChassis(cfg) {
+  const rec = cfg.rec || COL.gunmetal;
+  const poly = cfg.poly || COL.polymer;
+  const core = cfg.core || [140, 190, 255];
+  // Canvas box: local x −24..52, y −18..10.
+  //
+  // This used to be 60×20 anchored at (20,12), giving x −20..40 and y −12..8 —
+  // smaller than the parts being drawn into it. Every barrel that reaches past
+  // 40 (long ends at 49, shroud and coil at 47, twin at 46) was sliced off
+  // square at the canvas edge, and every topside accessory was decapitated:
+  // the scope sits at y −16.4 and the carry handle at −15.4, both well above
+  // the old −12 ceiling. That flat cut is what read as an attachment floating
+  // detached from the gun — it was not misplaced, it was cropped.
+  return makeSprite(76, 28, 24, 18, (g) => {
+    g.translate(24, 18);
+
+    chassisStock(g, cfg.stock, rec, poly, core);
+
+    // ---- receiver + grip: identical across every chassis so the hand IK
+    // keeps landing on the grips no matter which parts are bolted on ----
+    g.fillStyle = metal(g, -6, 4, rec);
+    g.beginPath();
+    g.moveTo(-6.5, -8.2); g.lineTo(12, -8.2); g.lineTo(12, -0.4);
+    g.lineTo(6.2, 0.4); g.lineTo(1.8, 0.2); g.lineTo(-1, -0.6); g.lineTo(-6.5, -0.8);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.08)';
+    g.fillRect(-6.5, -8.2, 18.5, 1.1);
+
+    // pistol grip (hand anchors at 0,0)
+    g.fillStyle = polymer(g, -1, 8, poly);
+    g.beginPath();
+    g.moveTo(-1.2, -1); g.quadraticCurveTo(-2.8, 3.4, -4.4, 6.6);
+    g.quadraticCurveTo(-4.6, 8, -2.6, 8);
+    g.quadraticCurveTo(-0.4, 7.8, 0.4, 5); g.lineTo(1.6, -0.6);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.4;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath();
+      g.moveTo(-1.8 - i * 0.8, 1.5 + i * 1.6);
+      g.lineTo(0.2 - i * 0.7, 2 + i * 1.6);
+      g.stroke();
+    }
+    // trigger guard
+    g.strokeStyle = shade(rec, -0.15); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(1.6, 0); g.quadraticCurveTo(4.6, 3.6, 7.4, 0.4); g.stroke();
+
+    // The magazine is deliberately NOT painted here — it is a separate sprite
+    // (paintChassisMag) so the reload animation can drop it out of the well.
+    // Both are drawn from the same coordinates in chassisMag(), so the loaded
+    // magazine sits in the well by construction rather than by a hand-tuned
+    // offset that drifts the moment a chassis changes.
+
+    // handguard bridging receiver to barrel — length varies per chassis
+    const hgEnd = cfg.hg || 22;
+    g.fillStyle = metal(g, -8, -1, shade(rec, -0.06));
+    rr(g, 12, -8.4, hgEnd - 12, 7.4, 1.2); g.fill();
+    g.fillStyle = 'rgba(8,9,12,0.4)';
+    for (let x = 14; x < hgEnd - 2; x += 3.4) g.fillRect(x, -6.6, 1.3, 4);
+
+    chassisBarrel(g, cfg.barrel, rec, core);
+    chassisTop(g, cfg.top, rec, core);
+
+    // Shared wear pass so a chassis never looks like clean vector art.
+    //
+    // Clipped to the silhouette with source-atop. The wear scatters over the
+    // whole box, and on the enlarged canvas that put loose speckle in the air
+    // around the gun — dirt with nothing under it, which at a glance reads as
+    // debris stuck to the weapon. source-atop can only mark pixels that are
+    // already painted, so wear lands on metal and nowhere else.
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -22, -16, 72, 24, rng, { n: 12 });
+    grunge(g, -22, -16, 72, 24, rng, { n: 70, dark: 0.1 });
+    g.restore();
+  });
+}
+
+// ---- boss heavy weapons ----
+// The two silhouettes that belong to bosses. They are deliberately oversized
+// and top-heavy — a boss should be readable as a boss from its outline alone,
+// before a single shot is fired, and an infantry rifle never did that.
+
+// Rotary minigun: six-barrel cluster on a rotor, ammo drum slung underneath,
+// spade grips at the rear. Nothing else in the arsenal has a barrel cluster,
+// so the read is instant even in silhouette.
+function paintMinigun(finish) {
+  const rec = (finish && finish.rec) || '#33383e';
+  const poly = (finish && finish.poly) || '#22262b';
+  return makeSprite(74, 30, 22, 15, (g) => {
+    g.translate(22, 15);
+
+    // ammo drum hanging below the receiver
+    g.fillStyle = metal(g, 2, 13, shade(rec, -0.2));
+    rr(g, -12, 1.5, 20, 12, 3.4); g.fill();
+    g.strokeStyle = 'rgba(8,9,12,0.55)'; g.lineWidth = 0.9;
+    for (let i = 1; i < 4; i++) {
+      g.beginPath(); g.moveTo(-12 + i * 5, 2.2); g.lineTo(-12 + i * 5, 12.8); g.stroke();
+    }
+    // feed chute from drum up into the receiver
+    g.fillStyle = shade(rec, -0.32);
+    g.beginPath();
+    g.moveTo(4, 2.2); g.lineTo(10, -3.4); g.lineTo(13, -1.2); g.lineTo(7.5, 3.6);
+    g.closePath(); g.fill();
+
+    // spade grips at the rear
+    g.fillStyle = poly;
+    rr(g, -20, -7.5, 4.2, 15, 1.6); g.fill();
+    g.fillStyle = shade(poly, -0.2);
+    rr(g, -21.5, -8.5, 7, 3.4, 1.2); g.fill();
+    rr(g, -21.5, 5.4, 7, 3.4, 1.2); g.fill();
+
+    // receiver housing
+    g.fillStyle = metal(g, -8, 3, rec);
+    rr(g, -16, -8, 24, 11, 2.6); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.10)';
+    g.fillRect(-16, -8, 24, 1.5);
+
+    // rotor face
+    g.fillStyle = shade(rec, -0.28);
+    g.beginPath(); g.arc(9, -2.5, 7.4, 0, Math.PI * 2); g.fill();
+    g.fillStyle = shade(rec, 0.16);
+    g.beginPath(); g.arc(9, -2.5, 3.1, 0, Math.PI * 2); g.fill();
+
+    // six barrels on the rotor, drawn back-to-front so the near ones overlap
+    const BARREL_L = 30;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.35;
+      const oy = Math.sin(a) * 4.6;
+      const depth = (Math.cos(a) + 1) / 2;            // 0 far … 1 near
+      const shadeAmt = -0.34 + depth * 0.34;
+      g.fillStyle = metal(g, -2.6 + oy, 1.6 + oy, shade(rec, shadeAmt));
+      rr(g, 9, -3.6 + oy, BARREL_L, 2.5, 1.1); g.fill();
+      // muzzle crown
+      g.fillStyle = shade(rec, shadeAmt - 0.2);
+      rr(g, 9 + BARREL_L - 3, -4.1 + oy, 3.4, 3.5, 1); g.fill();
+    }
+
+    // barrel clamp ring near the muzzle end
+    g.fillStyle = shade(rec, -0.1);
+    rr(g, 9 + BARREL_L - 12, -6.4, 3.4, 9.4, 1.2); g.fill();
+  });
+}
+
+// Shoulder-fired rocket launcher: fat smooth-bore tube, blast cone at the
+// rear, optic on a rail, forward grip. Reads long and hollow — the opposite
+// of the minigun's dense cluster.
+function paintRocketLauncher(finish) {
+  const rec = (finish && finish.rec) || '#3d4237';
+  const poly = (finish && finish.poly) || '#262a22';
+  return makeSprite(80, 26, 24, 13, (g) => {
+    g.translate(24, 13);
+
+    // main tube
+    g.fillStyle = metal(g, -6.5, 5.5, rec);
+    rr(g, -18, -6.5, 50, 12, 5.4); g.fill();
+    // top highlight + lower shadow so the tube reads round
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    rr(g, -16, -6.2, 45, 2.2, 1.1); g.fill();
+    g.fillStyle = 'rgba(6,8,12,0.35)';
+    rr(g, -16, 3.4, 45, 2.2, 1.1); g.fill();
+
+    // rear blast cone
+    g.fillStyle = metal(g, -9, 8, shade(rec, -0.24));
+    g.beginPath();
+    g.moveTo(-18, -6.5); g.lineTo(-26, -9.5);
+    g.lineTo(-26, 9.5); g.lineTo(-18, 6.5);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(6,8,12,0.75)';
+    g.beginPath(); g.ellipse(-25.4, 0, 1.8, 8.6, 0, 0, Math.PI * 2); g.fill();
+
+    // warhead protruding from the muzzle
+    g.fillStyle = '#6d4a2c';
+    rr(g, 30, -4.6, 9, 9, 2.2); g.fill();
+    g.fillStyle = '#8a5f38';
+    g.beginPath();
+    g.moveTo(39, -4.6); g.lineTo(47, 0); g.lineTo(39, 4.6);
+    g.closePath(); g.fill();
+    // warning band
+    g.fillStyle = 'rgba(210,60,50,0.85)';
+    g.fillRect(31.5, -4.6, 2.4, 9);
+
+    // optic on a short rail
+    g.fillStyle = shade(rec, -0.35);
+    g.fillRect(2, -9.6, 14, 3.2);
+    g.fillStyle = metal(g, -14, -9, shade(rec, 0.08));
+    rr(g, 4, -14.4, 10, 5.2, 1.6); g.fill();
+    g.fillStyle = 'rgba(120,200,255,0.5)';
+    rr(g, 12.4, -13.4, 1.8, 3.2, 0.7); g.fill();
+
+    // pistol grip + trigger guard
+    g.fillStyle = poly;
+    g.beginPath();
+    g.moveTo(-6, 5.5); g.lineTo(1.5, 5.5); g.lineTo(-0.5, 16); g.lineTo(-7, 16);
+    g.closePath(); g.fill();
+    g.strokeStyle = shade(poly, -0.25); g.lineWidth = 1.6;
+    g.beginPath(); g.arc(-1.5, 8.4, 4.2, 0.1, Math.PI * 0.95); g.stroke();
+
+    // forward grip under the tube
+    g.fillStyle = shade(poly, 0.06);
+    rr(g, 16, 5.5, 4.6, 9, 1.8); g.fill();
+  });
+}
+
+function paintRailgun(finish) {
+  const rec = (finish && finish.rec) || '#2e3238';
+  const poly = (finish && finish.poly) || '#202429';
+  const core = (finish && finish.core) || [150, 220, 255];
+  const [cr, cg, cb] = core;
+  return makeSprite(60, 20, 20, 12, (g) => {
+    g.translate(20, 12);
+
+    // shoulder brace instead of a stock
+    g.fillStyle = metal(g, -8, 2, shade(rec, -0.12));
+    g.beginPath();
+    g.moveTo(-6, -6.4); g.lineTo(-15, -6.4);
+    g.quadraticCurveTo(-18.4, -6.2, -18.2, -2.6);
+    g.lineTo(-18.4, 2.4); g.lineTo(-15.4, 2.4); g.lineTo(-14.6, -2);
+    g.lineTo(-6, -2);
+    g.closePath(); g.fill();
+
+    // body block + grip
+    g.fillStyle = metal(g, -7, 3, rec);
+    rr(g, -6.5, -7.4, 17, 7, 1); g.fill();
+    energyGrip(g, poly, rec);
+
+    // capacitor bank slung under the rails — three stacked drums
+    for (let i = 0; i < 3; i++) {
+      const cx = 12 + i * 6.4;
+      g.fillStyle = metal(g, -1, 4, shade(rec, -0.2));
+      rr(g, cx, -1.2, 5.4, 5, 1.6); g.fill();
+      g.fillStyle = `rgba(${cr},${cg},${cb},0.5)`;
+      g.fillRect(cx + 1, 0.4, 3.4, 1.1);
+    }
+
+    // twin rails: long, parallel, thin — the whole read of the weapon
+    g.fillStyle = metal(g, -11, -8.6, shade(rec, 0.2));
+    rr(g, 8, -11, 32, 2.2, 0.6); g.fill();
+    rr(g, 8, -6.4, 32, 2.2, 0.6); g.fill();
+    // arcing charge between the rails
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = `rgba(${cr},${cg},${cb},0.5)`; g.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const ax = 13 + i * 7;
+      g.beginPath();
+      g.moveTo(ax, -8.8);
+      g.lineTo(ax + 2.2, -7.4);
+      g.lineTo(ax + 1, -6.2);
+      g.stroke();
+    }
+    // muzzle arc between the rail tips
+    g.strokeStyle = `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},0.85)`;
+    g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(39.4, -9.4); g.lineTo(39.4, -4.6); g.stroke();
+    g.restore();
+
+    // rail spacers
+    g.fillStyle = shade(rec, -0.3);
+    for (const sx of [16, 26, 35]) g.fillRect(sx, -9.4, 1.6, 3.6);
+
+    // support-hand grip below the rails
+    g.fillStyle = polymer(g, -3, 2, poly);
+    rr(g, 14.5, -4.2, 9, 3, 1); g.fill();
+
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -14, -11, 52, 14, rng, { n: 16, color: 'rgba(210,225,240,0.14)' });
+    g.restore();
+  });
+}
+
+// ---- FLAME THROWER: pressurised tank, hose loop, wide nozzle with a live
+// pilot flame. The one weapon here that shouldn't look high-tech at all. ----
+function paintFlamethrower(finish) {
+  const rec = (finish && finish.rec) || '#3a1f12';
+  const poly = (finish && finish.poly) || '#2a150c';
+  return makeSprite(60, 20, 20, 12, (g) => {
+    g.translate(20, 12);
+
+    // fuel tank where the stock would be — fat, ribbed, with a pressure gauge
+    g.fillStyle = metal(g, -9, 3, shade(rec, 0.05));
+    rr(g, -19, -9, 14, 11.4, 5); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath(); g.moveTo(-16.6 + i * 4, -8.6); g.lineTo(-16.6 + i * 4, 2); g.stroke();
+    }
+    g.fillStyle = '#c9d2dc';
+    g.beginPath(); g.arc(-12, -4.6, 2.2, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#1a1b1e'; g.lineWidth = 0.5; g.stroke();
+    g.strokeStyle = '#c0392b'; g.lineWidth = 0.7;
+    g.beginPath(); g.moveTo(-12, -4.6); g.lineTo(-10.6, -5.8); g.stroke();
+
+    // body + grip
+    g.fillStyle = metal(g, -6, 3, rec);
+    rr(g, -5.4, -6.6, 15, 6.2, 1); g.fill();
+    energyGrip(g, poly, rec);
+
+    // fuel hose looping from tank to nozzle — the signature shape
+    g.strokeStyle = shade(poly, -0.1); g.lineWidth = 2.6; g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(-8, -1.2);
+    g.quadraticCurveTo(2, 7.4, 14, 1.2);
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 0.8;
+    g.beginPath();
+    g.moveTo(-8, -1.9);
+    g.quadraticCurveTo(2, 6.4, 14, 0.5);
+    g.stroke();
+    g.lineCap = 'butt';
+
+    // barrel tube + wide nozzle
+    g.fillStyle = metal(g, -8.4, -3.6, shade(rec, 0.1));
+    rr(g, 9.6, -8, 22, 4.6, 1.2); g.fill();
+    g.fillStyle = metal(g, -9.6, -2.4, shade(rec, -0.15));
+    g.beginPath();
+    g.moveTo(31.6, -8.6); g.lineTo(38.6, -10.2); g.lineTo(38.6, -1); g.lineTo(31.6, -2.6);
+    g.closePath(); g.fill();
+    // pilot flame at the nozzle lip
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const pilot = radgrad(g, 39.4, -5.6, 4.6, [
+      [0, 'rgba(255,230,150,0.95)'],
+      [0.4, 'rgba(255,150,50,0.55)'],
+      [1, 'rgba(255,90,20,0)'],
+    ]);
+    g.fillStyle = pilot;
+    g.beginPath(); g.arc(39.4, -5.6, 4.6, 0, Math.PI * 2); g.fill();
+    g.restore();
+
+    // support-hand foregrip on the tube
+    g.fillStyle = polymer(g, -3.4, 1.6, poly);
+    rr(g, 14, -3.2, 9.5, 3.2, 1.1); g.fill();
+
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    scratches(g, -18, -10, 56, 14, rng, { n: 22, color: 'rgba(240,200,160,0.16)' });
+    grunge(g, -19, -10, 58, 15, rng, { n: 50, dark: 0.14, light: 0.03 });
+    g.restore();
   });
 }
 
@@ -580,32 +1517,36 @@ const PATTERN_SMG = [0.55, 0.65, 0.78, 0.7, 0.6, 0.82, 0.9, 0.68];
 export function buildWeapons() {
   const flashes = [paintFlash(11), paintFlash(23), paintFlash(37)];
 
+  // Finish palettes are pushed noticeably more saturated/contrasty than a
+  // plain recolor of the default gunmetal — each named skin should read as a
+  // distinct, premium coating at a glance, not a dye-swap of the stock gun.
   const rifleBody = paintRifleBody('ranger');
-  const rifleFinishes = {
-    default: rifleBody,
-    urban: paintRifleBody('ranger', { rec: '#3c4750', poly: '#2b3640' }),
-    cinder: paintRifleBody('ranger', { rec: '#4a2e26', poly: '#38221c' }),
-    arc: paintRifleBody('ranger', { rec: '#123742', poly: '#0c2731' }),   // ARC-9 energy
-  };
+  // Skins are composited assets, not palette swaps: buildSkinSet re-paints the
+  // body in the skin's palette and then layers coating, engraving, emissive
+  // rim, rail optic and muzzle device on top. See art/skins.js for the tables.
+  const rifleFinishes = buildSkinSet('rifle', rifleBody,
+    (pal) => paintRifleBody('ranger', pal));
   const pistolBody = paintPistolBody();
-  const pistolFinishes = {
-    default: pistolBody,
-    desert: paintPistolBody({ grip: '#5c4f3a', frame: '#6b5c42' }),
-    onyx: paintPistolBody({ grip: '#161719', frame: '#1c1d1f' }),
-    gold: paintPistolBody({ grip: '#5a4718', frame: '#8a6f28' }),
+  const pistolFinishes = buildSkinSet('pistol', pistolBody,
+    (pal) => paintPistolBody({ grip: pal.grip || pal.poly, frame: pal.frame || pal.rec }));
+  // Knife skins keep their bespoke blade geometry — the bowie is a different
+  // shape, not a recolour — and the composited pass runs on top of whichever
+  // base the skin id selects.
+  const KNIFE_BOWIE = new Set(['ravage', 'voidedge', 'bloodmoon']);
+  const KNIFE_BLADE_COL = {
+    ravage: undefined, voidedge: '#b26bff', volt: '#38e0ff',
+    bloodmoon: '#ff3b5c', eventide: '#f2f6ff',
   };
   const knifeBody = paintKnife();
-  const knifeFinishes = {
-    default: knifeBody,
-    ravage: paintKnifeBowie(),
-    volt: paintKnife({ blade: '#38e0ff' }),   // VOLT EDGE energy blade
-  };
+  const knifeFinishes = buildSkinSet('knife', knifeBody, (pal, id) => (
+    KNIFE_BOWIE.has(id)
+      ? paintKnifeBowie(id === 'bloodmoon'
+          ? { handle: ['#4a1620', '#341019', '#1c0810'], blade: KNIFE_BLADE_COL[id] }
+          : { blade: KNIFE_BLADE_COL[id] })
+      : paintKnife({ blade: KNIFE_BLADE_COL[id] })
+  ));
   const smgBody = paintSmgBody();
-  const smgFinishes = {
-    default: smgBody,
-    viper: paintSmgBody({ rec: '#2c4a2e', poly: '#1b2e1c' }),
-    arc: paintSmgBody({ rec: '#123742', poly: '#0c2731' }),
-  };
+  const smgFinishes = buildSkinSet('smg', smgBody, (pal) => paintSmgBody(pal));
 
   const defs = {
     rifle: {
@@ -631,7 +1572,7 @@ export function buildWeapons() {
       aimHeight: -4.8,
     },
     pistol: {
-      id: 'pistol', name: 'C-9 "CORVID"', slot: 2, kind: 'gun',
+      id: 'pistol', recoilFeel: 'light', name: 'C-9 "CORVID"', slot: 2, kind: 'gun',
       body: pistolBody, finishes: pistolFinishes, finish: 'default',
       slide: paintPistolSlide(), flashes,
       gripA: { x: 0, y: 0.8 },
@@ -649,7 +1590,7 @@ export function buildWeapons() {
       aimHeight: -4,
     },
     smg: {
-      id: 'smg', name: 'P-12 "WASP"', slot: 4, kind: 'gun',
+      id: 'smg', recoilFeel: 'light', name: 'P-12 "WASP"', slot: 4, kind: 'gun',
       body: smgBody, finishes: smgFinishes, finish: 'default',
       mag: paintSmgMag(), bolt: paintBolt(),
       flashes,
@@ -672,6 +1613,16 @@ export function buildWeapons() {
     knife: {
       id: 'knife', name: 'TALON-7', slot: 3, kind: 'melee',
       body: knifeBody, finishes: knifeFinishes, finish: 'default',
+      // Motion-trail colour per finish (see player.js bladeTrailColor).
+      // Energy blades streak in their own light; steel gets a cool white.
+      trailColors: {
+        default: 'rgba(226,240,255,0.5)',
+        ravage: 'rgba(200,210,225,0.45)',
+        voidedge: 'rgba(178,107,255,0.7)',
+        volt: 'rgba(56,224,255,0.75)',
+        bloodmoon: 'rgba(255,59,92,0.75)',
+        eventide: 'rgba(242,246,255,0.8)',
+      },
       gripA: { x: -2.6, y: 0 },
       dmg: 55, dmgHeavy: 95,
       range: 46, arc: 1.1,
@@ -686,26 +1637,123 @@ export function buildWeapons() {
   // and reload timing are inherited from the base def, so every weapon keeps
   // a working reload animation for free.
   const R = defs.rifle, S = defs.smg, P = defs.pistol;
-  const rifleSkin = (rec, poly, core) => paintRifleBody('ranger', { rec, poly, core });
+
+  // Structural build per weapon. No two rows share a combination, so no two
+  // weapons share a silhouette — the outline differs at the stock, the barrel,
+  // the feed device and the topside accessory, not just in colour.
+  const CHASSIS = {
+    battle:    { stock: 'solid',    barrel: 'long',   mag: 'box',   top: 'scope',   hg: 24 },
+    lmg:       { stock: 'solid',    barrel: 'heavy',  mag: 'belt',  top: 'carry',   hg: 22 },
+    sniper:    { stock: 'skeleton', barrel: 'shroud', mag: 'stick', top: 'scope',   hg: 21 },
+    plasma:    { stock: 'tank',     barrel: 'vent',   mag: 'cell',  top: 'emitter', hg: 21 },
+    pulse:     { stock: 'brace',    barrel: 'coil',   mag: 'cell',  top: 'fins',    hg: 20 },
+    eshotgun:  { stock: 'folded',   barrel: 'stub',   mag: 'drum',  top: 'none',    hg: 20 },
+    ion:       { stock: 'tank',     barrel: 'twin',   mag: 'cell',  top: 'emitter', hg: 20 },
+    emp:       { stock: 'brace',    barrel: 'nozzle', mag: 'cell',  top: 'fins',    hg: 20 },
+    gravity:   { stock: 'tank',     barrel: 'coil',   mag: 'none',  top: 'emitter', hg: 20 },
+    lightning: { stock: 'none',     barrel: 'twin',   mag: 'cell',  top: 'fins',    hg: 20 },
+    cryo:      { stock: 'tank',     barrel: 'shroud', mag: 'cell',  top: 'none',    hg: 21 },
+  };
+  // ---- attachment geometry --------------------------------------------
+  //
+  // Every chassis weapon used to inherit the *rifle's* mount points along with
+  // its stats (`...R`), so the muzzle flash fired from x=40 whether the barrel
+  // ended at 35.6 (stub) or 49 (long), a rifle stick magazine hung off a
+  // weapon with a drum or no magwell at all, and a cycling bolt sat on energy
+  // weapons that have none. That is what read as parts floating loose.
+  //
+  // These are measured off the painters above — the same numbers the geometry
+  // is drawn from — so an attachment lands on the part it belongs to.
+
+  // Where each barrel assembly actually ends, and the bore centreline there.
+  const BARREL_TIP = {
+    long:   { x: 49.0, y: -5.2 },   // 24..46 tube + brake to 49
+    heavy:  { x: 42.0, y: -5.1 },   // fluted tube 22..42
+    shroud: { x: 47.0, y: -5.1 },   // shroud to 41 + thin barrel to 47
+    coil:   { x: 47.0, y: -4.9 },   // rail 20..46, last coil at 44.6
+    twin:   { x: 46.0, y: -4.9 },   // twin rails 20..46, bridge at 43..45.2
+    nozzle: { x: 44.0, y: -3.4 },   // flared bell mouth, wide and low
+    vent:   { x: 43.5, y: -5.0 },   // vent block to 38 + muzzle to 43.5
+    stub:   { x: 35.6, y: -5.0 },   // short tube to 31 + choke to 35.6
+  };
+
+  // Deck height of each topside accessory — where a rail optic bolts on.
+  // 'none' falls back to the bare receiver top, so a sight sits on metal
+  // instead of hovering where a scope would have been.
+  const TOP_RAIL_Y = {
+    carry: -15.4, scope: -16.2, emitter: -14.8, fins: -14.2, none: -8.6,
+  };
+
+  // Conventional actions cycle a bolt; energy weapons have no reciprocating
+  // mass, and drawing one on them put a rifle part on a plasma receiver.
+  const BOLTED = new Set(['battle', 'lmg', 'sniper']);
+
+  // Builds a body for `id` in the given palette, from its structural row.
+  const chassisBody = (id, pal) => paintChassis({
+    ...CHASSIS[id],
+    rec: pal.rec, poly: pal.poly, core: pal.core,
+  });
+
+  // Every mount point for `id`, derived from the row that builds its art.
+  // Spread over the inherited rifle def so the corrected values win.
+  const chassisMounts = (id, pal) => {
+    const row = CHASSIS[id];
+    const tip = BARREL_TIP[row.barrel];
+    const mag = paintChassisMag(row.mag, pal.rec, pal.poly, pal.core);
+    return {
+      muzzle: { x: tip.x, y: tip.y },
+      // The mag sprite is anchored on the weapon origin, so its attach point
+      // is the origin — offsetting it here would double-apply.
+      mag,
+      magPos: { x: 0, y: 0 },
+      // Support hand rides the back of this chassis's own handguard.
+      gripB: { x: row.hg - 4.5, y: -5.2 },
+      bolt: BOLTED.has(id) ? paintBolt() : null,
+      railY: TOP_RAIL_Y[row.top],
+    };
+  };
   const smgSkin = (rec, poly, core) => paintSmgBody({ rec, poly, core });
-  const pistolSkin = (grip, frame, core) => paintPistolBody({ grip, frame, core });
 
   Object.assign(defs, {
     // ------- conventional military -------
     battle: {
-      ...R, id: 'battle', name: 'MK-2 "WARDEN"', body: rifleSkin('#43372a', '#302719'),
+      ...R, id: 'battle', recoilFeel: 'heavy', name: 'MK-2 "WARDEN"', body: chassisBody('battle', { rec: '#43372a', poly: '#302719', core: null }),
+      ...chassisMounts('battle', { rec: '#43372a', poly: '#302719', core: null }),
       auto: false, rpm: 340, dmg: 46, spread: 0.015,
       recoilKick: 2.1, recoilRot: 0.03, camKick: 1.15, camTrauma: 0.062,
       magSize: 20, reserve: 100, reloadT: 2.3, reloadEmptyT: 3.0, shotSound: 'rifle',
     },
     lmg: {
-      ...R, id: 'lmg', name: 'M-900 "OX" LMG', body: rifleSkin('#2f3630', '#232823'),
+      ...R, id: 'lmg', recoilFeel: 'heavy', name: 'M-900 "OX" LMG', body: chassisBody('lmg', { rec: '#2f3630', poly: '#232823', core: null }),
+      ...chassisMounts('lmg', { rec: '#2f3630', poly: '#232823', core: null }),
       auto: true, rpm: 820, dmg: 24, spread: 0.032,
       recoilKick: 1.9, recoilRot: 0.03, camKick: 1.0, camTrauma: 0.05, muzzleBig: 1.35,
       magSize: 100, reserve: 200, reloadT: 3.8, reloadEmptyT: 4.4, shotSound: 'rifle',
     },
+    // ------- boss heavy weapons -------
+    // Only ever wielded by bosses, and only obtainable as a 1/1000 Boss
+    // Redeemable (see game/loot.js). Both are tuned well above the craftable
+    // ceiling on purpose — that is what makes the drop worth chasing.
+    minigun: {
+      ...R, id: 'minigun', recoilFeel: 'heavy', name: 'ANNIHILATOR', body: paintMinigun(),
+      auto: true, rpm: 1400, dmg: 26, spread: 0.055,
+      recoilKick: 1.1, recoilRot: 0.012, camKick: 0.7, camTrauma: 0.075, muzzleBig: 1.6,
+      magSize: 250, reserve: 500, reloadT: 5.2, reloadEmptyT: 6.0, shotSound: 'rifle',
+      mag: null, bolt: null,
+      tracerColor: [255, 214, 150], tracerWidth: 2.2,
+    },
+    rocket: {
+      ...R, id: 'rocket', recoilFeel: 'heavy', name: 'SIEGEBREAKER', body: paintRocketLauncher(),
+      auto: false, rpm: 42, dmg: 210, spread: 0.004,
+      fireMode: 'projectile',
+      projectile: { speed: 900, radius: 6, explode: 96, headMul: 1.2, color: [255, 170, 90] },
+      recoilKick: 3.6, recoilRot: 0.055, camKick: 2.8, camTrauma: 0.16, muzzleBig: 2.0,
+      magSize: 1, reserve: 12, reloadT: 3.2, reloadEmptyT: 3.6, shotSound: 'rifle',
+      mag: null, bolt: null,
+    },
     sniper: {
-      ...R, id: 'sniper', name: 'LRS-1 "TALON"', body: rifleSkin('#2a2e33', '#20242a'),
+      ...R, id: 'sniper', recoilFeel: 'heavy', name: 'LRS-1 "TALON"', body: chassisBody('sniper', { rec: '#2a2e33', poly: '#20242a', core: null }),
+      ...chassisMounts('sniper', { rec: '#2a2e33', poly: '#20242a', core: null }),
       auto: false, rpm: 55, dmg: 150, spread: 0.002,
       recoilKick: 3.2, recoilRot: 0.05, camKick: 2.4, camTrauma: 0.12, muzzleBig: 1.5,
       magSize: 5, reserve: 30, reloadT: 3.0, reloadEmptyT: 3.5,
@@ -713,34 +1761,37 @@ export function buildWeapons() {
     },
     // ------- energy: projectiles -------
     raygun: {
-      ...P, id: 'raygun', name: 'RAY GUN', body: pistolSkin('#3a1d55', '#4a2668', [200, 110, 255]),
+      ...P, id: 'raygun', recoilFeel: 'energy', name: 'RAY GUN', body: paintEnergyPistol('bell', { grip: '#3a1d55', frame: '#4a2668', core: [200, 110, 255] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 200, dmg: 62, spread: 0.02,
       projectile: { color: [200, 110, 255], radius: 5, speed: 900, blast: 44, headMul: 1.6, life: 1.6 },
       recoilKick: 1.4, recoilRot: 0.03, camKick: 0.8, camTrauma: 0.05, muzzleBig: 1.15,
       magSize: 10, reserve: 60, shotSound: 'ray',
     },
     plasma: {
-      ...R, id: 'plasma', name: 'PLASMA RIFLE', body: rifleSkin('#123742', '#0c2731', [80, 220, 255]),
+      ...R, id: 'plasma', recoilFeel: 'energy', name: 'PLASMA RIFLE', body: chassisBody('plasma', { rec: '#123742', poly: '#0c2731', core: [80, 220, 255] }),
+      ...chassisMounts('plasma', { rec: '#123742', poly: '#0c2731', core: [80, 220, 255] }),
       energy: true, fireMode: 'projectile', auto: true, rpm: 420, dmg: 34, spread: 0.022,
       projectile: { color: [80, 220, 255], radius: 4.6, speed: 1050, blast: 28, life: 1.4 },
       heatPerShot: 0.05, heatCool: 0.55, muzzleBig: 1.15,
       recoilKick: 1.4, recoilRot: 0.02, camKick: 0.8, camTrauma: 0.045, shotSound: 'plasma',
     },
     pulse: {
-      ...R, id: 'pulse', name: 'PULSE RIFLE', body: rifleSkin('#1c3a2a', '#12281c', [120, 255, 170]),
+      ...R, id: 'pulse', recoilFeel: 'energy', name: 'PULSE RIFLE', body: chassisBody('pulse', { rec: '#1c3a2a', poly: '#12281c', core: [120, 255, 170] }),
+      ...chassisMounts('pulse', { rec: '#1c3a2a', poly: '#12281c', core: [120, 255, 170] }),
       energy: true, fireMode: 'projectile', auto: true, rpm: 640, dmg: 22, spread: 0.02,
       projectile: { color: [120, 255, 170], radius: 3.8, speed: 1250, life: 1.2 },
       recoilKick: 1.2, recoilRot: 0.018, camKick: 0.62, camTrauma: 0.036, shotSound: 'pulse',
     },
     eshotgun: {
-      ...R, id: 'eshotgun', name: 'ENERGY SHOTGUN', body: rifleSkin('#43301a', '#2f2112', [255, 160, 60]),
+      ...R, id: 'eshotgun', recoilFeel: 'heavy', name: 'ENERGY SHOTGUN', body: chassisBody('eshotgun', { rec: '#43301a', poly: '#2f2112', core: [255, 160, 60] }),
+      ...chassisMounts('eshotgun', { rec: '#43301a', poly: '#2f2112', core: [255, 160, 60] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 75, dmg: 15, spread: 0.14, pellets: 8,
       projectile: { color: [255, 160, 60], radius: 3.4, speed: 820, life: 0.55 },
       recoilKick: 2.8, recoilRot: 0.04, camKick: 1.6, camTrauma: 0.09, muzzleBig: 1.4,
       magSize: 6, reserve: 36, reloadT: 2.6, reloadEmptyT: 3.2, shotSound: 'plasma',
     },
     quantum: {
-      ...P, id: 'quantum', name: 'QUANTUM PISTOL', body: pistolSkin('#123045', '#164a63', [90, 200, 255]),
+      ...P, id: 'quantum', recoilFeel: 'energy', name: 'QUANTUM PISTOL', body: paintEnergyPistol('prism', { grip: '#123045', frame: '#164a63', core: [90, 200, 255] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 300, dmg: 40, spread: 0.016,
       projectile: { color: [120, 220, 255], radius: 4, speed: 1400, pierce: 1, life: 1.2 },
       recoilKick: 1.2, recoilRot: 0.03, camKick: 0.6, camTrauma: 0.04, shotSound: 'ray',
@@ -748,7 +1799,10 @@ export function buildWeapons() {
     },
     // ------- energy: charge weapons -------
     railgun: {
-      ...R, id: 'railgun', name: 'GAUSS RAILGUN', body: rifleSkin('#2e3238', '#202429', [150, 220, 255]),
+      ...R, id: 'railgun', recoilFeel: 'heavy', name: 'GAUSS RAILGUN', body: paintRailgun(),
+      // no magazine well and no reciprocating bolt on this frame — the
+      // rifle def these inherit from would otherwise draw both floating.
+      mag: null, bolt: null,
       energy: true, fireMode: 'projectile', auto: false, rpm: 60, dmg: 120, spread: 0.001,
       projectile: { color: [150, 220, 255], radius: 4.2, speed: 2600, pierce: 4, life: 0.8 },
       charge: { time: 0.9, minMul: 0.5, maxMul: 1.5 },
@@ -756,7 +1810,8 @@ export function buildWeapons() {
       magSize: 5, reserve: 30, reloadT: 2.8, reloadEmptyT: 3.3, shotSound: 'rail',
     },
     ion: {
-      ...R, id: 'ion', name: 'ION CANNON', body: rifleSkin('#173d3a', '#0f2b29', [80, 255, 210]),
+      ...R, id: 'ion', recoilFeel: 'heavy', name: 'ION CANNON', body: chassisBody('ion', { rec: '#173d3a', poly: '#0f2b29', core: [80, 255, 210] }),
+      ...chassisMounts('ion', { rec: '#173d3a', poly: '#0f2b29', core: [80, 255, 210] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 40, dmg: 90, spread: 0.004,
       projectile: { color: [80, 255, 210], radius: 7, speed: 720, blast: 130, life: 2 },
       charge: { time: 1.1, minMul: 0.5, maxMul: 1.7 },
@@ -764,14 +1819,16 @@ export function buildWeapons() {
       magSize: 4, reserve: 24, reloadT: 3.0, reloadEmptyT: 3.6, shotSound: 'ion',
     },
     emp: {
-      ...R, id: 'emp', name: 'EMP LAUNCHER', body: rifleSkin('#26364a', '#1a2636', [120, 200, 255]),
+      ...R, id: 'emp', recoilFeel: 'energy', name: 'EMP LAUNCHER', body: chassisBody('emp', { rec: '#26364a', poly: '#1a2636', core: [120, 200, 255] }),
+      ...chassisMounts('emp', { rec: '#26364a', poly: '#1a2636', core: [120, 200, 255] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 70, dmg: 40, spread: 0.01,
       projectile: { color: [140, 210, 255], radius: 6, speed: 640, blast: 150, life: 2.2 },
       recoilKick: 2.0, recoilRot: 0.03, camKick: 1.4, camTrauma: 0.09, muzzleBig: 1.4,
       magSize: 5, reserve: 25, reloadT: 2.7, reloadEmptyT: 3.2, shotSound: 'ion',
     },
     gravity: {
-      ...R, id: 'gravity', name: 'GRAVITY GUN', body: rifleSkin('#3a2450', '#281634', [180, 120, 255]),
+      ...R, id: 'gravity', recoilFeel: 'energy', name: 'GRAVITY GUN', body: chassisBody('gravity', { rec: '#3a2450', poly: '#281634', core: [180, 120, 255] }),
+      ...chassisMounts('gravity', { rec: '#3a2450', poly: '#281634', core: [180, 120, 255] }),
       energy: true, fireMode: 'projectile', auto: false, rpm: 90, dmg: 55, spread: 0.008,
       projectile: { color: [180, 120, 255], radius: 6, speed: 560, blast: 110, life: 2.4 },
       recoilKick: 1.8, recoilRot: 0.03, camKick: 1.2, camTrauma: 0.08, muzzleBig: 1.4,
@@ -779,36 +1836,102 @@ export function buildWeapons() {
     },
     // ------- energy: beams -------
     lasersmg: {
-      ...S, id: 'lasersmg', name: 'LASER SMG', body: smgSkin('#3a1420', '#280d16', [255, 70, 90]),
+      ...S, id: 'lasersmg', recoilFeel: 'beam', name: 'LASER SMG',
+      body: paintLaserSmg({ rec: '#3a1420', poly: '#280d16', core: [255, 70, 90] }),
+      // its own frame: no bottom magazine, no reciprocating bolt
+      mag: null, bolt: null,
+      muzzle: { x: 22.4, y: -5.9 }, gripB: { x: 11, y: 1.4 },
       energy: true, fireMode: 'beam', auto: true, rpm: 1100, dmg: 9, spread: 0.02,
       beam: { color: [255, 70, 90], width: 2.2 }, heatPerShot: 0.03, heatCool: 0.6,
       recoilKick: 0.7, recoilRot: 0.012, camKick: 0.4, camTrauma: 0.024, shotSound: 'laser',
     },
     particle: {
-      ...R, id: 'particle', name: 'PARTICLE BEAM', body: rifleSkin('#2a1d55', '#1c1440', [190, 120, 255]),
+      ...R, id: 'particle', recoilFeel: 'beam', name: 'PARTICLE BEAM', body: paintParticleThrower(),
+      // no magazine well and no reciprocating bolt on this frame — the
+      // rifle def these inherit from would otherwise draw both floating.
+      mag: null, bolt: null,
       energy: true, fireMode: 'beam', auto: true, rpm: 520, dmg: 16, spread: 0.006,
       beam: { color: [190, 120, 255], width: 2.6 }, heatPerShot: 0.045, heatCool: 0.5,
       recoilKick: 0.9, recoilRot: 0.014, camKick: 0.5, camTrauma: 0.03, shotSound: 'particle',
     },
     lightning: {
-      ...R, id: 'lightning', name: 'LIGHTNING RIFLE', body: rifleSkin('#26364a', '#1a2636', [130, 200, 255]),
+      ...R, id: 'lightning', recoilFeel: 'beam', name: 'LIGHTNING RIFLE', body: chassisBody('lightning', { rec: '#26364a', poly: '#1a2636', core: [130, 200, 255] }),
+      ...chassisMounts('lightning', { rec: '#26364a', poly: '#1a2636', core: [130, 200, 255] }),
       energy: true, fireMode: 'beam', auto: true, rpm: 260, dmg: 20, spread: 0.01,
       beam: { color: [150, 210, 255], width: 2, arc: true }, shotSound: 'lightning',
       recoilKick: 1.0, recoilRot: 0.016, camKick: 0.6, camTrauma: 0.04,
     },
     cryo: {
-      ...R, id: 'cryo', name: 'CRYO GUN', body: rifleSkin('#1d3a4a', '#122a36', [160, 230, 255]),
+      ...R, id: 'cryo', recoilFeel: 'beam', name: 'CRYO GUN', body: chassisBody('cryo', { rec: '#1d3a4a', poly: '#122a36', core: [160, 230, 255] }),
+      ...chassisMounts('cryo', { rec: '#1d3a4a', poly: '#122a36', core: [160, 230, 255] }),
       energy: true, fireMode: 'beam', auto: true, rpm: 700, dmg: 8, spread: 0.03,
       beam: { color: [170, 235, 255], width: 3.4, range: 360 }, shotSound: 'cryo',
       recoilKick: 0.5, recoilRot: 0.008, camKick: 0.3, camTrauma: 0.02,
     },
     flame: {
-      ...R, id: 'flame', name: 'FLAME THROWER', body: rifleSkin('#3a1f12', '#2a150c', [255, 130, 40]),
+      ...R, id: 'flame', recoilFeel: 'beam', name: 'FLAME THROWER', body: paintFlamethrower(),
+      // no magazine well and no reciprocating bolt on this frame — the
+      // rifle def these inherit from would otherwise draw both floating.
+      mag: null, bolt: null,
       energy: true, fireMode: 'beam', auto: true, rpm: 900, dmg: 6, spread: 0.05,
       beam: { color: [255, 130, 40], width: 6, range: 300, flame: true }, shotSound: 'flame',
       recoilKick: 0.4, recoilRot: 0.006, camKick: 0.3, camTrauma: 0.024,
     },
   });
+
+  // ------------------------------------------------------------------
+  // Skin sets for every remaining weapon.
+  //
+  // rifle / pistol / smg / knife already got theirs above (their finish maps
+  // are referenced directly by their defs). This covers the other 19 so that
+  // no weapon in the game ships without skins.
+  //
+  // `mount` names which chassis the weapon's body actually is — most energy
+  // weapons share the rifle chassis, so they share its muzzle/rail mount
+  // points, but each still gets its own skin table and its own composited
+  // sprites. `paint` re-paints that chassis in the skin's palette.
+  const SKIN_BASES = {
+    // conventional, rifle chassis
+    // Each of these paints its *own* chassis, so a skin keeps the weapon's
+    // silhouette instead of reverting it to the shared rifle body.
+    battle:   { mount: 'battle', paint: (p) => chassisBody('battle', p) },
+    lmg:      { mount: 'lmg', paint: (p) => chassisBody('lmg', p) },
+    sniper:   { mount: 'sniper', paint: (p) => chassisBody('sniper', p) },
+    plasma:   { mount: 'plasma', paint: (p) => chassisBody('plasma', p) },
+    pulse:    { mount: 'pulse', paint: (p) => chassisBody('pulse', p) },
+    eshotgun: { mount: 'eshotgun', paint: (p) => chassisBody('eshotgun', p) },
+    ion:      { mount: 'ion', paint: (p) => chassisBody('ion', p) },
+    emp:      { mount: 'emp', paint: (p) => chassisBody('emp', p) },
+    gravity:  { mount: 'gravity', paint: (p) => chassisBody('gravity', p) },
+    lightning:{ mount: 'lightning', paint: (p) => chassisBody('lightning', p) },
+    cryo:     { mount: 'cryo', paint: (p) => chassisBody('cryo', p) },
+    // energy, pistol chassis
+    // These two paint their own energy frames, not the C-9 pistol body, so a
+    // skin recolours the bulb-and-bell / prism-slab silhouette rather than
+    // quietly reverting both guns to the same shared pistol shape.
+    raygun:   { mount: 'pistol', paint: (p) => paintEnergyPistol('bell', p) },
+    quantum:  { mount: 'pistol', paint: (p) => paintEnergyPistol('prism', p) },
+    // energy, smg chassis
+    lasersmg: { mount: 'lasersmg', paint: (p) => paintLaserSmg(p) },
+    // purpose-built chassis, each with its own painter and mount points
+    particle: { mount: 'particle', paint: (p) => paintParticleThrower(p) },
+    railgun:  { mount: 'railgun',  paint: (p) => paintRailgun(p) },
+    flame:    { mount: 'flame',    paint: (p) => paintFlamethrower(p) },
+    minigun:  { mount: 'minigun',  paint: (p) => paintMinigun(p) },
+    rocket:   { mount: 'rocket',   paint: (p) => paintRocketLauncher(p) },
+  };
+
+  for (const [id, base] of Object.entries(SKIN_BASES)) {
+    const def = defs[id];
+    if (!def) continue;
+    // Chassis weapons carry a detachable magazine, so each skin repaints it
+    // from the same structural row the body came from.
+    const magPaint = CHASSIS[id]
+      ? (pal) => paintChassisMag(CHASSIS[id].mag, pal.rec, pal.poly, pal.core)
+      : null;
+    def.finishes = buildSkinSet(id, def.body, base.paint, base.mount, magPaint);
+    def.finish = 'default';
+  }
 
   return defs;
 }

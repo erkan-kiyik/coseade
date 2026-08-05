@@ -7,6 +7,7 @@
 // a scripted collapse on death that leaves the body in the scene.
 
 import { clamp, lerp, damp, rand, randSpread, easeInOutQuad, angleDiff } from '../engine/math.js';
+import { bossHp, bossDmgMul, bossSkill, BOSS_INTERVAL } from './difficulty.js';
 import { newWeaponState, computePose, weaponAnchor, weaponPoint, toWorld, drawSoldier } from './rig.js';
 import { segVsBox } from './player.js';
 
@@ -31,6 +32,8 @@ export class Enemy {
 
     this.hp = 100; this.maxHp = 100;
     this.difficulty = 0;          // set by Game from the current stage
+    this.dmgMul = 1;              // damage multiplier (Boss overrides)
+    this.hitboxScale = 1;         // player hit-detection box scale (Boss overrides)
     this.state = 'patrol';
     this.patrolMin = patrolMin; this.patrolMax = patrolMax;
     this.waitT = rand(0, 2);
@@ -168,7 +171,7 @@ export class Enemy {
   }
 
   meleeShove(player) {
-    const dmg = 9 + this.difficulty * 1.4;
+    const dmg = (9 + this.difficulty * 1.4) * this.dmgMul;
     player.hurt(dmg, this.facing, this.x);
     player.vx += this.facing * 260;
     this.vx -= this.facing * 90;
@@ -336,7 +339,8 @@ export class Enemy {
         this.facing = Math.sign(dx) || this.facing;
 
         // retreat trigger when badly hurt (probabilistic so squads don't all flee at once)
-        if (this.hp < this.maxHp * 0.28 && rand() < dt * 0.7) {
+        // — a boss stands its ground no matter how hurt
+        if (!this.isBoss && this.hp < this.maxHp * 0.28 && rand() < dt * 0.7) {
           this.state = 'retreat'; this.retreatT = 0; this.coverTarget = null;
         } else {
           // point-blank shove
@@ -489,9 +493,9 @@ export class Enemy {
     const hy = mzl.y + (ey - mzl.y) * bestT;
 
     if (hitPlayer) {
-      player.hurt(7 + rand(0, 5) | 0, Math.sign(ex - mzl.x), this.x);
+      player.hurt(((7 + rand(0, 5) | 0) * this.dmgMul) | 0, Math.sign(ex - mzl.x), this.x);
     } else if (wHit) {
-      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny);
+      this.fx.impactWall(hx, hy, wHit.nx, wHit.ny, wHit.mat);
     }
 
     ws.flashT = 1;
@@ -507,8 +511,84 @@ export class Enemy {
     this.fx.casing(ejl.x, ejl.y, this.facing, 4.6);
   }
 
-  draw(g) {
-    drawSoldier(g, this.parts, this.shadow, this, { wpn: this.wpn, ws: this.ws });
+  draw(g, opts = null) {
+    drawSoldier(g, this.parts, this.shadow, this, { wpn: this.wpn, ws: this.ws }, opts);
+  }
+}
+
+// ---------------------------------------------------------------- Boss
+// A heavyweight variant of the same AI above — the patrol/suspicious/
+// alert/combat state machine, awareness, cover-seeking and fire control
+// are all inherited untouched. A boss just never retreats (see the
+// isBoss guard in the combat state), hits harder (dmgMul), reads as
+// visibly bigger (visualScale + a matching hitboxScale so it's fairly
+// hittable across its larger silhouette — see the hitboxScale reads in
+// player.js's hitscanShot/beamShot and fx.js's projectile hit test),
+// and periodically ground-slams for a readable AOE "special attack"
+// beat. Spawned solo on every 5th stage — see spawnEnemiesForStage()
+// in main.js — so the regular squad encounters are untouched.
+export const BOSS_NAMES = ['WARLORD KESTREL', 'THE FOREMAN', 'IRON SERGEANT', 'THE COLLECTOR', 'WARDEN VESK', 'BLACKOUT PRIME'];
+// Re-exported from the difficulty module so the encounter code and the
+// scaling curves cannot disagree about where bosses live.
+export const BOSS_STAGE_INTERVAL = BOSS_INTERVAL;
+
+// Which heavy weapon each boss tier carries. A boss never picks up an
+// infantry rifle — the oversized silhouette is half of what makes the
+// encounter read as a boss fight before the first shot lands. Cycles with the
+// tier so repeat bosses at higher stages still change hands.
+export const BOSS_WEAPONS = ['minigun', 'rocket', 'lmg', 'minigun', 'rocket', 'railgun'];
+
+export class Boss extends Enemy {
+  constructor(parts, shadow, rifle, world, fx, audio, x, patrolMin, patrolMax, stage) {
+    super(parts, shadow, rifle, world, fx, audio, x, patrolMin, patrolMax);
+    this.isBoss = true;
+    const tier = Math.max(0, Math.floor(stage / BOSS_STAGE_INTERVAL) - 1);
+    this.name = BOSS_NAMES[tier % BOSS_NAMES.length];
+    this.weaponId = BOSS_WEAPONS[tier % BOSS_WEAPONS.length];
+    this.visualScale = 1.5;
+    this.hitboxScale = 1.32;
+    // Boss stats ride the shared endless curves (game/difficulty.js) instead
+    // of the old `clamp(stage/3, 3, 10)` and a flat `420 + stage * 55`, both
+    // of which stopped meaning anything deep into a run.
+    this.dmgMul = bossDmgMul(stage);
+    this.difficulty = bossSkill(stage);
+    this.maxHp = bossHp(stage);
+    this.hp = this.maxHp;
+    this.slamCd = rand(3.5, 5);
+  }
+
+  update(dt, player, game) {
+    super.update(dt, player, game);
+    if (this.deadT > 0) return;
+    // periodic close-range ground slam: knockback + AOE damage, telegraphed
+    // by the light flash so it reads as a distinct "special attack" beat
+    // rather than just more gunfire
+    this.slamCd -= dt;
+    if (this.slamCd <= 0 && player && player.deadT <= 0 &&
+        (this.state === 'combat' || this.state === 'alert') && Math.abs(player.x - this.x) < 170) {
+      this.slamCd = rand(5.5, 8);
+      this.groundSlam(player);
+    }
+  }
+
+  groundSlam(player) {
+    this.fx.addLight(this.x, this.y - 30, 160, [255, 100, 60], 0.65, 0.2);
+    this.audio.hitFlesh();
+    if (Math.abs(player.x - this.x) < 180) {
+      const dir = Math.sign(player.x - this.x) || this.facing;
+      player.hurt(16 + this.difficulty, dir, this.x);
+      player.vx += dir * 320;
+    }
+  }
+
+  draw(g, opts = null) {
+    g.save();
+    g.filter = 'hue-rotate(-16deg) saturate(1.35) brightness(0.94)';
+    g.translate(this.x, this.y);
+    g.scale(this.visualScale, this.visualScale);
+    g.translate(-this.x, -this.y);
+    drawSoldier(g, this.parts, this.shadow, this, { wpn: this.wpn, ws: this.ws }, opts);
+    g.restore();
   }
 }
 
