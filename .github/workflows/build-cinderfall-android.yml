@@ -34,10 +34,10 @@ jobs:
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install mobile dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Sync web assets into Capacitor shell
-        run: npm run sync
+      - name: Scaffold Android shell from web assets
+        run: npm run add:android
 
       - name: Build debug APK
         working-directory: mobile/android
