@@ -553,7 +553,7 @@ export class Player {
     // around with the default-palette magazine bolted to it.
     cur.wpn = finishKey === 'default'
       ? base
-      : { ...base, body: fin, mag: fin.mag || base.mag, finish: finishKey };
+      : { ...base, body: fin, mag: fin.mag || base.mag, slide: fin.slide || base.slide, finish: finishKey };
   }
 
   switchTo(slot) {
