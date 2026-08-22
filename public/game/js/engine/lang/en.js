@@ -314,4 +314,43 @@ export const EN = {
   'moth.boss.0': "Something big just moved. My rotors don't like it. Neither should you.",
   'moth.boss.1': "That's not a patrol. That's the thing they were saving.",
   'moth.boss.2': "I'll hang back on this one. Not out of fear. Out of strategy. Mostly strategy.",
+
+  // ---- MOTH's in-mission radio barks (game/barks.js) ----
+  'bark.streak3.0': "Three down. You're finding a rhythm.",
+  'bark.streak3.1': "They keep walking into it. I'd stop. They don't.",
+  'bark.streak3.2': "Nice grouping. I'm keeping score, by the way.",
+
+  'bark.streak6.0': "Six. Whatever you're doing, keep doing it.",
+  'bark.streak6.1': "I've lost count. That's a compliment.",
+  'bark.streak6.2': "Somebody down there is asking for reinforcements. Loudly.",
+
+  'bark.headshot.0': "Straight through the plate. Efficient.",
+  'bark.headshot.1': "That one didn't even hear it.",
+  'bark.headshot.2': "Clean. I felt that from up here.",
+
+  'bark.stealth.0': "Quiet work. Nobody's radio went off.",
+  'bark.stealth.1': "He's just asleep. That's the story we're telling.",
+  'bark.stealth.2': "No noise, no reinforcements. I approve.",
+
+  'bark.barrel.0': "That barrel had a bad day.",
+  'bark.barrel.1': "Fuel drums. Somebody's inventory is going to be short.",
+  'bark.barrel.2': "Efficient. Loud. Mostly loud.",
+
+  'bark.lowHp.0': "You're bleeding. Take cover — I'm serious.",
+  'bark.lowHp.1': "Vitals are bad. Break contact. Please.",
+  'bark.lowHp.2': "That's too much damage. Get behind something solid.",
+
+  'bark.survived.0': "You're back on your feet. Don't do that again.",
+  'bark.survived.1': "Vitals climbing. I was drafting a eulogy.",
+  'bark.survived.2': "Better. My rotors were shaking, and that's your fault.",
+
+  'bark.firstBlood.0': "First one's down. They know we're here now.",
+  'bark.firstBlood.1': "Contact confirmed. No going quiet after this.",
+
+  'bark.quiet.0': "Nothing moving. I don't trust it either.",
+  'bark.quiet.1': "Still clear. Use the time.",
+  'bark.quiet.2': "It's quiet. In my experience that's a countdown.",
+
+  'bark.bossSpot.0': "That's the big one. Don't trade shots with it.",
+  'bark.bossSpot.1': "Heavy contact. Use the cover — all of it.",
 };

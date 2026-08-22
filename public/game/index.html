@@ -119,6 +119,18 @@
       </span>
     </div>
 
+    <!-- MOTH's radio barks. Its own element for the same reason the intel
+         toast is: a bark and an intel find can land on the same kill, and
+         sharing a banner means whichever fires second wipes the first. Sits
+         low-left, clear of the objective and the weapon panel. -->
+    <div id="bark" class="bark">
+      <span class="bark-mark">◎</span>
+      <span class="bark-body">
+        <span class="bark-who">MOTH</span>
+        <span class="bark-text"></span>
+      </span>
+    </div>
+
     <div id="dmg-left" class="dmg-dir left"></div>
     <div id="dmg-right" class="dmg-dir right"></div>
     <div id="dmg-omni" class="dmg-dir omni"></div>

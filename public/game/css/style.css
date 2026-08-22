@@ -1524,6 +1524,57 @@ html.no-backdrop-filter .intel-toast { background: rgba(11, 14, 19, 0.94); }
   100% { opacity: 0; max-height: 60px; padding-top: 8px; padding-bottom: 8px; transform: translate(-50%, 0); }
 }
 
+/* ---- MOTH radio barks -------------------------------------------------- */
+/* Bottom-left, above the touch controls' thumb zone and clear of the vitals
+   panel, so a bark never covers something the player is reading mid-fight.
+   Cyan edge rather than the intel toast's amber: at a glance the colour alone
+   says which of the two just fired. */
+.bark {
+  position: absolute;
+  left: calc(14px * var(--ui-scale));
+  bottom: calc(78px * var(--ui-scale));
+  display: flex; align-items: flex-start;
+  gap: calc(8px * var(--ui-scale));
+  max-width: min(62vw, 380px);
+  padding: calc(7px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  background: rgba(11, 14, 19, 0.42);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  backdrop-filter: blur(9px) saturate(1.1);
+  border-radius: var(--r2);
+  box-shadow:
+    inset 2px 0 0 #4ec4e0,
+    0 6px 20px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateX(-8px);
+  pointer-events: none;
+  padding-left: max(calc(12px * var(--ui-scale)), env(safe-area-inset-left, 0px));
+}
+html.no-backdrop-filter .bark { background: rgba(11, 14, 19, 0.94); }
+.bark-mark {
+  font-size: calc(11px * var(--ui-scale));
+  color: #4ec4e0;
+  line-height: 1.5;
+  flex: none;
+}
+.bark-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.bark-who {
+  font-size: calc(8px * var(--ui-scale));
+  letter-spacing: 0.2em; font-weight: 700;
+  color: #4ec4e0; opacity: 0.85;
+}
+.bark-text {
+  font-size: calc(11px * var(--ui-scale));
+  line-height: 1.45;
+  color: var(--ink);
+}
+.bark.show { animation: bark-in 3.4s var(--ease-out); }
+@keyframes bark-in {
+  0%   { opacity: 0; transform: translateX(-8px); }
+  6%   { opacity: 1; transform: translateX(0); }
+  88%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(0); }
+}
+
 /* ---- archives: collection list ---------------------------------------- */
 .archives-meter { margin-bottom: var(--s5); }
 .archives-count {

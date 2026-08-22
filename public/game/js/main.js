@@ -29,6 +29,7 @@ import { MetaUI } from './game/metaui.js';
 import { StoreUI } from './game/storeui.js';
 import { StatsUI } from './game/statsui.js';
 import { ArchivesUI } from './game/archives.js';
+import { Barks } from './game/barks.js';
 import { ProfileUI } from './game/profile.js';
 import { intelTitleKey } from './game/intel.js';
 import { TouchControls } from './engine/touch.js';
@@ -297,6 +298,9 @@ class Game {
     // under a screen the player cannot see or act on.
     this.interlude = null;
     this.interludeRunning = false;
+    // MOTH's in-mission radio barks (game/barks.js). Heavily rate-limited
+    // there; this class only reports events to it.
+    this.barks = new Barks(document.getElementById('bark'), audio);
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
@@ -412,6 +416,7 @@ class Game {
     const res = this.progression.addXp(10 + (headshot ? 15 : 0));
     this.handleLevelUp(res);
     this.registerKill();
+    this.noteKillBark(headshot ? 'headshot' : null);
     this.rollIntel(enemy);
     if (enemy && enemy.isBoss) this.onBossDefeated(enemy);
   }
@@ -425,6 +430,7 @@ class Game {
     const res = this.progression.addXp(14);
     this.handleLevelUp(res);
     this.registerKill();
+    this.noteKillBark('stealth');
     this.rollIntel(enemy);
     if (enemy && enemy.isBoss) this.onBossDefeated(enemy);
   }
@@ -483,6 +489,19 @@ class Game {
   }
 
   resetKillStreak() { this.currentKillStreak = 0; }
+
+  // One place where every elimination decides whether MOTH says anything.
+  // The streak thresholds are checked first and win over the per-kill flavour
+  // line, so a headshot that also lands the sixth kill reports the streak —
+  // Barks itself would drop the second call on its global cooldown anyway,
+  // and this makes which one survives deliberate rather than incidental.
+  noteKillBark(flavour) {
+    this.barks.noteKill();
+    if (this.currentKillStreak === 1) { this.barks.fire('firstBlood'); return; }
+    if (this.currentKillStreak === 6) { this.barks.fire('streak6'); return; }
+    if (this.currentKillStreak === 3) { this.barks.fire('streak3'); return; }
+    if (flavour) this.barks.fire(flavour);
+  }
 
   // Called by Player.fire() every trigger pull — in-memory only, flushed to
   // Progression in one batch at run end (see finish()).
@@ -550,6 +569,7 @@ class Game {
     hud.showRevive(false);
     this._weaponShotsThisRun = {};
     this.currentKillStreak = 0; this.comboCount = 0; this.comboTimer = 0;
+    this.barks.reset();
     this.startTime = this.time;
     this.cam.follow(this.player.x, this.player.y - 60, 0, 0, true);
     hud.setObjective(0, this.enemies.length);
@@ -619,6 +639,7 @@ class Game {
       const boss = this.enemies[0];
       hud.showBoss(true, boss.name);
       hud.setBossHp(1);
+      this.barks.fire('bossSpot');
       if (!leveled) hud.notify(t('notify.bossIncoming', { name: boss.name }));
     } else {
       hud.showBoss(false);
@@ -753,6 +774,7 @@ class Game {
     if (!b.alive) return;
     b.alive = false;
     this.fx.explosion(b.x, b.y);
+    this.barks.fire('barrel');
     const hurtRadius = 160;
     const blast = (ent, isPlayer) => {
       const d = Math.hypot(ent.x - b.x, (ent.y - 60) - (b.y - 10));
@@ -788,6 +810,17 @@ class Game {
     }
     if (this.state === 'pause') { input.endFrame(); return; }
     if (this.state === 'revive') { input.endFrame(); return; }
+    // MOTH's ambient barks (low health, recovery, a long lull). Ticked above
+    // the interlude gate on purpose: a bark left on screen when the stage was
+    // cleared has to keep draining its hold, or it is still sitting there —
+    // frozen mid-animation — when the cinematic hands off to the next stage.
+    // `playing` gates only the *triggers*, so nothing new fires meanwhile.
+    this.barks.update(dt, {
+      playing: this.state === 'play' && !this.interludeRunning && this.player.deadT <= 0,
+      hp: this.player.hp,
+      maxHp: this.player.maxHp,
+    });
+
     // The between-stage cinematic covers the playfield, so nothing should be
     // simulating under it — and the taps that skip it must not also fire the
     // weapon on the stage it hands off to.

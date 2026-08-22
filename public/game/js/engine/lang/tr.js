@@ -316,4 +316,43 @@ export const TR = {
   'moth.boss.0': 'Büyük bir şey kımıldadı. Pervanelerim bundan hoşlanmadı. Sen de hoşlanma.',
   'moth.boss.1': 'Bu bir devriye değil. Bu, sakladıkları şey.',
   'moth.boss.2': 'Bu seferlik geride duracağım. Korkudan değil. Stratejiden. Çoğunlukla stratejiden.',
+
+  // ---- MOTH'un görev içi telsiz replikleri (game/barks.js) ----
+  'bark.streak3.0': 'Üç indi. Ritmi buluyorsun.',
+  'bark.streak3.1': 'Üstüne yürümeye devam ediyorlar. Ben dururdum. Onlar durmuyor.',
+  'bark.streak3.2': 'Güzel seri. Bu arada sayıyorum.',
+
+  'bark.streak6.0': 'Altı. Ne yapıyorsan yapmaya devam et.',
+  'bark.streak6.1': 'Saymayı bıraktım. Bu bir iltifat.',
+  'bark.streak6.2': 'Aşağıda biri takviye istiyor. Hem de bağıra bağıra.',
+
+  'bark.headshot.0': 'Doğrudan plakanın içinden. Verimli.',
+  'bark.headshot.1': 'O sesi bile duymadı.',
+  'bark.headshot.2': 'Temiz. Buradan bile hissettim.',
+
+  'bark.stealth.0': 'Sessiz iş. Kimsenin telsizi ötmedi.',
+  'bark.stealth.1': 'Sadece uyuyor. Anlatacağımız hikâye bu.',
+  'bark.stealth.2': 'Ses yok, takviye yok. Onaylıyorum.',
+
+  'bark.barrel.0': 'O varilin günü kötü geçti.',
+  'bark.barrel.1': 'Yakıt varilleri. Birinin sayımı eksik çıkacak.',
+  'bark.barrel.2': 'Verimli. Gürültülü. Çoğunlukla gürültülü.',
+
+  'bark.lowHp.0': 'Kanaman var. Siperlen — ciddiyim.',
+  'bark.lowHp.1': 'Değerlerin kötü. Teması kes. Lütfen.',
+  'bark.lowHp.2': 'Bu fazla hasar. Sağlam bir şeyin arkasına geç.',
+
+  'bark.survived.0': 'Yeniden ayaktasın. Bir daha yapma.',
+  'bark.survived.1': 'Değerler yükseliyor. Ben veda konuşması yazıyordum.',
+  'bark.survived.2': 'Daha iyi. Pervanelerim titriyordu, o da senin suçun.',
+
+  'bark.firstBlood.0': 'İlki indi. Artık burada olduğumuzu biliyorlar.',
+  'bark.firstBlood.1': 'Temas doğrulandı. Bundan sonra sessizlik yok.',
+
+  'bark.quiet.0': 'Kımıldayan yok. Ben de güvenmiyorum.',
+  'bark.quiet.1': 'Hâlâ temiz. Zamanı değerlendir.',
+  'bark.quiet.2': 'Sessiz. Tecrübeme göre bu bir geri sayımdır.',
+
+  'bark.bossSpot.0': 'Büyük olan bu. Onunla karşılıklı atışma.',
+  'bark.bossSpot.1': 'Ağır temas. Siperleri kullan — hepsini.',
 };
