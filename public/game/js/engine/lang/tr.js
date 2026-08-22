@@ -285,4 +285,35 @@ export const TR = {
   'rank.veteran': 'KIDEMLİ SAVAŞÇI',
   'rank.elite': 'ELİT İSYANCI',
   'rank.commander': 'SEKTÖR KOMUTANI',
+
+  // ---- ara sahneler: MOTH, hurdadan toplanma keşif dronu ----
+  // Oyunun tek sesi. Bölümler arasında doğrudan operatöre konuşur ve
+  // harekât uzadıkça giderek daha az profesyonel olur.
+  'interlude.skip': 'GEÇMEK İÇİN DOKUN',
+  'interlude.stamp': 'SEKTÖR {n}',
+  'interlude.bossStamp': 'SEKTÖR {n} — AĞIR TEMAS',
+
+  'moth.early.0': 'Blok temiz. Mermilerini saydım — nefes alacak kadar var.',
+  'moth.early.1': 'Sonraki sokak da öncekiyle aynı. Bu bir şikâyet değil.',
+  'moth.early.2': 'Çalışan bir sokak lambası buldum. Küçük zaferler, operatör.',
+  'moth.early.3': 'Sessizleşiyorsun. Sessizliği severim. Sessizlik, öbür gözümü koruyacağım demek.',
+
+  'moth.mid.0': 'Artık önümüzden telsizle haber veriyorlar. Ceset sayısı olan bir söylentiyiz.',
+  'moth.mid.1': 'Kaç kişi kaldı diye hesapladım. Sonra hesaplamayı bıraktım.',
+  'moth.mid.2': 'Geride bir duvara eşkâlini asmışlar. Pek benzetememişler.',
+  'moth.mid.3': 'Her seferinde üstüne yürüyorsun. Her seferinde. Bu artık içimi rahatlatıyor.',
+
+  'moth.late.0': 'Harita üç blok önce bitti. Gerisini kendim çiziyorum.',
+  'moth.late.1': 'Gövdemde zırhtan çok delik var. Boş ver. Ben vermiyorum.',
+  'moth.late.2': 'İkimizden biri geri dönecek olsaydı, çoktan dönmüştü.',
+  'moth.late.3': 'Kimse seni almaya gelmiyor. Baktım. İki kez. Sonra bakmayı bıraktım.',
+
+  'moth.deep.0': 'Burası hangi sektör artık bilmiyorum. Sadece hâlâ ayakta olduğunu biliyorum.',
+  'moth.deep.1': 'Ölmüş olman gerekirdi. Her ihtimali hesapladım. Ölmüş olman gerekirdi.',
+  'moth.deep.2': 'Bu sokağın sonunda ne varsa — senin adını duymuş.',
+  'moth.deep.3': 'Artık sadece ikimiz varız, operatör. Bir süredir öyle zaten.',
+
+  'moth.boss.0': 'Büyük bir şey kımıldadı. Pervanelerim bundan hoşlanmadı. Sen de hoşlanma.',
+  'moth.boss.1': 'Bu bir devriye değil. Bu, sakladıkları şey.',
+  'moth.boss.2': 'Bu seferlik geride duracağım. Korkudan değil. Stratejiden. Çoğunlukla stratejiden.',
 };

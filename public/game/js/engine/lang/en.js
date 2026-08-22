@@ -283,4 +283,35 @@ export const EN = {
   'rank.veteran': 'VETERAN',
   'rank.elite': 'ELITE REBEL',
   'rank.commander': 'SECTOR COMMANDER',
+
+  // ---- between-stage interludes: MOTH, the scavenged recon drone ----
+  // The game's only voice. It talks straight to the operator between stages
+  // and gets steadily less professional the longer the campaign runs.
+  'interlude.skip': 'TAP TO SKIP',
+  'interlude.stamp': 'SECTOR {n}',
+  'interlude.bossStamp': 'SECTOR {n} — HEAVY CONTACT',
+
+  'moth.early.0': "Block's clear. I counted your shots — you can afford to breathe.",
+  'moth.early.1': "Next street's the same as the last one. That's not a complaint.",
+  'moth.early.2': "I found a working streetlamp. Small wins, operator.",
+  'moth.early.3': "You're getting quieter. I like quiet. Quiet means I keep my other eye.",
+
+  'moth.mid.0': "They're radioing ahead of us now. We're a rumour with a body count.",
+  'moth.mid.1': "I did the maths on how many are left. Then I stopped doing the maths.",
+  'moth.mid.2': "Someone put your description on a wall back there. Not a flattering likeness.",
+  'moth.mid.3': "You keep walking toward it. Every time. I've started finding that comforting.",
+
+  'moth.late.0': "The map ran out three blocks ago. I'm drawing the rest myself.",
+  'moth.late.1': "My hull's got more holes than plating. Don't worry about it. I'm not.",
+  'moth.late.2': "If either of us was going to turn back, it would have happened by now.",
+  'moth.late.3': "Nobody's coming to relieve you. I checked. Twice. Then I stopped checking.",
+
+  'moth.deep.0': "I don't know what sector this is anymore. I just know you're still standing.",
+  'moth.deep.1': "You should be dead. I've run it every way. You should be dead.",
+  'moth.deep.2': "Whatever's at the end of this street — it's heard of you.",
+  'moth.deep.3': "Just us now, operator. Same as it's been for a while.",
+
+  'moth.boss.0': "Something big just moved. My rotors don't like it. Neither should you.",
+  'moth.boss.1': "That's not a patrol. That's the thing they were saving.",
+  'moth.boss.2': "I'll hang back on this one. Not out of fear. Out of strategy. Mostly strategy.",
 };

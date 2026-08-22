@@ -1428,6 +1428,23 @@ html.no-backdrop-filter .inspect-card {
   height: 100%;
   display: block;
 }
+
+/* ---- between-stage interlude (MOTH) ---- */
+/* Sits above the HUD and the scene fade but below the modal overlays, so a
+   stage transition covers the playfield without ever trapping a dialog
+   underneath it. */
+#interlude {
+  z-index: 46;
+  background: #07090c;
+}
+#interlude.hidden { display: none; }
+.interlude-skip {
+  position: absolute; right: 26px; bottom: 22px;
+  font-size: 10px; letter-spacing: 0.22em; color: var(--ink-dim);
+  opacity: 0.5; pointer-events: none;
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
 .intro-status {
   position: absolute;
   left: 0; right: 0;

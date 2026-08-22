@@ -12,6 +12,7 @@ import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
 import { quality } from './engine/quality.js';
 import { device, applyDeviceProfile } from './engine/device.js';
 import { Intro } from './engine/intro.js';
+import { Interlude } from './engine/interlude.js';
 import { t, applyTranslations, cycleLang, getLang, LANGS } from './engine/i18n.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
@@ -291,6 +292,11 @@ class Game {
     this.currentKillStreak = 0;
     this.comboCount = 0; this.comboTimer = 0;
     this.isBossStage = false;
+    // Between-stage cinematic (engine/interlude.js). Built once and replayed;
+    // `interludeT` freezes update() while it runs so the world does not tick
+    // under a screen the player cannot see or act on.
+    this.interlude = null;
+    this.interludeRunning = false;
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
@@ -556,6 +562,33 @@ class Game {
     hud.showLore(LORE_HOLD);   // mission briefing on entering a fresh deployment
   }
 
+  // Stage cleared → MOTH's interlude → the next stage. The cinematic is
+  // cosmetic, so every failure path here still lands on nextStage(): a
+  // missing overlay, a construction throw or a rejected promise all fall
+  // through to the plain transition rather than stranding the run.
+  playInterludeThenNextStage() {
+    if (this.interludeRunning) return;      // one beat per clear, not one per frame
+    this.interludeRunning = true;
+    const overlay = document.getElementById('interlude');
+    const canvas = document.getElementById('interlude-canvas');
+    const finish = () => {
+      if (overlay) overlay.classList.add('hidden');
+      this.interludeRunning = false;
+      this.nextStage();
+    };
+    if (!overlay || !canvas) { finish(); return; }
+    try {
+      if (!this.interlude) this.interlude = new Interlude(canvas);
+      // The stage being *entered*, and whether that one is a boss stage —
+      // this.stage is still the cleared stage until nextStage() increments.
+      const entering = this.stage + 1;
+      overlay.classList.remove('hidden');
+      this.interlude.run(entering, isBossStage(entering)).then(finish, finish);
+    } catch (e) {
+      finish();
+    }
+  }
+
   // Called when every hostile in the current stage is down: the campaign is
   // endless, so this rolls a fresh procedurally-generated stage rather than
   // ending the run. Player health/ammo/XP/unlocks carry over.
@@ -755,6 +788,10 @@ class Game {
     }
     if (this.state === 'pause') { input.endFrame(); return; }
     if (this.state === 'revive') { input.endFrame(); return; }
+    // The between-stage cinematic covers the playfield, so nothing should be
+    // simulating under it — and the taps that skip it must not also fire the
+    // weapon on the stage it hands off to.
+    if (this.interludeRunning) { input.endFrame(); return; }
 
     this.world.update(dt);
     this.fx.update(dt);
@@ -836,7 +873,7 @@ class Game {
         }
       } else if (this.enemies.length > 0 && kills === this.enemies.length) {
         this.endDelay += dt;
-        if (this.endDelay > 1.6) this.nextStage();
+        if (this.endDelay > 1.6) this.playInterludeThenNextStage();
       }
       // lightweight periodic checkpoint — "save & continue" per spec: state
       // is captured frequently so a reload/close always resumes in place
