@@ -1,11 +1,9 @@
-// Stats screen: the lifetime-counters overview grid, the achievement browser
-// (progress bars, lock state, claim), and the ad-watch -> TL cashout card.
-// All numbers are read live off Progression — this module never stores
-// anything itself besides the achievements' claimed flag (on Progression).
+// Stats screen: the lifetime-counters overview grid and the achievement
+// browser (progress bars, lock state, claim). All numbers are read live off
+// Progression — this module never stores anything itself besides the
+// achievements' claimed flag (on Progression).
 
 import { ACHIEVEMENTS, TIERS, achievementProgress, drawAchievementIcon } from './achievements.js';
-import { AD_TL_REWARD_THRESHOLD, AD_TL_REWARD_AMOUNT_TL } from './progression.js';
-import { getCashoutProvider } from '../engine/cashout.js';
 import { playCurrencyGain, animateCount } from './currencyfx.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,14 +51,12 @@ export class StatsUI {
         if (this.audio) this.audio.ui();
       });
     });
-    $('btn-claim-ad-tl').addEventListener('click', () => this.claimAdTLReward());
     this.refresh();
   }
 
   refresh() {
     this.renderOverview();
     this.renderAchievements();
-    this.renderAdTLCard();
     this.applySectionVisibility();
   }
 
@@ -200,41 +196,4 @@ export class StatsUI {
     playCurrencyGain(document.querySelector('.diamond-pill'), 'diamond', this.audio);
   }
 
-  renderAdTLCard() {
-    const available = this.p.adTLRewardsAvailable();
-    const watched = this.p.data.totalAdsWatched % AD_TL_REWARD_THRESHOLD;
-    const fill = $('ad-tl-fill');
-    if (fill) fill.style.width = `${Math.round((watched / AD_TL_REWARD_THRESHOLD) * 100)}%`;
-    const label = $('ad-tl-progress-label');
-    if (label) label.textContent = `${watched.toLocaleString()} / ${AD_TL_REWARD_THRESHOLD.toLocaleString()} ADS WATCHED`;
-    const btn = $('btn-claim-ad-tl');
-    const status = $('ad-tl-status');
-    if (!btn || !status) return;
-    if (available > 0) {
-      btn.disabled = false;
-      btn.textContent = `CLAIM ${available * AD_TL_REWARD_AMOUNT_TL} TL`;
-      status.textContent = `${available} REWARD${available > 1 ? 'S' : ''} READY`;
-      status.className = 'ad-status ok';
-    } else {
-      btn.disabled = true;
-      btn.textContent = `CLAIM ${AD_TL_REWARD_AMOUNT_TL} TL`;
-      status.textContent = `${AD_TL_REWARD_THRESHOLD - watched} MORE ADS TO GO`;
-      status.className = 'ad-status';
-    }
-  }
-
-  async claimAdTLReward() {
-    if (this.busy) return;
-    const available = this.p.adTLRewardsAvailable();
-    if (available <= 0) return;
-    this.busy = true;
-    const provider = getCashoutProvider();
-    const res = await provider.claim(AD_TL_REWARD_AMOUNT_TL);
-    this.busy = false;
-    if (res && res.ok) {
-      this.p.claimAdTLReward();
-      if (this.audio && this.audio.levelUp) this.audio.levelUp();
-      this.renderAdTLCard();
-    }
-  }
 }

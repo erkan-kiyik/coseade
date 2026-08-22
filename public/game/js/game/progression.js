@@ -58,11 +58,9 @@ function defaultProgress() {
     weekly: null, missionWeek: 0,
     bpXp: 0, bpClaimed: {},            // battle pass
     lastLogin: 0, loginStreak: 0,
-    firstPlayed: Date.now(),           // for "new player" store offers
-    // premium store
+    firstPlayed: Date.now(),
+    // store: Diamonds are earned only (play, crates, missions, rewarded ads)
     diamondAdDay: 0, diamondAdWatched: 0, diamondAdGrantedToday: 0, lastDiamondAdAt: 0,
-    purchases: [],        // { id, diamonds, priceTL, ts } — receipt log, newest last
-    boughtBundles: {},    // bundleId -> true, one-time bundles can't be rebought
     // ---- stats page: lifetime counters (never decrease, unlike balances) ----
     totalPlaytimeMs: 0,
     lifetimeCoinsEarned: 0, lifetimeDiamondsEarned: 0,
@@ -72,8 +70,6 @@ function defaultProgress() {
     weaponShots: {},               // weaponId -> lifetime shots fired
     // ---- achievements ----
     achievements: {},              // achId -> { claimed: true }
-    // ---- ad-watch -> TL cashout ----
-    adTLRewardsClaimed: 0,
     // ---- intel logs (collectible lore) ----
     intel: {},                     // logId -> ts found
     // ---- player card (offline profile) ----
@@ -138,9 +134,6 @@ export const DIAMOND_AD_WATCHES_PER_DIAMOND = 10;
 export const DIAMOND_AD_DAILY_CAP = 5;
 export const DIAMOND_AD_COOLDOWN_MS = 12000;
 
-// Ads watched per 10 TL cashout reward, and the reward amount itself.
-export const AD_TL_REWARD_THRESHOLD = 1000;
-export const AD_TL_REWARD_AMOUNT_TL = 10;
 
 // Battle-pass: XP per tier and the reward table.
 export const BP_XP_PER_TIER = 1000;
@@ -460,19 +453,6 @@ export class Progression {
   addDiamonds(n) { return this.addGems(n); }
   spendDiamonds(n) { return this.spendGems(n); }
 
-  // Records a completed (real or simulated) IAP receipt and grants the pack.
-  recordPurchase(pkg) {
-    this.addDiamonds(pkg.diamonds);
-    this.data.purchases.push({ id: pkg.id, diamonds: pkg.diamonds, priceTL: pkg.priceTL, ts: Date.now() });
-    this.save();
-  }
-
-  boughtBundle(id) { return !!this.data.boughtBundles[id]; }
-  recordBundlePurchase(bundle) {
-    this.data.boughtBundles[bundle.id] = true;
-    this.grantReward(bundle.grant);
-  }
-
   // ---- Diamonds from ads: 10 watches → 1 Diamond, capped 5/day ----
   _rolloverDiamondAdDay() {
     const day = Math.floor(Date.now() / 86400000);
@@ -613,7 +593,7 @@ export class Progression {
   addPlaytime(ms) { if (ms > 0) { this.data.totalPlaytimeMs += ms; this.save(); } }
 
   // Every rewarded-ad watch (crate/revive/Diamond — any type) feeds this one
-  // counter, which also drives the ad-watch -> TL cashout below.
+  // lifetime counter, which the Stats screen reads.
   recordAdWatched() { this.data.totalAdsWatched++; this.save(); }
 
   // Weapon shot counts accumulate per-run in memory (Game) and flush once at
@@ -720,16 +700,6 @@ export class Progression {
     };
   }
 
-  // ---- ad-watch -> TL cashout (see engine/cashout.js for the payout side) ----
-  adTLRewardsAvailable() {
-    return Math.floor(this.data.totalAdsWatched / AD_TL_REWARD_THRESHOLD) - this.data.adTLRewardsClaimed;
-  }
-  claimAdTLReward() {
-    if (this.adTLRewardsAvailable() <= 0) return false;
-    this.data.adTLRewardsClaimed++;
-    this.save();
-    return true;
-  }
 }
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
