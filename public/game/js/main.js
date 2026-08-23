@@ -31,6 +31,7 @@ import { StoreUI } from './game/storeui.js';
 import { StatsUI } from './game/statsui.js';
 import { ArchivesUI } from './game/archives.js';
 import { Barks } from './game/barks.js';
+import { Tutorial } from './game/tutorial.js';
 import { ProfileUI } from './game/profile.js';
 import { intelTitleKey } from './game/intel.js';
 import { TouchControls } from './engine/touch.js';
@@ -302,6 +303,16 @@ class Game {
     // MOTH's in-mission radio barks (game/barks.js). Heavily rate-limited
     // there; this class only reports events to it.
     this.barks = new Barks(document.getElementById('bark'), audio);
+    // First-run coaching (game/tutorial.js). Shares the bark strip so a lesson
+    // and a quip can never overlap. The touch layer is handed over as a getter
+    // rather than a value: boot() assigns game.touch *after* this constructor
+    // runs, so capturing it here would pin it to undefined and coach every
+    // phone player with keyboard controls they do not have.
+    this.tutorial = new Tutorial({
+      progression: this.progression,
+      barks: this.barks,
+      getTouch: () => this.touch,
+    });
     this.reset();
     hud.bind({
       deploy: () => { audio.resume(); audio.ui(); this.deploy(); },
@@ -829,6 +840,24 @@ class Game {
       hp: this.player.hp,
       maxHp: this.player.maxHp,
     });
+
+    // First-run coaching (game/tutorial.js). The vault probe is a collider
+    // scan, so it only runs while that one lesson is still unseen — once the
+    // player has been taught it, this costs nothing.
+    {
+      const p = this.player;
+      const teaching = this.state === 'play' && !this.interludeRunning && p.deadT <= 0;
+      const cur = p.cur;
+      this.tutorial.update(dt, teaching ? {
+        playing: true,
+        detState: this._prevDetState,
+        stealthTarget: !!p.stealthTarget,
+        vaultCandidate: !this.tutorial.seen('vault') && p.onGround
+          ? !!p.findVaultTarget(p.facing) : false,
+        magEmpty: !!(cur && cur.wpn && cur.wpn.kind === 'gun' && cur.mag === 0),
+        swapUnlocked: p.smgUnlocked,
+      } : null);
+    }
 
     // The between-stage cinematic covers the playfield, so nothing should be
     // simulating under it — and the taps that skip it must not also fire the

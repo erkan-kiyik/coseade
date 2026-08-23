@@ -365,4 +365,21 @@ export const EN = {
   'ad.unavailableTitle': 'NO AD AVAILABLE',
   'ad.unavailableBody': 'Couldn\u2019t load an ad — you may be offline. Your attempt is unaffected; try again when you have a connection.',
   'ad.unavailableOk': 'OK',
+
+  // ---- first-run coaching, in MOTH's voice (game/tutorial.js) ----
+  'tip.threat': "THREAT bar's climbing — they're onto something. Break line of sight and it'll settle.",
+  'tip.takedown': "He hasn't seen you. Get close and {key} — no noise, no reinforcements.",
+  'tip.vault': "You can go over that at a run, not around it. Keep moving and {key}.",
+  'tip.reload': "You're dry. {key} — do it behind cover, not in the open.",
+  'tip.swap': "You're carrying more than one now. {key} to switch — the rifle isn't right for everything.",
+  'tip.key.takedown.key': 'press E',
+  'tip.key.takedown.touch': 'tap TAKEDOWN',
+  'tip.key.vault.key': 'hold forward',
+  'tip.key.vault.touch': 'hold the stick forward',
+  'tip.key.reload.key': 'press R',
+  'tip.key.reload.touch': 'tap RELOAD',
+  'tip.key.swap.key': 'press 1-4',
+  'tip.key.swap.touch': 'tap SWAP',
+  'tip.key.threat.key': '',
+  'tip.key.threat.touch': '',
 };

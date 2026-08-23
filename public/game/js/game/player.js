@@ -617,8 +617,15 @@ export class Player {
   // clear, commits to a slide across it. Everything is measured off the live
   // collider list, so it automatically tracks the obstacle scale constants in
   // world.js rather than duplicating their numbers.
-  tryVault() {
-    const dir = Math.sign(this.vx);
+  // Nearest vaultable obstacle ahead, or null. Split out of tryVault() so the
+  // first-run coaching (game/tutorial.js) can ask "is there something to vault
+  // here?" without committing to the vault — the vault lesson is only worth
+  // showing while the player is actually standing in front of one.
+  // `dirOverride` lets a caller probe by facing rather than by velocity, so a
+  // player who has slowed to a stop in front of cover still counts.
+  findVaultTarget(dirOverride = 0) {
+    const dir = dirOverride || Math.sign(this.vx);
+    if (!dir) return null;
     const lead = this.x + dir * this.halfW;           // leading edge
     const feet = this.y;
     let best = null;
@@ -635,6 +642,13 @@ export class Player {
       // nearest one wins
       if (!best || gap < best.gap) best = { c, gap };
     }
+    return best;
+  }
+
+  tryVault() {
+    const dir = Math.sign(this.vx);
+    const feet = this.y;
+    const best = this.findVaultTarget(dir);
     if (!best) return false;
 
     const c = best.c;

@@ -145,14 +145,31 @@ export class Barks {
     const line = t(`bark.${id}.${n}`);
     if (!line || line === `bark.${id}.${n}`) return false;   // missing key: stay silent
 
+    return this.show(line, { hold: HOLD, prio: ev.prio, cooldown: GLOBAL_CD, eventId: id, eventCd: ev.cd });
+  }
+
+  // Puts a line on screen. Split out of fire() so callers that are not part of
+  // the bark event table can share the presentation and, more importantly, the
+  // one-at-a-time rule — game/tutorial.js pushes coaching through here so a
+  // lesson and a quip can never overlap or replace each other mid-read.
+  //
+  // `prio` still gates interruption exactly as it does for barks, so a tip
+  // (which outranks every event) cannot be knocked off by flavour.
+  show(line, { hold = HOLD, prio = 0, cooldown = GLOBAL_CD, eventId = null, eventCd = 0 } = {}) {
+    if (!line || !this.el || !this.textEl) return false;
+    if (this.hold > 0 && prio <= this.curPrio) return false;
     this.textEl.textContent = line;
     this.el.classList.remove('show');
     void this.el.offsetWidth;      // restart the animation on a repeat
     this.el.classList.add('show');
-    this.hold = HOLD;
-    this.cd = GLOBAL_CD;
-    this.curPrio = ev.prio;
-    this.last[id] = ev.cd;
+    // The strip's CSS animation carries its own duration, so a line that is
+    // meant to linger (a tip) has to drive it explicitly rather than inherit
+    // the bark timing.
+    this.el.style.animationDuration = `${hold}s`;
+    this.hold = hold;
+    this.cd = cooldown;
+    this.curPrio = prio;
+    if (eventId) this.last[eventId] = eventCd;
     if (this.audio && this.audio.ui) this.audio.ui();
     return true;
   }

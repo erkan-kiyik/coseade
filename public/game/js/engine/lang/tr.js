@@ -367,4 +367,21 @@ export const TR = {
   'ad.unavailableTitle': 'REKLAM YOK',
   'ad.unavailableBody': 'Reklam y\u00fcklenemedi \u2014 \u00e7evrimd\u0131\u015f\u0131 olabilirsin. Hakk\u0131n\u0131 kaybetmedin; ba\u011flant\u0131n oldu\u011funda tekrar dene.',
   'ad.unavailableOk': 'TAMAM',
+
+  // ---- first-run coaching, in MOTH's voice (game/tutorial.js) ----
+  'tip.threat': "TEHDİT çubuğu yükseliyor — bir şey sezdiler. Görüş hattını kes, yatışır.",
+  'tip.takedown': "Seni görmedi. Yaklaş ve {key} — ses yok, takviye yok.",
+  'tip.vault': "Onun etrafından değil, üstünden geçebilirsin. Hızını kesme ve {key}.",
+  'tip.reload': "Şarjör boş. {key} — açıkta değil, siperin arkasında yap.",
+  'tip.swap': "Artık birden fazla silah taşıyorsun. Değiştirmek için {key} — tüfek her işe uygun değil.",
+  'tip.key.takedown.key': "E'ye bas",
+  'tip.key.takedown.touch': "TAKEDOWN'a dokun",
+  'tip.key.vault.key': "ileri basılı tut",
+  'tip.key.vault.touch': "çubuğu ileri tut",
+  'tip.key.reload.key': "R'ye bas",
+  'tip.key.reload.touch': "RELOAD'a dokun",
+  'tip.key.swap.key': "1-4'e bas",
+  'tip.key.swap.touch': "SWAP'a dokun",
+  'tip.key.threat.key': "",
+  'tip.key.threat.touch': "",
 };

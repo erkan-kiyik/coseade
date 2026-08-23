@@ -72,6 +72,10 @@ function defaultProgress() {
     achievements: {},              // achId -> { claimed: true }
     // ---- intel logs (collectible lore) ----
     intel: {},                     // logId -> ts found
+    // ---- first-run coaching (game/tutorial.js) ----
+    // tipId -> true once shown. Persisted so a lesson survives a death: a
+    // player who dies on stage 1 is not re-taught the same thing on attempt 2.
+    tips: {},
     // ---- player card (offline profile) ----
     // Four headline numbers the Profile screen reads. Each one is written in
     // the same method as its legacy twin below, so the pair can never drift;
@@ -595,6 +599,15 @@ export class Progression {
   // Every rewarded-ad watch (crate/revive/Diamond — any type) feeds this one
   // lifetime counter, which the Stats screen reads.
   recordAdWatched() { this.data.totalAdsWatched++; this.save(); }
+
+  // ---- first-run coaching ----
+  tipSeen(id) { return !!(this.data.tips && this.data.tips[id]); }
+  markTipSeen(id) {
+    if (!this.data.tips) this.data.tips = {};
+    if (this.data.tips[id]) return;
+    this.data.tips[id] = true;
+    this.save();
+  }
 
   // Weapon shot counts accumulate per-run in memory (Game) and flush once at
   // run end via this, exactly like the existing recordShots(shots, hits) —
