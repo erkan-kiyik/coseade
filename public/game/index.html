@@ -469,6 +469,11 @@
 
   <!-- On-screen touch controls (shown on touch devices during play) -->
   <div id="touch">
+    <!-- Capture zones. Each stick floats to wherever the thumb lands inside
+         its zone, so neither pad ever has to be found by eye. The zones sit
+         below the buttons in z-order, so a tap on JUMP is still a jump. -->
+    <div id="tc-zone-left" class="tc-zone left"></div>
+    <div id="tc-zone-right" class="tc-zone right"></div>
     <div id="tc-move" class="tc-stick left"><div class="tc-nub"></div><div class="tc-label">MOVE</div></div>
     <div id="tc-aim" class="tc-stick right"><div class="tc-nub"></div><div class="tc-label">AIM / FIRE</div></div>
     <button id="tc-jump" class="tc-btn tc-jump" data-i18n="ctrl.jump">JUMP</button>

@@ -1123,27 +1123,45 @@ html, body {
    the play area stays visible. Sizes are viewport-relative with hard caps —
    the old fixed 132px sticks and labelled 62px buttons ate a large share of a
    phone screen. Opacity lifts on contact so the control still confirms input. */
-#touch { --tc-alpha: 0.40; }
+#touch { --tc-alpha: 0.34; }
+/* Thumb capture zones: invisible, and the only things in the touch layer that
+   take pointer events for the sticks. Each covers the lower two thirds of its
+   side of the screen, so a thumb landing anywhere natural starts a stick. The
+   top third is left clear for the HUD and the pause button. */
+.tc-zone {
+  position: absolute; bottom: 0; height: 68%; z-index: 0;
+  pointer-events: auto; touch-action: none;
+}
+.tc-zone.left { left: 0; width: 48%; }
+.tc-zone.right { right: 0; width: 48%; }
+
+/* The ring is purely a readout now — the zone underneath does the capturing —
+   so it never takes pointer events and JS is free to move it to the thumb. */
 .tc-stick {
   position: absolute; bottom: calc(12px + env(safe-area-inset-bottom));
   width: clamp(78px, 15vw, 104px); height: clamp(78px, 15vw, 104px); border-radius: 50%;
   background: rgba(18,21,26,0.30); border: 1px solid rgba(232,228,218,0.30);
   opacity: var(--tc-alpha);
-  transition: opacity var(--dur-2) var(--ease);
-  pointer-events: auto; touch-action: none;
+  transition: opacity var(--dur-1) var(--ease);
+  pointer-events: none; touch-action: none;
+  z-index: 1;
 }
-.tc-stick.active { opacity: 0.78; }
+/* While a thumb is down the ring is placed under it by JS and lifts to full
+   contrast; the transition is on opacity only, never on position, so the pad
+   appears instantly rather than sliding across the screen to meet the thumb. */
+.tc-stick.active { opacity: 0.70; }
 .tc-stick.left { left: calc(16px + env(safe-area-inset-left)); }
 .tc-stick.right { right: calc(16px + env(safe-area-inset-right)); }
 .tc-nub {
   position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%;
   border-radius: 50%; background: rgba(217,179,108,0.55); border: 1px solid rgba(255,255,255,0.4);
+  will-change: transform;
 }
 .tc-stick.right .tc-nub { background: rgba(214,69,58,0.55); }
 /* the MOVE / AIM captions were pure clutter on a small screen */
 .tc-label { display: none; }
 .tc-btn {
-  position: absolute; pointer-events: auto; touch-action: none;
+  position: absolute; pointer-events: auto; touch-action: none; z-index: 3;
   width: clamp(40px, 7.6vw, 52px); height: clamp(40px, 7.6vw, 52px); border-radius: 50%;
   background: rgba(18,21,26,0.34); border: 1px solid rgba(232,228,218,0.30);
   color: var(--ink); font-family: var(--font); font-size: clamp(8px, 1.3vw, 10px); letter-spacing: 0.1em;

@@ -65,6 +65,8 @@ const CROSSHAIR_RECOIL_GAIN = 6;
 
 // Screen point -> world point, for reticle target testing.
 const cam2world = (cam, sx, sy) => cam.screenToWorld(sx, sy, vw, vh);
+// How far down the aim ray the touch reticle looks for a target (world px).
+const AIM_RAY_RANGE = 1100;
 
 // Seconds the mission briefing stays up before fading itself out.
 const LORE_HOLD = 3;
@@ -898,6 +900,22 @@ class Game {
 
     // play / end
     const p = this.player;
+    // Touch drives Input once per frame rather than once per pointer event —
+    // see engine/touch.js. The aim stick works outward from the operator's own
+    // screen position, so it is handed that first: push the stick at 2
+    // o'clock, the shot goes to 2 o'clock. Shake is deliberately excluded, or
+    // an explosion would drag the crosshair around with the camera.
+    if (this.touch && this.touch.visible) {
+      // AIM_ORIGIN_Y mirrors player.js's `oy = this.y - 95` — the chest, which
+      // is the point aimWorld is measured from. Anchoring anywhere else would
+      // make the stick angle and the shot angle differ by a few degrees at
+      // close range, which is exactly where it would be noticed.
+      this.touch.setAimAnchor(
+        (p.x - this.cam.x) * this.cam.zoom + vw / 2,
+        (p.y - 95 - this.cam.y) * this.cam.zoom + vh / 2,
+      );
+      this.touch.update(dt);
+    }
     hud.setAimScreen(inp.mouse.x, inp.mouse.y);
     if (this.state === 'play') {
       p.update(dt, { input: inp, enemies: this.enemies, game: this, vw, vh });
@@ -1350,12 +1368,46 @@ class Game {
   // True when the aim point is inside a live hostile's hitbox — the same box
   // the weapons actually test against, so the reticle's target state can't
   // disagree with where a shot would land.
+  // Is the crosshair on a live hostile? Drives the reticle's green/red state.
+  //
+  // With a mouse the crosshair is a POSITION, so the honest test is "is this
+  // point inside a hitbox". With the touch sticks it is a DIRECTION — the
+  // reticle sits a fixed distance out from the operator's chest and only its
+  // angle carries meaning — so the same test would leave the reticle green
+  // while the player is pouring rounds into someone twenty metres away. When
+  // touch is driving, the test becomes "does the aim ray pass through anyone",
+  // which is the question the reticle is actually answering on a phone.
   aimOnTarget(wx, wy) {
+    const directional = !!(this.touch && this.touch.visible);
+    if (directional && this.player) return this.aimRayOnTarget(wx, wy);
     for (const e of this.enemies) {
       if (e.deadT > 0) continue;
       const hs = e.hitboxScale || 1;
       if (wx >= e.x - 13 * hs && wx <= e.x + 13 * hs &&
           wy >= e.y - 134 * hs && wy <= e.y) return true;
+    }
+    return false;
+  }
+
+  // Perpendicular distance from each hostile's centre of mass to the aim ray,
+  // measured from the same chest origin player.js fires from. AIM_RAY_RANGE
+  // keeps it to targets that are plausibly shootable rather than lighting up
+  // for someone on the far side of the block.
+  aimRayOnTarget(wx, wy) {
+    const p = this.player;
+    const ox = p.x, oy = p.y - 95;
+    const dx = wx - ox, dy = wy - oy;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return false;
+    const ux = dx / len, uy = dy / len;
+    for (const e of this.enemies) {
+      if (e.deadT > 0) continue;
+      const hs = e.hitboxScale || 1;
+      const ex = e.x - ox, ey = (e.y - 67 * hs) - oy;
+      const along = ex * ux + ey * uy;
+      if (along <= 0 || along > AIM_RAY_RANGE) continue;    // behind, or too far
+      const perp = Math.abs(ex * uy - ey * ux);
+      if (perp <= 30 * hs) return true;
     }
     return false;
   }
