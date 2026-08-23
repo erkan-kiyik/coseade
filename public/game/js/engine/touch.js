@@ -89,6 +89,16 @@ export class TouchControls {
 
     input.mouse.x = this.reticle.x;
     input.mouse.y = this.reticle.y;
+
+    // Cached viewport. Reading window.innerWidth/innerHeight is not free — in
+    // a frame that has already written to the DOM it can force a style and
+    // layout flush, and this layer reads it every frame and on every pointer
+    // event. It only changes on resize, so it is read there instead.
+    this.vw = window.innerWidth;
+    this.vh = window.innerHeight;
+    this._onResize = () => { this.vw = window.innerWidth; this.vh = window.innerHeight; };
+    window.addEventListener('resize', this._onResize);
+    window.addEventListener('orientationchange', this._onResize);
   }
 
   mount() {
@@ -147,7 +157,7 @@ export class TouchControls {
   applyAim(dt) {
     const a = this.aim;
     const mouse = this.input.mouse;
-    const vw = window.innerWidth, vh = window.innerHeight;
+    const vw = this.vw, vh = this.vh;
     const reach = Math.min(vw, vh) * AIM_REACH;
     const ax = this.anchor.set ? this.anchor.x : vw / 2;
     const ay = this.anchor.set ? this.anchor.y : vh / 2;
@@ -276,7 +286,7 @@ export class TouchControls {
 
     // Radius the thumb travels for full deflection. Scaled to the screen so
     // it is the same physical distance on a small phone and a tablet.
-    const radius = () => Math.max(42, Math.min(74, Math.min(window.innerWidth, window.innerHeight) * 0.13));
+    const radius = () => Math.max(42, Math.min(74, Math.min(this.vw, this.vh) * 0.13));
 
     // DOM writes are batched to one per frame: pointermove can fire several
     // times between frames and each write here would otherwise force layout.

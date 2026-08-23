@@ -73,6 +73,9 @@ const LORE_HOLD = 3;
 
 let vw = 0, vh = 0, dpr = 1;
 let lightCv, lightG, glowCv, glowG, grainCv;
+// Device pixels per CSS pixel in the light/glow maps. Lower than `dpr` on the
+// weaker tiers; see resize().
+let lightDpr = 1;
 let game = null;   // declared early so resize() can safely reference it
 
 // Responsive camera zoom: 1.25 at ~720p, eased down on short/narrow phone
@@ -85,11 +88,22 @@ function baseZoom() {
 }
 
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, quality.preset.dprCap);
+  // `dpr` here is device pixels per CSS pixel in the SCENE canvas, which is
+  // the display's ratio capped by the tier and then scaled down by the tier's
+  // renderScale. The element stays CSS-sized to the viewport, so a sub-1
+  // renderScale simply means the browser upsamples the scene — which is by
+  // far the cheapest frame time available on a rasterisation-bound canvas.
+  // Everything downstream keeps working unchanged because every transform is
+  // expressed in terms of this one number and every layout number in CSS px.
+  dpr = Math.min(window.devicePixelRatio || 1, quality.preset.dprCap) * quality.preset.renderScale;
   vw = window.innerWidth; vh = window.innerHeight;
   canvas.width = vw * dpr; canvas.height = vh * dpr;
-  const l = makeCanvas(vw * dpr, vh * dpr); lightCv = l.cv; lightG = l.g;
-  const g = makeCanvas(vw * dpr, vh * dpr); glowCv = g.cv; glowG = g.g;
+  // The light and glow maps get their own, usually lower, resolution — see
+  // `lightScale` in quality.js. They are stretched back to full size by the
+  // composite, and being low-frequency they lose nothing visible for it.
+  lightDpr = dpr * quality.preset.lightScale;
+  const l = makeCanvas(vw * lightDpr, vh * lightDpr); lightCv = l.cv; lightG = l.g;
+  const g = makeCanvas(vw * lightDpr, vh * lightDpr); glowCv = g.cv; glowG = g.g;
   // refresh --ui-scale so the DOM overlay tracks the new viewport
   applyDeviceProfile();
   // keep the framing right across orientation / resize (not mid-cinematic)
@@ -340,8 +354,9 @@ class Game {
       // restart is an explicit fresh mission — discard the resume snapshot
       restart: () => { audio.ui(); this.progression.clearRun(); this.pendingResume = null; this.reset(); this.setState('play'); },
       quit: () => { audio.ui(); this.pendingResume = null; this.reset(); this.setState('menu'); },
-      // cycles Low → Medium → High → Ultra; dpr/bloom/grain/particle cap all
-      // take effect immediately, ASSET_SCALE only on the next full reload
+      // cycles Low → Medium → High → Ultra; render scale, dpr, light-map
+      // resolution, bloom, grain and the particle cap all take effect
+      // immediately, ASSET_SCALE only on the next full reload
       graphics: () => {
         audio.ui();
         quality.cycle();
@@ -1194,7 +1209,7 @@ class Game {
     // world layer
     ctx.save();
     this.cam.applyTransform(ctx, vw, vh);
-    this.world.drawBack(ctx, this.cam, vw);
+    this.world.drawBack(ctx, this.cam, vw, vh);
 
     // Characters draw last in this layer and carry a contour, so they read as
     // the foreground subject against the (deliberately dimmed, desaturated)
@@ -1245,14 +1260,14 @@ class Game {
     // Warmer and brighter toward street level — reads as the low sun's fill.
     lightG.setTransform(1, 0, 0, 1, 0, 0);
     lightG.globalCompositeOperation = 'source-over';
-    const gsy = (vh / 2 + (GROUND_Y - this.cam.y) * this.cam.zoom) * dpr;
+    const gsy = (vh / 2 + (GROUND_Y - this.cam.y) * this.cam.zoom) * lightDpr;
     const amb = lightG.createLinearGradient(0, 0, 0, Math.max(gsy, 1));
     amb.addColorStop(0, 'rgb(182,188,206)');
     amb.addColorStop(0.72, 'rgb(204,201,204)');
     amb.addColorStop(1, 'rgb(224,214,200)');
     lightG.fillStyle = amb;
     lightG.fillRect(0, 0, lightCv.width, lightCv.height);
-    lightG.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lightG.setTransform(lightDpr, 0, 0, lightDpr, 0, 0);
     this.cam.applyTransform(lightG, vw, vh);
     lightG.globalCompositeOperation = 'lighter';
 
@@ -1264,7 +1279,7 @@ class Game {
       glowG.setTransform(1, 0, 0, 1, 0, 0);
       glowG.globalCompositeOperation = 'source-over';
       glowG.clearRect(0, 0, glowCv.width, glowCv.height);
-      glowG.setTransform(dpr, 0, 0, dpr, 0, 0);
+      glowG.setTransform(lightDpr, 0, 0, lightDpr, 0, 0);
       this.cam.applyTransform(glowG, vw, vh);
       glowG.globalCompositeOperation = 'lighter';
     }
@@ -1320,29 +1335,9 @@ class Game {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const gy = vh / 2 + (GROUND_Y - this.cam.y) * this.cam.zoom;
 
-    // atmospheric haze band across the mid-distance (distant fog)
-    ctx.globalCompositeOperation = 'source-over';
-    const haze = ctx.createLinearGradient(0, gy - vh * 0.5, 0, gy);
-    haze.addColorStop(0, 'rgba(150,158,172,0)');
-    haze.addColorStop(1, 'rgba(150,158,172,0.05)');
-    ctx.fillStyle = haze;
-    ctx.fillRect(0, 0, vw, gy);
+    if (quality.preset.richGrade) this.gradeRich(gy);
+    else this.gradeCheap(gy);
 
-    // warm highlight push (softened — less saturation)
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.fillStyle = 'rgba(255,180,112,0.055)';
-    ctx.fillRect(0, 0, vw, vh);
-    // cool shadow tint
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = 'rgba(48,68,116,0.06)';
-    ctx.fillRect(0, 0, vw, vh);
-    // vignette — softer, larger falloff
-    ctx.globalCompositeOperation = 'source-over';
-    const v = ctx.createRadialGradient(vw / 2, vh * 0.46, Math.min(vw, vh) * 0.5, vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
-    v.addColorStop(0, 'rgba(5,6,10,0)');
-    v.addColorStop(1, 'rgba(4,5,9,0.16)');
-    ctx.fillStyle = v;
-    ctx.fillRect(0, 0, vw, vh);
     // film grain — subtle; skipped on weaker quality tiers (a canvas-wide
     // tiled overlay draw isn't free, and it's the least-missed effect).
     // Note this tier check used to `return` outright; it no longer can,
@@ -1365,9 +1360,94 @@ class Game {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // True when the aim point is inside a live hostile's hitbox — the same box
-  // the weapons actually test against, so the reticle's target state can't
-  // disagree with where a shot would land.
+  // Full grade: haze band, warm highlight push, cool shadow tint, vignette.
+  // Four full-screen passes, two of them on `overlay` and `soft-light`.
+  gradeRich(gy) {
+    ctx.globalCompositeOperation = 'source-over';
+    const haze = ctx.createLinearGradient(0, gy - vh * 0.5, 0, gy);
+    haze.addColorStop(0, 'rgba(150,158,172,0)');
+    haze.addColorStop(1, 'rgba(150,158,172,0.05)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, vw, gy);
+
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = 'rgba(255,180,112,0.055)';
+    ctx.fillRect(0, 0, vw, vh);
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = 'rgba(48,68,116,0.06)';
+    ctx.fillRect(0, 0, vw, vh);
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = this.vignette();
+    ctx.fillRect(0, 0, vw, vh);
+  }
+
+  // Cheap grade, for the tier where a dropped frame costs more than tonal
+  // separation does.
+  //
+  // The rich pass is four full-screen passes, and on a weak GPU each one is a
+  // separate read-modify-write of the whole framebuffer — `overlay` and
+  // `soft-light` especially, since neither is a fixed-function blend. All four
+  // are `source-over`-compatible once the two tonal passes are folded into a
+  // single flat tint, and everything left is a function of the screen rather
+  // than of the scene. So they are baked once into a small texture and blitted
+  // in one stretched draw: four framebuffer passes become one, and the pixels
+  // that produce them are computed at a fraction of the resolution — which
+  // costs nothing here, because every layer in the bake is a smooth gradient.
+  //
+  // The bake only depends on the viewport and on where the ground sits on
+  // screen, so it is rebuilt when the viewport changes or the horizon moves
+  // more than a few pixels — a handful of times a second while the camera
+  // travels, never per frame.
+  gradeCheap(gy) {
+    const q = Math.round(gy / 12);
+    if (!this._gradeCv || this._gradeVw !== vw || this._gradeVh !== vh || this._gradeQ !== q) {
+      this._gradeQ = q; this._gradeVw = vw; this._gradeVh = vh;
+      // Aspect-correct and deliberately small: 1/4 scale, floored so a tiny
+      // window still gets enough rows for the gradients to be smooth.
+      const bw = Math.max(64, Math.round(vw / 4));
+      const bh = Math.max(64, Math.round(vh / 4));
+      if (!this._gradeCv || this._gradeCv.width !== bw || this._gradeCv.height !== bh) {
+        const m = makeCanvas(bw, bh);
+        this._gradeCv = m.cv; this._gradeG = m.g;
+      }
+      const g = this._gradeG;
+      const k = bh / vh;             // bake pixels per CSS pixel
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, bw, bh);
+      // haze band
+      const gyk = gy * k;
+      const haze = g.createLinearGradient(0, gyk - bh * 0.5, 0, gyk);
+      haze.addColorStop(0, 'rgba(150,158,172,0)');
+      haze.addColorStop(1, 'rgba(150,158,172,0.05)');
+      g.fillStyle = haze;
+      g.fillRect(0, 0, bw, Math.max(0, gyk));
+      // net tint standing in for the warm-highlight and cool-shadow passes
+      g.fillStyle = 'rgba(150,142,150,0.045)';
+      g.fillRect(0, 0, bw, bh);
+      // vignette
+      const v = g.createRadialGradient(bw / 2, bh * 0.46, Math.min(bw, bh) * 0.5, bw / 2, bh / 2, Math.max(bw, bh) * 0.78);
+      v.addColorStop(0, 'rgba(5,6,10,0)');
+      v.addColorStop(1, 'rgba(4,5,9,0.16)');
+      g.fillStyle = v;
+      g.fillRect(0, 0, bw, bh);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(this._gradeCv, 0, 0, vw, vh);
+  }
+
+  // Vignette gradient, rebuilt only when the viewport changes.
+  vignette() {
+    if (!this._vig || this._vigVw !== vw || this._vigVh !== vh) {
+      this._vigVw = vw; this._vigVh = vh;
+      const v = ctx.createRadialGradient(vw / 2, vh * 0.46, Math.min(vw, vh) * 0.5, vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
+      v.addColorStop(0, 'rgba(5,6,10,0)');
+      v.addColorStop(1, 'rgba(4,5,9,0.16)');
+      this._vig = v;
+    }
+    return this._vig;
+  }
+
   // Is the crosshair on a live hostile? Drives the reticle's green/red state.
   //
   // With a mouse the crosshair is a POSITION, so the honest test is "is this
@@ -1526,11 +1606,15 @@ function frame(now) {
   }
   game.render();
 
-  if (game.state === 'play') {
+  if (game.state === 'play' && !quality.autoLowerExhausted) {
     perfAvg = perfAvg * 0.94 + rawDt * 0.06;
     lowPerfT = perfAvg > 1 / 38 ? lowPerfT + rawDt : 0;
     if (lowPerfT > 4) {
-      lowPerfT = -1e9;   // one check is enough; tryAutoLower() is one-shot anyway
+      // Give the new preset a fair run before judging it again, rather than
+      // stepping down twice off the same bad stretch. The step-down budget in
+      // quality.js is what actually bounds this.
+      lowPerfT = -8;
+      perfAvg = 1 / 60;
       const lowered = quality.tryAutoLower();
       if (lowered) { hud.notify(t('notify.graphicsLowered', { tier: quality.preset.name })); resize(); }
     }
