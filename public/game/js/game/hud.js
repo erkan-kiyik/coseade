@@ -63,6 +63,7 @@ export class Hud {
     $('btn-menu').onclick = h.quit;
     if (h.graphics) $('btn-graphics').onclick = h.graphics;
     if (h.language) $('btn-language').onclick = h.language;
+    if (h.brightness) $('btn-brightness').onclick = h.brightness;
     this._onPickStage = h.pickStage || null;
     if (h.share) $('btn-share').onclick = h.share;
     if (h.shareSend) $('btn-sharecard-send').onclick = h.shareSend;
@@ -164,6 +165,14 @@ export class Hud {
     if (!el) return;
     const entry = LANGS.find((l) => l.code === getLang());
     el.textContent = entry ? entry.label : getLang().toUpperCase();
+  }
+
+  // Brightness step label. Takes the level rather than reading the module so
+  // the HUD stays a pure view — same shape as setLanguage above.
+  setBrightness(level) {
+    const el = $('brightness-label');
+    if (!el || !level) return;
+    el.textContent = t(level.label);
   }
 
   // ---- daily reward ----

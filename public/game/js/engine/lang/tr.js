@@ -355,4 +355,16 @@ export const TR = {
 
   'bark.bossSpot.0': 'Büyük olan bu. Onunla karşılıklı atışma.',
   'bark.bossSpot.1': 'Ağır temas. Siperleri kullan — hepsini.',
+
+  // ---- screen brightness (engine/brightness.js) ----
+  'pause.brightness': 'PARLAKLIK:',
+  'brightness.dark': 'KARANLIK',
+  'brightness.normal': 'NORMAL',
+  'brightness.bright': 'PARLAK',
+  'brightness.outdoor': 'GÜNEŞ ALTINDA',
+
+  // ---- rewarded ad could not be shown (engine/ads.js) ----
+  'ad.unavailableTitle': 'REKLAM YOK',
+  'ad.unavailableBody': 'Reklam y\u00fcklenemedi \u2014 \u00e7evrimd\u0131\u015f\u0131 olabilirsin. Hakk\u0131n\u0131 kaybetmedin; ba\u011flant\u0131n oldu\u011funda tekrar dene.',
+  'ad.unavailableOk': 'TAMAM',
 };

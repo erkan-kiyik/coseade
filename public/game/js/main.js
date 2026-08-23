@@ -12,8 +12,9 @@ import { makeCanvas, drawSprite, setAssetScale } from './art/paint.js';
 import { quality } from './engine/quality.js';
 import { device, applyDeviceProfile } from './engine/device.js';
 import { Intro } from './engine/intro.js';
+import { brightness, LEVELS as BRIGHTNESS_LEVELS } from './engine/brightness.js';
 import { Interlude } from './engine/interlude.js';
-import { t, applyTranslations, cycleLang, getLang, LANGS } from './engine/i18n.js';
+import { t, applyTranslations, cycleLang, getLang, LANGS, onLangChange } from './engine/i18n.js';
 import { buildSoldier, makeShadowSprite } from './art/soldier.js';
 import { buildWeapons } from './art/weapons.js';
 import { World, GROUND_Y, MAP_W } from './game/world.js';
@@ -334,6 +335,10 @@ class Game {
       // Cycles TR ⇄ EN. The static markup is re-filled by i18n itself; the
       // screens that build their labels in JS repaint through onLangChange.
       language: () => { audio.ui(); cycleLang(); hud.setLanguage(); },
+      // Cycles the screen brightness lift. Takes effect on the very next
+      // frame — grade() reads the module directly, so there is nothing to
+      // rebuild and the player can judge the change while the menu is open.
+      brightness: () => { audio.ui(); hud.setBrightness(brightness.cycle()); },
       share: () => { audio.ui(); this.openShareCard(); },
       shareSend: () => { audio.ui(); this.sendShareCard(); },
       shareClose: () => { audio.ui(); hud.showShareCard(false); },
@@ -341,6 +346,10 @@ class Game {
     });
     hud.setGraphicsTier(quality.preset.name);
     hud.setLanguage();
+    hud.setBrightness(brightness.level);
+    // The brightness label resolves through t(), so a language switch has to
+    // repaint it — applyTranslations only refills static data-i18n nodes.
+    onLangChange(() => hud.setBrightness(brightness.level));
     canvas.addEventListener('mousedown', () => audio.resume(), { once: true });
   }
 
@@ -1284,15 +1293,24 @@ class Game {
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, vw, vh);
     // film grain — subtle; skipped on weaker quality tiers (a canvas-wide
-    // tiled overlay draw isn't free, and it's the least-missed effect)
-    if (!quality.preset.grain) { ctx.globalCompositeOperation = 'source-over'; return; }
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = 0.03;
-    const ox = (Math.random() * 256) | 0, oy = (Math.random() * 256) | 0;
-    for (let x = -ox; x < vw; x += 256) {
-      for (let y = -oy; y < vh; y += 256) ctx.drawImage(grainCv, x, y);
+    // tiled overlay draw isn't free, and it's the least-missed effect).
+    // Note this tier check used to `return` outright; it no longer can,
+    // because the brightness lift below has to run on every tier — the
+    // cheapest devices are exactly the ones with the dimmest screens.
+    if (quality.preset.grain) {
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = 0.03;
+      const ox = (Math.random() * 256) | 0, oy = (Math.random() * 256) | 0;
+      for (let x = -ox; x < vw; x += 256) {
+        for (let y = -oy; y < vh; y += 256) ctx.drawImage(grainCv, x, y);
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    // Player brightness lift, last of all — see engine/brightness.js. It has
+    // to sit after the vignette and grain, or those passes would darken the
+    // very pixels it just raised.
+    brightness.apply(ctx, vw, vh);
     ctx.globalCompositeOperation = 'source-over';
   }
 

@@ -353,4 +353,16 @@ export const EN = {
 
   'bark.bossSpot.0': "That's the big one. Don't trade shots with it.",
   'bark.bossSpot.1': "Heavy contact. Use the cover — all of it.",
+
+  // ---- screen brightness (engine/brightness.js) ----
+  'pause.brightness': 'BRIGHTNESS:',
+  'brightness.dark': 'DARK',
+  'brightness.normal': 'NORMAL',
+  'brightness.bright': 'BRIGHT',
+  'brightness.outdoor': 'OUTDOOR',
+
+  // ---- rewarded ad could not be shown (engine/ads.js) ----
+  'ad.unavailableTitle': 'NO AD AVAILABLE',
+  'ad.unavailableBody': 'Couldn\u2019t load an ad — you may be offline. Your attempt is unaffected; try again when you have a connection.',
+  'ad.unavailableOk': 'OK',
 };
