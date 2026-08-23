@@ -35,7 +35,7 @@ export class Hud {
       stealthPrompt: $('stealth-prompt'),
       dmgLeft: $('dmg-left'), dmgRight: $('dmg-right'), dmgOmni: $('dmg-omni'),
       detBar: $('det-bar'), detFill: $('det-fill'), detLabel: $('det-label'),
-      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'), hudTokens: $('hud-tokens'), hudTokensVal: $('hud-tokens-val'),
+      xpFill: $('xp-fill'), lvlLabel: $('lvl-label'), hudScrap: $('hud-scrap'), hudScrapVal: $('hud-scrap-val'),
       notify: $('notify'),
       intelToast: $('intel-toast'), intelToastTitle: $('intel-toast-title'),
       endTitle: $('end-title'), endDetail: $('end-detail'),
@@ -189,7 +189,6 @@ export class Hud {
     for (const r of rewards) {
       const cell = document.createElement('div');
       cell.className = 'daily-cell'
-        + (r.kind === 'diamonds' ? ' diamond' : '')
         + (r.day < day ? ' done' : '')
         + (r.day === day ? ' today' : '');
       cell.innerHTML = `<div class="daily-cell-day">${r.day}</div>` +
@@ -367,14 +366,14 @@ export class Hud {
     this.el.xpFill.style.width = `${Math.round(xpFrac * 100)}%`;
   }
 
-  setTokens(n) {
-    const valEl = this.el.hudTokensVal;
+  setScrap(n) {
+    const valEl = this.el.hudScrapVal;
     if (!valEl) return;
-    const prev = this._lastTokens;
-    this._lastTokens = n;
+    const prev = this._lastScrap;
+    this._lastScrap = n;
     if (prev == null || n <= prev) { valEl.textContent = String(n); return; }   // init / spend: snap, no fanfare
     animateCount(valEl, prev, n);
-    playCurrencyGain(this.el.hudTokens, 'para', audio);
+    playCurrencyGain(this.el.hudScrap, null, audio);
   }
 
   // Energy weapons: shows heat (yellow→red, flashes when overheated) or, for

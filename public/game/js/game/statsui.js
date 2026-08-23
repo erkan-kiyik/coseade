@@ -23,8 +23,7 @@ const STAT_FIELDS = [
   { key: 'headshots',  label: 'HEADSHOTS',               icon: 'target', value: (p) => p.data.totalHeadshots.toLocaleString() },
   { key: 'combo',      label: 'HIGHEST COMBO',           icon: 'bolt',   value: (p) => String(p.data.highestCombo) },
   { key: 'streak',     label: 'LONGEST KILL STREAK',     icon: 'fire',   value: (p) => String(p.data.longestKillStreak) },
-  { key: 'coins',      label: 'LIFETIME PARA EARNED',    icon: 'coin',   value: (p) => p.data.lifetimeCoinsEarned.toLocaleString() },
-  { key: 'diamonds',   label: 'LIFETIME DIAMONDS EARNED', icon: 'diamond', value: (p) => p.data.lifetimeDiamondsEarned.toLocaleString() },
+  { key: 'scrap',      label: 'LIFETIME SCRAP SALVAGED', icon: 'scrap',  value: (p) => p.data.lifetimeScrapEarned.toLocaleString() },
   { key: 'ads',        label: 'ADS WATCHED',             icon: 'play',   value: (p) => p.data.totalAdsWatched.toLocaleString() },
   { key: 'missions',   label: 'MISSIONS COMPLETED',      icon: 'flag',   value: (p) => String(p.data.totalMissionsCompleted) },
   { key: 'crates',     label: 'CRATES OPENED',           icon: 'crate',  value: (p) => String(p.data.cratesOpened) },
@@ -187,13 +186,13 @@ export class StatsUI {
   }
 
   claimAchievement(id) {
-    const before = this.p.diamonds;
+    const before = this.p.scrap;
     if (!this.p.claimAchievement(id)) return;
     this.renderAchievements();
     this.renderOverview();
-    const diamondCount = $('diamond-count');
-    if (diamondCount) animateCount(diamondCount, before, this.p.diamonds);
-    playCurrencyGain(document.querySelector('.diamond-pill'), 'diamond', this.audio);
+    const scrapCount = $('scrap-count');
+    if (scrapCount) animateCount(scrapCount, before, this.p.scrap);
+    playCurrencyGain(document.querySelector('.scrap-pill'), 'scrap', this.audio);
   }
 
 }

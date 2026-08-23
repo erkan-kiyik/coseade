@@ -10,7 +10,7 @@
 // which meant that inside the shipped app, with no network, tapping WATCH AD
 // showed a placeholder literally reading "ADVERTISEMENT" and then granted the
 // reward in full. Two problems at once: a dev artefact visible to players, and
-// an economy where airplane mode is an unlimited source of Diamonds and
+// an economy where airplane mode is an unlimited source of scrap and
 // revives.
 //
 // So the simulation is now gated on *not* being the native app. In the app a

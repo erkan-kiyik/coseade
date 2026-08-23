@@ -27,7 +27,7 @@ import { Progression, UNLOCKS } from './game/progression.js';
 import { DayCycle, formatHour } from './engine/daycycle.js';
 import { applyLoadout } from './game/meta.js';
 import { MetaUI } from './game/metaui.js';
-import { StoreUI } from './game/storeui.js';
+import { TraderUI } from './game/traderui.js';
 import { StatsUI } from './game/statsui.js';
 import { ArchivesUI } from './game/archives.js';
 import { Barks } from './game/barks.js';
@@ -226,9 +226,14 @@ async function boot() {
     audio,
   });
   game.metaUI.mount();
-  game.storeUI = new StoreUI({ progression: game.progression, previewItem, audio });
-  game.storeUI.mount();
-  document.querySelector('[data-tab="store"]').addEventListener('click', () => game.storeUI.refresh());
+  game.traderUI = new TraderUI({
+    progression: game.progression,
+    previewItem,
+    weapons: assets.weapons,
+    audio,
+  });
+  game.traderUI.mount();
+  document.querySelector('[data-tab="trader"]').addEventListener('click', () => game.traderUI.refresh());
   game.statsUI = new StatsUI({ progression: game.progression, weapons: assets.weapons, audio });
   game.statsUI.mount();
   document.querySelector('[data-tab="stats"]').addEventListener('click', () => game.statsUI.refresh());
@@ -248,7 +253,7 @@ async function boot() {
   if (DEMO) game.deploy();
   else {
     hud.show('menu'); game.state = 'menu';
-    game.metaUI.refresh(); game.storeUI.refresh(); game.statsUI.refresh();
+    game.metaUI.refresh(); game.traderUI.refresh(); game.statsUI.refresh();
     game.archivesUI.render();
     game.refreshLevelSelect();   // boot sets state directly, bypassing setState()
     game.offerDailyReward();   // lands on the menu, never mid-run
@@ -430,9 +435,9 @@ class Game {
 
   onPlayerHit(headshot, killed, enemy) {
     if (!killed) return;
-    this.progression.recordKill(headshot);   // also awards tokens
+    this.progression.recordKill(headshot);   // also awards scrap
     this.progression.addBpXp(headshot ? 20 : 12);   // battle-pass progress (currency system stays intact even though the shop UI is gone)
-    hud.setTokens(this.progression.tokens);
+    hud.setScrap(this.progression.scrap);
     const res = this.progression.addXp(10 + (headshot ? 15 : 0));
     this.handleLevelUp(res);
     this.registerKill();
@@ -446,7 +451,7 @@ class Game {
   onStealthKill(enemy) {
     this.progression.recordKill(false);
     this.progression.addBpXp(16);
-    hud.setTokens(this.progression.tokens);
+    hud.setScrap(this.progression.scrap);
     const res = this.progression.addXp(14);
     this.handleLevelUp(res);
     this.registerKill();
@@ -469,8 +474,8 @@ class Game {
       hud.showIntel(t(intelTitleKey(res.log.id)), t('intel.found'));
     } else {
       // Archive already complete — the roll still paid, so say what it paid.
-      hud.setTokens(this.progression.tokens);
-      hud.showIntel('', t('intel.para', { n: res.amount }));
+      hud.setScrap(this.progression.scrap);
+      hud.showIntel('', t('intel.scrap', { n: res.amount }));
     }
     audio.ui();
   }
@@ -480,12 +485,12 @@ class Game {
   // other elimination.
   onBossDefeated(boss) {
     this.progression.recordBossKill();
-    hud.setTokens(this.progression.tokens);
+    hud.setScrap(this.progression.scrap);
     hud.showBoss(false);
     hud.notify(t('notify.bossDown', { name: boss.name }));
 
     // Boss Redeemable roll — 1/1000, boss kills only. This is the sole way
-    // these items enter a save; nothing in the crate or the Diamond store
+    // these items enter a save; nothing in the crate or on CROW's stall
     // can produce one. Loot Luck from the equipped perk block scales it.
     const drop = this.progression.rollBossReward(this.player ? this.player.luckMul : 1);
     if (drop) {
@@ -595,7 +600,7 @@ class Game {
     hud.setObjective(0, this.enemies.length);
     hud.setStage(this.stage);
     hud.setProgress(this.progression.data.level, this.progression.xpProgress());
-    hud.setTokens(this.progression.tokens);
+    hud.setScrap(this.progression.scrap);
     if (this.isBossStage) { hud.showBoss(true, this.enemies[0].name); hud.setBossHp(this.enemies[0].hp / this.enemies[0].maxHp); }
     else hud.showBoss(false);
     hud.setAttempt(this.progression.attempts(this.stage));
@@ -775,7 +780,7 @@ class Game {
     hud.show(s);
     if (s === 'play') this.snapshotRun();   // checkpoint as soon as play begins
     if (s === 'menu' && this.metaUI) this.metaUI.refresh();
-    if (s === 'menu' && this.storeUI) this.storeUI.refresh();
+    if (s === 'menu' && this.traderUI) this.traderUI.refresh();
     if (s === 'menu' && this.statsUI) this.statsUI.refresh();
     // Logs are found mid-run, so the Archives are stale the moment a mission
     // ends — repaint on the way back to the menu, not just on tab click.
@@ -1051,13 +1056,12 @@ class Game {
   claimDailyReward() {
     const reward = claimDaily();
     if (!reward) { hud.showDaily(false); return; }
-    if (reward.kind === 'diamonds') this.progression.addDiamonds(reward.amount);
-    else this.progression.addTokens(reward.amount);
+    this.progression.addScrap(reward.amount);
     hud.markDailyClaimed();
     if (audio.levelUp) audio.levelUp();
     // Repaint the balances behind the overlay, then close it.
     if (this.metaUI) this.metaUI.refresh();
-    if (this.storeUI) this.storeUI.refresh();
+    if (this.traderUI) this.traderUI.refresh();
     setTimeout(() => hud.showDaily(false), 900);
   }
 
@@ -1065,7 +1069,7 @@ class Game {
   // lastRunStats is set by finish().
   openShareCard() {
     const stats = this.lastRunStats || { stage: this.stage, attempts: 0, kills: 0 };
-    stats.tokens = this.progression.tokens;
+    stats.scrap = this.progression.scrap;
     const cv = hud.shareCanvasEl();
     if (!cv) return;
     paintShareCard(cv, stats);
