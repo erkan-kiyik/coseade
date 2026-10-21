@@ -8,7 +8,7 @@
 import * as env from '../art/environment.js';
 import { buildBackground } from '../art/background.js';
 import { makeShadowSprite } from '../art/soldier.js';
-import { makeCanvas, drawSprite, lingrad, radgrad, rr } from '../art/paint.js';
+import { makeCanvas, drawSprite, drawSpriteSlice, lingrad, radgrad, rr } from '../art/paint.js';
 import { clamp, rand, randSpread, makeRng } from '../engine/math.js';
 import { gradeAt, pickWeather, START_HOUR } from '../engine/daycycle.js';
 import { enemyCount, lootCount } from './difficulty.js';
@@ -790,32 +790,56 @@ export class World {
   // x-range — endless procedural stages can carry far more of these than are
   // ever on screen at once, so this cuts real draw-call count without
   // touching physics/AI (those keep updating regardless of culling).
-  drawBack(g, cam, vw) {
+  drawBack(g, cam, vw, vh) {
     const halfVis = cam && vw ? vw / (2 * cam.zoom) + 400 : Infinity;
     const camX = cam ? cam.x : 0;
     const visible = (x) => Math.abs(x - camX) < halfVis;
+    // World span actually on screen. Everything below is clipped to it rather
+    // than drawn map-wide and left to the rasteriser: the street sprite is
+    // 7900 units across and the decal layer 7400, and handing either to
+    // drawImage whole was costing more than the rest of the frame put together.
+    const spanL = Number.isFinite(halfVis) ? camX - halfVis : -250;
+    const spanR = Number.isFinite(halfVis) ? camX + halfVis : MAP_W + 250;
+    // Tighter still for the flat background fills. `halfVis` carries a 400-unit
+    // margin so a prop whose art overhangs its anchor still gets drawn; a
+    // full-bleed fill needs no such margin, and at typical zoom that margin
+    // was making every background band more than twice as wide as the screen.
+    // Fill area was the single largest cost in this function.
+    const fillL = Number.isFinite(halfVis) ? camX - (halfVis - 360) : -250;
+    const fillW = Number.isFinite(halfVis) ? (halfVis - 360) * 2 : MAP_W + 500;
 
-    drawSprite(g, this.ground, -250, GROUND_Y);
-    // solid earth below the painted street — never let the sky bleed through
-    const under = lingrad(g, 0, GROUND_Y + 82, 0, GROUND_Y + 700, [
-      [0, '#2b2a27'], [0.25, '#1b1a18'], [1, '#0c0c0d'],
-    ]);
-    g.fillStyle = under;
-    g.fillRect(-1600, GROUND_Y + 84, MAP_W + 3200, 1400);
+    drawSpriteSlice(g, this.ground, -250, GROUND_Y, spanL, spanR);
+    // solid earth below the painted street — never let the sky bleed through.
+    // The gradient is camera-independent, so it is built once and reused.
+    if (!this._underGrad) {
+      this._underGrad = lingrad(g, 0, GROUND_Y + 82, 0, GROUND_Y + 700, [
+        [0, '#2b2a27'], [0.25, '#1b1a18'], [1, '#0c0c0d'],
+      ]);
+    }
+    g.fillStyle = this._underGrad;
+    // Only as deep as the camera can actually see. This used to fill a fixed
+    // 1400 units down; at typical zoom fewer than 300 are ever on screen, and
+    // a gradient fill of that size was measurably the priciest fillRect in the
+    // frame. The gradient itself still runs to GROUND_Y+700, so the visible
+    // band is identical — there is just no work below the bottom of the view.
+    const underH = cam && vh
+      ? (cam.y + vh / (2 * cam.zoom) + 40) - (GROUND_Y + 84)
+      : 1400;
+    if (underH > 0) g.fillRect(fillL, GROUND_Y + 84, fillW, Math.min(1400, underH));
 
     // Foreground floor falloff: the road darkens as it comes toward camera, so
     // the strip the characters stand on frames them from below instead of
     // being the brightest band on screen. Props, barrels, pickups and decals
     // all draw after this and keep their full value.
-    g.fillStyle = lingrad(g, 0, GROUND_Y - 4, 0, GROUND_Y + 96, [
-      [0, 'rgba(5,7,11,0)'],
-      [0.45, 'rgba(5,7,11,0.16)'],
-      [1, 'rgba(4,6,10,0.42)'],
-    ]);
-    // (halfVis is Infinity when culling is disabled, so the falloff band gets
-    // its own bounded span rather than reusing it)
-    const bandHalf = Number.isFinite(halfVis) ? halfVis + 400 : MAP_W;
-    g.fillRect(camX - bandHalf, GROUND_Y - 4, bandHalf * 2, 100);
+    if (!this._falloffGrad) {
+      this._falloffGrad = lingrad(g, 0, GROUND_Y - 4, 0, GROUND_Y + 96, [
+        [0, 'rgba(5,7,11,0)'],
+        [0.45, 'rgba(5,7,11,0.16)'],
+        [1, 'rgba(4,6,10,0.42)'],
+      ]);
+    }
+    g.fillStyle = this._falloffGrad;
+    g.fillRect(fillL, GROUND_Y - 4, fillW, 100);
 
     // Contact shadows go down first, as one batch: every prop's pool is laid
     // in before any prop art, so a crate standing in front of another never
@@ -826,8 +850,17 @@ export class World {
     for (const b of this.barrels) if (b.alive && visible(b.x)) drawSprite(g, b.spr, b.x, b.y);
     this.drawShafts(g, visible);
     this.drawPickups(g, visible);
-    // decals over ground/props, under characters
-    g.drawImage(this.decalCv, 0, this.decalTop);
+    // Decals over ground/props, under characters. Same story as the street: the
+    // decal surface is the width of the whole map, so only the visible column
+    // of it is blitted.
+    const dx0 = Math.max(0, Math.floor(spanL));
+    const dx1 = Math.min(this.decalCv.width, Math.ceil(spanR));
+    if (dx1 > dx0) {
+      g.drawImage(
+        this.decalCv, dx0, 0, dx1 - dx0, this.decalCv.height,
+        dx0, this.decalTop, dx1 - dx0, this.decalCv.height,
+      );
+    }
   }
 
   // Soft elliptical pools under every prop, barrel and pickup.
